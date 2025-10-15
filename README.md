@@ -1,0 +1,2 @@
+# algoTraderAI
+AlgoTrader.ai
