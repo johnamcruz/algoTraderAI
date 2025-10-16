@@ -6,7 +6,7 @@ Requirements:
     pip install onnxruntime pandas pandas-ta signalrcore requests joblib
 
 Usage:
-    python algoTrader.py --ticker NQ --username YOUR_USERNAME --apikey YOUR_API_KEY
+    python algoTrader.py --account YOUR_ACCCOUNT --contract --username YOUR_USERNAME --apikey YOUR_API_KEY
 """
 
 #import onnxruntime as ort
@@ -14,15 +14,19 @@ import numpy as np
 #import pandas as pd
 #import pandas_ta as ta
 #import joblib
+import asyncio
 import json
 import argparse
 import requests
+from pysignalr.client import SignalRClient
 from datetime import datetime, timedelta
-#from signalrcore.hub_connection_builder import HubConnectionBuilder
+from collections import defaultdict
 import threading
 import time
 import warnings
 warnings.filterwarnings('ignore')
+
+MARKET_HUB = "https://rtc.alphaticks.projectx.com/hubs/market"
 
 # =========================================================
 # AUTHENTICATION
@@ -34,7 +38,7 @@ def authenticate(username, api_key):
     
     Returns: JWT token string or None if failed
     """
-    auth_url = "https://api.topstepx.com/api/Auth/loginKey"
+    auth_url = "https://api.alphaticks.projectx.com/api/Auth/loginKey"
     
     payload = {
         "userName": username,
@@ -64,6 +68,65 @@ def authenticate(username, api_key):
 # REAL-TIME TRADING BOT
 # =========================================================
 
+bars = defaultdict(lambda: {"open": None, "high": 0, "low": float("inf"), "close": None, "volume": 0})
+
+async def process_tick(data):
+    try:
+        # If data is like ['CON.F.US.EP.Z25', [ {...} ]]
+        if isinstance(data, list) and len(data) >= 2 and isinstance(data[1], list):
+            for trade in data[1]:
+                await handle_trade(trade)
+        # If data is a single dict
+        elif isinstance(data, dict):
+            await handle_trade(data)
+        else:
+            print("Unexpected data format:", data)
+    except Exception as e:
+        print("process_tick error:", e)
+
+async def handle_trade(trade):    
+    ts = datetime.fromisoformat(trade.get("timestamp"))
+    price = trade.get("price")
+    volume = trade.get("volume", 0)
+
+    bar = bars[ts]
+    if bar["open"] is None:
+        bar["open"] = price
+    bar["high"] = max(bar["high"], price)
+    bar["low"] = min(bar["low"], price)
+    bar["close"] = price
+    bar["volume"] += volume
+
+    print(f"{ts}: {bar}")
+
+async def setupSignalR(token, contract):
+    hub_url = f"{MARKET_HUB}?access_token={token}"
+        
+    client = SignalRClient(hub_url)
+    
+    async def on_open() -> None:
+        print("✅ Connected to market hub")        
+        try:
+            await client.send("SubscribeContractTrades", [contract])     
+            print("Subscription successful")       
+        except Exception as e:
+            print(f"❌ Subscription error: {e}")
+
+    
+    async def on_close() -> None:
+        print('Disconnected from the server')
+        await client.send("UnsubscribeContractTrades", [contract])
+
+    async def on_error(message: str) -> None:
+        print(f"❌ SignalR Error: {message}")
+
+    client.on_open(on_open)
+    client.on_close(on_close)
+    client.on_error(on_error)  # Add error handler
+    client.on("GatewayTrade", process_tick)    
+
+    # Just run the client - subscription happens in on_open
+    await client.run()
 
 
 # =========================================================
@@ -89,12 +152,19 @@ def main():
     
     # Authenticate and get JWT token
     jwt_token = authenticate(args.username, args.apikey)
-    
+
     if not jwt_token:
         print("\n❌ Cannot start bot without valid authentication")
         return
     
     print(f"\n🎫 Token received (expires in ~24 hours)")
+    
+    try:
+        asyncio.run(setupSignalR(jwt_token, args.contract))
+    except KeyboardInterrupt:
+        print("\n👋 Bot stopped by user")
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
 
 
 if __name__ == "__main__":
