@@ -6,10 +6,10 @@ This version integrates an ONNX model to generate real-time trade signals
 based on the winning parameters from backtesting.
 
 Requirements:
-    pip install onnxruntime pandas pandas-ta signalrcore requests pickle numpy
+    pip install onnxruntime pandas pandas-ta signalrcore requests pickle numpy scikit-learn
 
 Usage:
-    python algoTrader.py --account YOUR_ACCCOUNT --contract CON.F.US.ES.Z25 --size 1 --username YOUR_USERNAME --apikey YOUR_API_KEY --timeframe 5 --model "C:\path\to\SUPERTRADER_strategy_1_v2.onnx" --scaler "C:\path\to\SUPERTRADER_scalers_v2.pkl"
+    python algoTrader.py --account YOUR_ACCCOUNT --contract CON.F.US.ES.Z25 --size 1 --username YOUR_USERNAME --apikey YOUR_API_KEY --timeframe 5"
 """
 
 import numpy as np
@@ -34,6 +34,9 @@ warnings.filterwarnings('ignore')
 
 MARKET_HUB = "https://rtc.alphaticks.projectx.com/hubs/market"
 BASE_URL = "https://api.alphaticks.projectx.com/api"
+
+model = "models/SUPERTRADER_strategy_1_run4_logicfix.onnx"
+scaler = "models/SUPERTRADER_scalers_strategy_3_run4_logicfix.pkl"
 
 # =========================================================
 # AUTHENTICATION
@@ -566,11 +569,6 @@ def main():
     # --- UPDATED ARGUMENTS ---
     parser.add_argument('--timeframe', type=int, choices=[1, 3, 5], default=5,
                         help='Timeframe in minutes (1, 3, 5). Default: 5')
-    parser.add_argument('--model', type=str, required=True,
-                        help='Path to the ONNX model file (e.g., SUPERTRADER_strategy_1_v2.onnx)')
-    parser.add_argument('--scaler', type=str, required=True,
-                        help='Path to the pickled scaler file (e.g., SUPERTRADER_scalers_v2.pkl)')
-    
     args = parser.parse_args()
     
     # --- Check for ES contract (since model is ES specific) ---
@@ -594,8 +592,8 @@ def main():
             jwt_token, 
             args.contract, 
             args.timeframe, 
-            args.model, 
-            args.scaler
+            model, 
+            scaler
         )        
         asyncio.run(bot.run())        
     except KeyboardInterrupt:
