@@ -26,6 +26,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 MARKET_HUB = "https://rtc.alphaticks.projectx.com/hubs/market"
+BASE_URL = "https://api.alphaticks.projectx.com/api"
 
 # =========================================================
 # AUTHENTICATION
@@ -37,7 +38,7 @@ def authenticate(username, api_key):
     
     Returns: JWT token string or None if failed
     """
-    auth_url = "https://api.alphaticks.projectx.com/api/Auth/loginKey"
+    auth_url = f"{BASE_URL}/Auth/loginKey"
     
     payload = {
         "userName": username,
@@ -96,7 +97,7 @@ class RealTimeBot:
         Fetches the most recent bars to "prime" the historical_bars deque.
         """
 
-        historical_url = "https://api.alphaticks.projectx.com/api/History/retrieveBars"        
+        historical_url = f"{BASE_URL}/History/retrieveBars"        
         end_time_dt = datetime.now(timezone.utc).replace(microsecond=0)
         start_time_dt = end_time_dt - relativedelta(days=1)
         end_time_str = end_time_dt.isoformat().replace('+00:00', 'Z')
@@ -120,7 +121,19 @@ class RealTimeBot:
             response.raise_for_status()
         
             data = response.json()
-            print(data.get('bars', []))
+            for bar in data.get('bars', []):
+                # --- Map the API's historical bar keys to your bar keys ---
+                # --- This is also a GUESS, adjust field names as needed ---
+                formatted_bar = {
+                    "timestamp": bar['t'],
+                    "open": bar['o'],
+                    "high": bar['h'],
+                    "low": bar['l'],
+                    "close": bar['c'],
+                    "volume": bar['v']
+                }
+                print(formatted_bar)
+                self.historical_bars.append(formatted_bar)
 
             print(f"✅ Successfully pre-filled {len(self.historical_bars)} historical bars.")
         except Exception as e:
@@ -195,7 +208,7 @@ class RealTimeBot:
     async def _close_and_print_bar(self):
         """Internal function to print the bar and reset state. MUST be called inside a lock."""
         if self.current_bar:                        
-            print(f"Time:  {self.current_bar_time} O: {self.current_bar['open']} H: {self.current_bar['high']} L: {self.current_bar['low']} C: {self.current_bar['close']} V: {self.current_bar['volume']}")
+            print(self.current_bar)
             
             #TODO Add AI model prediction here
             
@@ -276,7 +289,7 @@ class RealTimeBot:
                     # Initialize the new bar
                     self.current_bar_time = bar_time
                     self.current_bar = {
-                        "timestamp": bar_time,
+                        "timestamp": bar_time.isoformat(),
                         "open": price,
                         "high": price,
                         "low": price,
@@ -289,7 +302,7 @@ class RealTimeBot:
                         # This can happen if the timer *just* closed a bar
                         # We'll just re-initialize.
                         self.current_bar_time = bar_time
-                        self.current_bar = {"timestamp": bar_time, "open": price, "high": price, "low": price, "close": price, "volume": volume}
+                        self.current_bar = {"timestamp": bar_time.isoformat(), "open": price, "high": price, "low": price, "close": price, "volume": volume}
                     else:
                         self.current_bar["high"] = max(self.current_bar["high"], price)
                         self.current_bar["low"] = min(self.current_bar["low"], price)
