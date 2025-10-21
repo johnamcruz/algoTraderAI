@@ -241,6 +241,7 @@ class RealTimeBot:
                     # Initialize the new bar
                     self.current_bar_time = bar_time
                     self.current_bar = {
+                        "timestamp": bar_time,
                         "open": price,
                         "high": price,
                         "low": price,
@@ -253,7 +254,7 @@ class RealTimeBot:
                         # This can happen if the timer *just* closed a bar
                         # We'll just re-initialize.
                         self.current_bar_time = bar_time
-                        self.current_bar = {"open": price, "high": price, "low": price, "close": price, "volume": volume}
+                        self.current_bar = {"timestamp": bar_time, "open": price, "high": price, "low": price, "close": price, "volume": volume}
                     else:
                         self.current_bar["high"] = max(self.current_bar["high"], price)
                         self.current_bar["low"] = min(self.current_bar["low"], price)
