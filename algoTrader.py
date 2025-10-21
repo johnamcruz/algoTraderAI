@@ -20,6 +20,7 @@ import argparse
 import requests
 from pysignalr.client import SignalRClient
 from datetime import datetime, timedelta, timezone
+from dateutil.relativedelta import relativedelta
 from collections import deque
 import warnings
 warnings.filterwarnings('ignore')
@@ -72,12 +73,14 @@ class RealTimeBot:
         self.contract = contract
         self.timeframe_minutes = int(timeframe_minutes)
         self.client = SignalRClient(self.hub_url)
+        self.token = token
                 
         self.current_bar = {}
         self.current_bar_time = None
         self.bar_lock = asyncio.Lock()  # Lock to prevent race conditions
         self.closer_task = None         # Handle for the watcher task     
         self.historical_bars = deque(maxlen=100)   
+        self.num_historical_candles_needed = 60  
         
         print(f"🤖 Bot initialized for {self.contract} on a {self.timeframe_minutes}-minute timeframe.")
 
@@ -90,9 +93,35 @@ class RealTimeBot:
     #Function to pre-fill the bar history
     async def fetch_historical_data(self):
         """
-        Fetches the 100 most recent bars to "prime" the historical_bars deque.
+        Fetches the most recent bars to "prime" the historical_bars deque.
         """
-        try:
+
+        historical_url = "https://api.alphaticks.projectx.com/api/History/retrieveBars"        
+        end_time_dt = datetime.now(timezone.utc).replace(microsecond=0)
+        start_time_dt = end_time_dt - relativedelta(days=1)
+        end_time_str = end_time_dt.isoformat().replace('+00:00', 'Z')
+        start_time_str = start_time_dt.isoformat().replace('+00:00', 'Z')
+            
+        payload = {            
+            "contractId": self.contract,
+            "live": False,
+            "startTime": start_time_str,
+            "endTime": end_time_str,
+            "unit": 3,
+            "unitNumber": self.timeframe_minutes,
+            "limit": self.num_historical_candles_needed,
+            "includePartialBar": False
+        }
+        headers = {
+            'Authorization': f'Bearer {self.token}'
+        }        
+        try:            
+            response = requests.post(historical_url,headers=headers, json=payload, timeout=10)
+            response.raise_for_status()
+        
+            data = response.json()
+            print(data.get('bars', []))
+
             print(f"✅ Successfully pre-filled {len(self.historical_bars)} historical bars.")
         except Exception as e:
             print(f"❌ Could not fetch historical data: {e}.")
