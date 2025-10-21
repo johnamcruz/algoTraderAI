@@ -108,7 +108,7 @@ class RealTimeBot:
             "live": False,
             "startTime": start_time_str,
             "endTime": end_time_str,
-            "unit": 3,
+            "unit": 2, # minutes 
             "unitNumber": self.timeframe_minutes,
             "limit": self.num_historical_candles_needed,
             "includePartialBar": False
@@ -121,9 +121,7 @@ class RealTimeBot:
             response.raise_for_status()
         
             data = response.json()
-            for bar in data.get('bars', []):
-                # --- Map the API's historical bar keys to your bar keys ---
-                # --- This is also a GUESS, adjust field names as needed ---
+            for bar in data.get('bars', []):                
                 formatted_bar = {
                     "timestamp": bar['t'],
                     "open": bar['o'],
@@ -131,10 +129,9 @@ class RealTimeBot:
                     "low": bar['l'],
                     "close": bar['c'],
                     "volume": bar['v']
-                }
-                print(formatted_bar)
+                }                
                 self.historical_bars.append(formatted_bar)
-
+            
             print(f"✅ Successfully pre-filled {len(self.historical_bars)} historical bars.")
         except Exception as e:
             print(f"❌ Could not fetch historical data: {e}.")
@@ -208,7 +205,11 @@ class RealTimeBot:
     async def _close_and_print_bar(self):
         """Internal function to print the bar and reset state. MUST be called inside a lock."""
         if self.current_bar:                        
-            print(self.current_bar)
+            print(self.current_bar)            
+
+            # Make a copy for processing, as self.current_bar will be reset
+            closed_bar_data = self.current_bar.copy()            
+            self.historical_bars.append(closed_bar_data)
             
             #TODO Add AI model prediction here
             
