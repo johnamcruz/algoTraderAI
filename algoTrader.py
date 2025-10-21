@@ -13,11 +13,7 @@ Usage:
     python algoTrader.py --account YOUR_ACCCOUNT --contract YOUR_CONTRACT --size 1 --username YOUR_USERNAME --apikey YOUR_API_KEY --timeframe 5
 """
 
-#import onnxruntime as ort
 import numpy as np
-#import pandas as pd
-#import pandas_ta as ta
-#import joblib
 import asyncio
 import json
 import argparse
@@ -103,8 +99,7 @@ class RealTimeBot:
             print("Bot will start with live data only and build history (will take 100 bars to start trading).")
 
     async def run(self):
-        """
-        --- MODIFIED ---
+        """        
         Starts the bot, the bar closer, and connects to the SignalR hub.
         """
         # Fill history before starting the real-time loop
@@ -124,8 +119,7 @@ class RealTimeBot:
             print(f"❌ Subscription error: {e}")
 
     async def on_close(self) -> None:
-        """
-        --- MODIFIED ---
+        """        
         Called when the connection is closed.
         """
         print('Disconnected from the server')
@@ -223,8 +217,7 @@ class RealTimeBot:
 
 
     async def handle_trade(self, trade):
-        """
-        --- MODIFIED ---
+        """        
         Aggregates a single trade tick into a time-based bar.
         Now uses a lock to coordinate with the bar_closer_watcher.
         """
