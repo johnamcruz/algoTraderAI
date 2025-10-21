@@ -2,6 +2,10 @@
 """
 Real-Time Trading Bot with SignalR - Aggregates ticks into time-based bars.
 
+This version uses an asyncio.Lock and a "watcher" task to ensure bars
+are closed by the clock, even if no new ticks arrive. This matches
+TradingView's bar-closing behavior.
+
 Requirements:
     pip install onnxruntime pandas pandas-ta signalrcore requests joblib
 
@@ -19,7 +23,7 @@ import json
 import argparse
 import requests
 from pysignalr.client import SignalRClient
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 import threading
 import time
@@ -74,10 +78,11 @@ class RealTimeBot:
         self.contract = contract
         self.timeframe_minutes = int(timeframe_minutes)
         self.client = SignalRClient(self.hub_url)
-        
-        # State for bar aggregation
+                
         self.current_bar = {}
         self.current_bar_time = None
+        self.bar_lock = asyncio.Lock()  # Lock to prevent race conditions
+        self.closer_task = None         # Handle for the watcher task        
         
         print(f"🤖 Bot initialized for {self.contract} on a {self.timeframe_minutes}-minute timeframe.")
 
@@ -88,8 +93,12 @@ class RealTimeBot:
         self.client.on("GatewayTrade", self.process_tick)
 
     async def run(self):
-        """Starts the bot and connects to the SignalR hub."""
-        print("🚀 Starting bot connection...")
+        """
+        --- MODIFIED ---
+        Starts the bot, the bar closer, and connects to the SignalR hub.
+        """
+        print("🚀 Starting bot connection...")                
+        self.closer_task = asyncio.create_task(self.bar_closer_watcher())        
         await self.client.run()
 
     async def on_open(self) -> None:
@@ -102,8 +111,13 @@ class RealTimeBot:
             print(f"❌ Subscription error: {e}")
 
     async def on_close(self) -> None:
-        """Called when the connection is closed."""
+        """
+        --- MODIFIED ---
+        Called when the connection is closed.
+        """
         print('Disconnected from the server')
+        if self.closer_task:
+            self.closer_task.cancel() # Stop the watcher task
 
     async def on_error(self, message: str) -> None:
         """Called when a SignalR error occurs."""
@@ -119,58 +133,133 @@ class RealTimeBot:
             # If data is a single dict
             elif isinstance(data, dict):
                 await self.handle_trade(data)
-            else:
-                print("Unexpected data format:", data)
+            # else:
+            #    print("Unexpected data format:", data) # Can be noisy
         except Exception as e:
             print(f"process_tick error: {e} | Data: {data}")
+    
+    def _get_bar_time(self, ts: datetime) -> datetime:
+        """Helper to floor a timestamp to the correct bar interval."""
+        # API timestamps may lack timezone, assume UTC
+        if ts.tzinfo is None:
+             ts = ts.replace(tzinfo=timezone.utc)
+        else:
+             ts = ts.astimezone(timezone.utc)
+        
+        # Floor to the minute
+        bar_time = ts.replace(second=0, microsecond=0)
+        
+        # Floor to the timeframe
+        if self.timeframe_minutes > 1:
+            bar_time = bar_time.replace(
+                minute=(bar_time.minute // self.timeframe_minutes) * self.timeframe_minutes
+            )
+        return bar_time
+
+    async def _close_and_print_bar(self):
+        """Internal function to print the bar and reset state. MUST be called inside a lock."""
+        if self.current_bar:                        
+            print(f"Time:  {self.current_bar_time} O: {self.current_bar['open']} H: {self.current_bar['high']} L: {self.current_bar['low']} C: {self.current_bar['close']} V: {self.current_bar['volume']}")
+            
+            #TODO Add AI model prediction here
+            
+            # Reset the bar
+            self.current_bar = {}
+            self.current_bar_time = None
+
+    async def bar_closer_watcher(self):
+        """
+        This background task watches the clock. If a bar's time is up,
+        it acquires the lock and force-closes the bar, ensuring that
+        bars are closed even if no new ticks arrive.
+        """
+        print("Bar closer watcher started...")
+        while True:
+            try:
+                if not self.current_bar_time:
+                    # No active bar, check again in a bit
+                    await asyncio.sleep(0.1)
+                    continue
+
+                # Calculate when the current bar should end
+                next_bar_time = self.current_bar_time + timedelta(minutes=self.timeframe_minutes)
+                
+                # Get current time (must be offset-aware!)
+                now_utc = datetime.now(timezone.utc)
+                
+                # Calculate how long to sleep
+                sleep_duration = (next_bar_time - now_utc).total_seconds()
+                
+                if sleep_duration > 0:
+                    # Sleep until the bar is supposed to end (plus a tiny buffer)
+                    await asyncio.sleep(sleep_duration + 0.05) # 50ms buffer
+
+                # --- Time is up, try to close the bar ---
+                async with self.bar_lock:
+                    # Check if the bar is *still* the one we were waiting for.
+                    # It might have *already* been closed by a fast-moving tick.
+                    if self.current_bar and self.current_bar_time < next_bar_time:                        
+                        await self._close_and_print_bar()
+
+            except asyncio.CancelledError:
+                print("Bar closer watcher stopping.")
+                break
+            except Exception as e:
+                print(f"Error in bar_closer_watcher: {e}")
+                await asyncio.sleep(1) # Don't spam errors
+
 
     async def handle_trade(self, trade):
-        """Aggregates a single trade tick into a time-based bar."""
+        """
+        --- MODIFIED ---
+        Aggregates a single trade tick into a time-based bar.
+        Now uses a lock to coordinate with the bar_closer_watcher.
+        """
         try:
             ts = datetime.fromisoformat(trade.get("timestamp"))
             price = trade.get("price")
             volume = trade.get("volume", 0)
 
             if price is None:
-                return # Skip trades with no price
+                return
 
-            # --- Core Resampling Logic ---
-            # Floor the timestamp to the start of the bar interval
-            bar_time = ts.replace(second=0, microsecond=0)
-            if self.timeframe_minutes > 1:
-                # Calculate the minute flooring
-                # e.g., 10:04 with timeframe=3 -> (4 // 3) * 3 = 1 * 3 = 3 -> 10:03
-                # e.g., 10:05 with timeframe=3 -> (5 // 3) * 3 = 1 * 3 = 3 -> 10:03
-                # e.g., 10:06 with timeframe=3 -> (6 // 3) * 3 = 2 * 3 = 6 -> 10:06
-                bar_time = bar_time.replace(minute=(bar_time.minute // self.timeframe_minutes) * self.timeframe_minutes)
+            # Calculate which bar this tick belongs to
+            bar_time = self._get_bar_time(ts)
 
-            # Check if this tick starts a new bar
-            if bar_time != self.current_bar_time:
-                # --- 1. A new bar is starting ---
-                
-                # If a previous bar exists, print it as "closed"
-                if self.current_bar:                    
-                    print(f"Time: {self.current_bar_time} O: {self.current_bar['open']} H: {self.current_bar['high']} L: {self.current_bar['low']} C: {self.current_bar['close']} V: {self.current_bar['volume']}")                    
-                
-                # Initialize the new bar
-                self.current_bar_time = bar_time
-                self.current_bar = {
-                    "open": price,
-                    "high": price,
-                    "low": price,
-                    "close": price,
-                    "volume": volume
-                }
-            else:
-                # --- 2. This tick updates the current bar ---
-                self.current_bar["high"] = max(self.current_bar["high"], price)
-                self.current_bar["low"] = min(self.current_bar["low"], price)
-                self.current_bar["close"] = price
-                self.current_bar["volume"] += volume
+            # --- Acquire lock to modify bar state ---
+            async with self.bar_lock:
+                # Check if this tick starts a new bar
+                if bar_time != self.current_bar_time:
+                    # --- 1. A new bar is starting ---
+                    
+                    # First, close and print the *previous* bar, if it exists
+                    # (The timer task might have already done this, but this is a safety catch)
+                    if self.current_bar:
+                        print(f"[Tick] Closing bar for {self.current_bar_time}")
+                        await self._close_and_print_bar()
+                    
+                    # Initialize the new bar
+                    self.current_bar_time = bar_time
+                    self.current_bar = {
+                        "open": price,
+                        "high": price,
+                        "low": price,
+                        "close": price,
+                        "volume": volume
+                    }
+                else:
+                    # --- 2. This tick updates the current bar ---
+                    if not self.current_bar:
+                        # This can happen if the timer *just* closed a bar
+                        # We'll just re-initialize.
+                        self.current_bar_time = bar_time
+                        self.current_bar = {"open": price, "high": price, "low": price, "close": price, "volume": volume}
+                    else:
+                        self.current_bar["high"] = max(self.current_bar["high"], price)
+                        self.current_bar["low"] = min(self.current_bar["low"], price)
+                        self.current_bar["close"] = price
+                        self.current_bar["volume"] += volume
             
-            # Optional: Print live-updating bar (can be noisy)
-            # print(f"Live Bar ({self.current_bar_time}): C: {self.current_bar['close']} V: {self.current_bar['volume']}", end="\r")
-
         except Exception as e:
             print(f"handle_trade error: {e} | Trade: {trade}")
 
