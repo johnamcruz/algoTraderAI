@@ -24,9 +24,7 @@ import argparse
 import requests
 from pysignalr.client import SignalRClient
 from datetime import datetime, timedelta, timezone
-from collections import defaultdict
-import threading
-import time
+from collections import deque
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -82,7 +80,8 @@ class RealTimeBot:
         self.current_bar = {}
         self.current_bar_time = None
         self.bar_lock = asyncio.Lock()  # Lock to prevent race conditions
-        self.closer_task = None         # Handle for the watcher task        
+        self.closer_task = None         # Handle for the watcher task     
+        self.historical_bars = deque(maxlen=100)   
         
         print(f"🤖 Bot initialized for {self.contract} on a {self.timeframe_minutes}-minute timeframe.")
 
@@ -92,11 +91,25 @@ class RealTimeBot:
         self.client.on_error(self.on_error)
         self.client.on("GatewayTrade", self.process_tick)
 
+    #Function to pre-fill the bar history
+    async def fetch_historical_data(self):
+        """
+        Fetches the 100 most recent bars to "prime" the historical_bars deque.
+        """
+        try:
+            print(f"✅ Successfully pre-filled {len(self.historical_bars)} historical bars.")
+        except Exception as e:
+            print(f"❌ Could not fetch historical data: {e}.")
+            print("Bot will start with live data only and build history (will take 100 bars to start trading).")
+
     async def run(self):
         """
         --- MODIFIED ---
         Starts the bot, the bar closer, and connects to the SignalR hub.
         """
+        # Fill history before starting the real-time loop
+        await self.fetch_historical_data()
+
         print("🚀 Starting bot connection...")                
         self.closer_task = asyncio.create_task(self.bar_closer_watcher())        
         await self.client.run()
