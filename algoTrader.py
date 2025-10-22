@@ -86,10 +86,12 @@ def parse_contract_symbol(contract_id):
 # REAL-TIME TRADING BOT CLASS
 # =========================================================
 class RealTimeBot:    
-    def __init__(self, token, contract, timeframe_minutes, model_path, scaler_path,
-                 entry_conf, adx_thresh, stop_atr, target_atr, ai_reversal):
+    def __init__(self, token,account, contract, size, timeframe_minutes, model_path, scaler_path,
+                 entry_conf, adx_thresh, stop_atr, target_atr):
         self.hub_url = f"{MARKET_HUB}?access_token={token}"
+        self.account = account
         self.contract = contract
+        self.size = size,
         self.timeframe_minutes = int(timeframe_minutes)
         self.client = SignalRClient(self.hub_url)
         self.token = token
@@ -126,8 +128,7 @@ class RealTimeBot:
         self.entry_conf = entry_conf
         self.adx_thresh = adx_thresh
         self.stop_atr_mult = stop_atr
-        self.target_atr_mult = target_atr
-        self.ai_reversal_conf = ai_reversal
+        self.target_atr_mult = target_atr        
         
         print(f"🤖 Bot initialized for {self.contract} ({self.contract_symbol}) on {self.timeframe_minutes}-min timeframe.")
         print(f"📈 Using Trade Params: Entry={self.entry_conf}, ADX={self.adx_thresh}, Stop={self.stop_atr_mult} ATR, Target={self.target_atr_mult} ATR")
@@ -325,6 +326,25 @@ class RealTimeBot:
         if self.timeframe_minutes > 1:
             bar_time = bar_time.replace(minute=(bar_time.minute // self.timeframe_minutes) * self.timeframe_minutes)
         return bar_time
+    
+    async def _place_order(self, side):
+        """enter long/short position"""
+        order_url = f"{BASE_URL}/Order/place"
+        payload = {            
+            "accountId": self.account, # Replace with your actual account ID
+            "contractId": self.contract, # Replace with the contract ID you want to trade
+            "type": 2, # Market order
+            "side": side, # 0 - Bid (buy), 1 = Ask (sell)
+            "size": self.size # Size of the order
+        }
+        headers = {'Authorization': f'Bearer {self.token}'}
+        try:            
+            response = requests.post(order_url, headers=headers, json=payload, timeout=10)
+            response.raise_for_status()
+            data = response.json()        
+        except Exception as e:
+            print(f"❌ Could not place order: {e}.")
+            
 
     async def _close_and_print_bar(self):
         """On bar close, appends data and checks for a NEW trade entry."""
@@ -361,7 +381,7 @@ class RealTimeBot:
                         self.stop_loss = self.entry_price - (last_bar['atr'] * self.stop_atr_mult)
                         self.profit_target = self.entry_price + (last_bar['atr'] * self.target_atr_mult)
                         print("="*40, f"\n🔥🔥🔥 ENTERING LONG @ {self.entry_price:.2f} 🔥🔥🔥", f"\n  SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}", "\n"+"="*40)
-                        # TODO: Add actual order execution logic here
+                        self._place_order(0)
 
                     elif is_short_signal:
                         self.in_position = True
@@ -370,7 +390,7 @@ class RealTimeBot:
                         self.stop_loss = self.entry_price + (last_bar['atr'] * self.stop_atr_mult)
                         self.profit_target = self.entry_price - (last_bar['atr'] * self.target_atr_mult)
                         print("="*40, f"\n🥶🥶🥶 ENTERING SHORT @ {self.entry_price:.2f} 🥶🥶🥶", f"\n  SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}", "\n"+"="*40)
-                        # TODO: Add actual order execution logic here
+                        self._place_order(1)
             except Exception as e:
                 print(f"❌ Error during AI prediction/Entry Logic: {e}")
         
@@ -399,6 +419,21 @@ class RealTimeBot:
             except Exception as e: 
                 print(f"Error in bar_closer_watcher: {e}")
                 await asyncio.sleep(1) # Prevent rapid error loops
+                
+    async def _exit_position(self):
+        """exit long/short position"""
+        exit_position_url = f"{BASE_URL}/Position/closeContract"
+        payload = {            
+            "accountId": self.account, # Replace with your actual account ID
+            "contractId": self.contract, # Replace with the contract ID you want to trade
+        }
+        headers = {'Authorization': f'Bearer {self.token}'}
+        try:            
+            response = requests.post(exit_position_url, headers=headers, json=payload, timeout=10)
+            response.raise_for_status()
+            data = response.json()        
+        except Exception as e:
+            print(f"❌ Could not exit position: {e}.")
 
     async def handle_trade(self, trade):
         """Aggregates ticks into bars and checks for exits on every tick."""
@@ -426,6 +461,7 @@ class RealTimeBot:
                     pnl = (exit_price - self.entry_price) if self.position_type == 'LONG' else (self.entry_price - exit_price)
                     print("="*40, f"\n🛑🛑🛑 EXIT {self.position_type} @ {exit_price:.2f} ({exit_reason}) 🛑🛑🛑", f"\n  Entry: {self.entry_price:.2f} | PnL Points: {pnl:.2f}", "\n"+"="*40)
                     # TODO: Add actual order execution logic here (e.g., flatten position)
+                    self._exit_position()
                     self.in_position, self.position_type, self.entry_price, self.stop_loss, self.profit_target = False, None, None, None, None
 
             # --- Bar Aggregation Logic ---
@@ -480,8 +516,7 @@ Example Usage (RTY Strategy from Backtest #10):
     parser.add_argument('--entry_conf', type=float, default=0.55, help='Min AI confidence to enter (default: 0.55)')
     parser.add_argument('--adx_thresh', type=int, default=25, help='Min ADX value to enter (default: 25)')
     parser.add_argument('--stop_atr', type=float, default=2.0, help='Stop loss multiplier (x ATR) (default: 2.0)')
-    parser.add_argument('--target_atr', type=float, default=3.0, help='Profit target multiplier (x ATR) (default: 3.0)')
-    parser.add_argument('--ai_reversal', type=float, default=0.65, help='AI confidence for opposite signal to exit (default: 0.65)')
+    parser.add_argument('--target_atr', type=float, default=3.0, help='Profit target multiplier (x ATR) (default: 3.0)')    
     
     args = parser.parse_args()
     
@@ -493,15 +528,16 @@ Example Usage (RTY Strategy from Backtest #10):
         # --- MODIFIED: Pass all parameters to the bot ---
         bot = RealTimeBot(
             token=jwt_token,
+            account=args.account,
             contract=args.contract,
+            size=args.size,
             timeframe_minutes=args.timeframe,
             model_path=args.model,
             scaler_path=args.scaler,
             entry_conf=args.entry_conf,
             adx_thresh=args.adx_thresh,
             stop_atr=args.stop_atr,
-            target_atr=args.target_atr,
-            ai_reversal=args.ai_reversal
+            target_atr=args.target_atr            
         )
         asyncio.run(bot.run())
     except KeyboardInterrupt: print("\n👋 Bot stopped by user.")
