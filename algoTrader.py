@@ -327,24 +327,30 @@ class RealTimeBot:
             bar_time = bar_time.replace(minute=(bar_time.minute // self.timeframe_minutes) * self.timeframe_minutes)
         return bar_time
     
-    async def _place_order(self, side):
+    async def _place_order(self, side, type = 2, limitPrice = None, stopPrice=None, trailPrice=None):
         """enter long/short position"""
         order_url = f"{BASE_URL}/Order/place"
         payload = {            
             "accountId": self.account, # Replace with your actual account ID
             "contractId": self.contract, # Replace with the contract ID you want to trade
-            "type": 2, # Market order
+            "type": type, # Market order
             "side": side, # 0 - Bid (buy), 1 = Ask (sell)
+            "limitPrice": limitPrice,
+            "stopPrice": stopPrice,
+            "trailPrice": trailPrice,
             "size": self.size # Size of the order
         }
         headers = {'Authorization': f'Bearer {self.token}'}
         try:            
             response = requests.post(order_url, headers=headers, json=payload, timeout=10)
             response.raise_for_status()
-            data = response.json()        
+            data = response.json()  
+            if data.get('success') and data.get('orderId'):
+                return data.get("orderId")
+            else: return None
         except Exception as e:
             print(f"❌ Could not place order: {e}.")
-            
+        
 
     async def _close_and_print_bar(self):
         """On bar close, appends data and checks for a NEW trade entry."""
@@ -382,6 +388,8 @@ class RealTimeBot:
                         self.profit_target = self.entry_price + (last_bar['atr'] * self.target_atr_mult)
                         print("="*40, f"\n🔥🔥🔥 ENTERING LONG @ {self.entry_price:.2f} 🔥🔥🔥", f"\n  SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}", "\n"+"="*40)
                         await self._place_order(0)
+                        await self._place_order(1, type=4, stopPrice=self.stop_loss) # SELL STOP order
+                        await self._place_order(1, type=1, limitPrice=self.profit_target) # SELL LIMIT order
 
                     elif is_short_signal:
                         self.in_position = True
@@ -391,6 +399,8 @@ class RealTimeBot:
                         self.profit_target = self.entry_price - (last_bar['atr'] * self.target_atr_mult)
                         print("="*40, f"\n🥶🥶🥶 ENTERING SHORT @ {self.entry_price:.2f} 🥶🥶🥶", f"\n  SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}", "\n"+"="*40)
                         await self._place_order(1)
+                        await self._place_order(0, type=4, stopPrice=self.stop_loss) # BUY STOP order
+                        await self._place_order(0, type=1, limitPrice=self.profit_target) # BUY LIMIT order
             except Exception as e:
                 print(f"❌ Error during AI prediction/Entry Logic: {e}")
         
@@ -462,7 +472,7 @@ class RealTimeBot:
                     pnl = (exit_price - self.entry_price) if self.position_type == 'LONG' else (self.entry_price - exit_price)
                     print("="*40, f"\n🛑🛑🛑 EXIT {self.position_type} @ {exit_price:.2f} ({exit_reason}) 🛑🛑🛑", f"\n  Entry: {self.entry_price:.2f} | PnL Points: {pnl:.2f}", "\n"+"="*40)
                     # TODO: Add actual order execution logic here (e.g., flatten position)
-                    await self._exit_position()
+                    #await self._exit_position()
                     self.in_position, self.position_type, self.entry_price, self.stop_loss, self.profit_target = False, None, None, None, None
 
             # --- Bar Aggregation Logic ---
