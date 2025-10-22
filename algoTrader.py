@@ -350,7 +350,7 @@ class RealTimeBot:
         """On bar close, appends data and checks for a NEW trade entry."""
         if not self.current_bar: return
         
-        print(f"Bar Close: {self.current_bar}")            
+        #print(f"Bar Close: {self.current_bar}")            
         self.historical_bars.append(self.current_bar.copy())
         
         # --- ENTRY LOGIC (only if not already in a position) ---
@@ -381,7 +381,7 @@ class RealTimeBot:
                         self.stop_loss = self.entry_price - (last_bar['atr'] * self.stop_atr_mult)
                         self.profit_target = self.entry_price + (last_bar['atr'] * self.target_atr_mult)
                         print("="*40, f"\n🔥🔥🔥 ENTERING LONG @ {self.entry_price:.2f} 🔥🔥🔥", f"\n  SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}", "\n"+"="*40)
-                        self._place_order(0)
+                        await self._place_order(0)
 
                     elif is_short_signal:
                         self.in_position = True
@@ -390,7 +390,7 @@ class RealTimeBot:
                         self.stop_loss = self.entry_price + (last_bar['atr'] * self.stop_atr_mult)
                         self.profit_target = self.entry_price - (last_bar['atr'] * self.target_atr_mult)
                         print("="*40, f"\n🥶🥶🥶 ENTERING SHORT @ {self.entry_price:.2f} 🥶🥶🥶", f"\n  SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}", "\n"+"="*40)
-                        self._place_order(1)
+                        await self._place_order(1)
             except Exception as e:
                 print(f"❌ Error during AI prediction/Entry Logic: {e}")
         
@@ -461,7 +461,7 @@ class RealTimeBot:
                     pnl = (exit_price - self.entry_price) if self.position_type == 'LONG' else (self.entry_price - exit_price)
                     print("="*40, f"\n🛑🛑🛑 EXIT {self.position_type} @ {exit_price:.2f} ({exit_reason}) 🛑🛑🛑", f"\n  Entry: {self.entry_price:.2f} | PnL Points: {pnl:.2f}", "\n"+"="*40)
                     # TODO: Add actual order execution logic here (e.g., flatten position)
-                    self._exit_position()
+                    await self._exit_position()
                     self.in_position, self.position_type, self.entry_price, self.stop_loss, self.profit_target = False, None, None, None, None
 
             # --- Bar Aggregation Logic ---
