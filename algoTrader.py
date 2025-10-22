@@ -43,8 +43,8 @@ import pandas_ta as ta
 
 warnings.filterwarnings('ignore')
 
-MARKET_HUB = "https://rtc.alphaticks.projectx.com/hubs/market"
-BASE_URL = "https://api.alphaticks.projectx.com/api"
+MARKET_HUB = "https://rtc.topstepx.com/hubs/market"
+BASE_URL = "https://api.topstepx.com/api"
 
 CONTRACTS = {
     "CON.F.US.ENQ.Z25" : 'NQ',
@@ -115,7 +115,7 @@ class RealTimeBot:
         self.ort_session = None
         self.scalers = None
         self.active_scaler = None
-        self.contract_symbol = parse_contract_symbol(self.contract) # <-- MODIFIED: Parse symbol
+        self.contract_symbol = parse_contract_symbol(self.contract)
         
         self.feature_cols = [
             'compression_level', 'squeeze_duration', 'bb_expanding',
@@ -485,14 +485,6 @@ Example Usage (RTY Strategy from Backtest #10):
     
     args = parser.parse_args()
     
-    # --- Check for contract vs scaler mismatch ---
-    parsed_symbol = parse_contract_symbol(args.contract)
-    # Basic check - assumes scaler filename contains the symbol like 'scalers_RTY.pkl'
-    if parsed_symbol.lower() not in os.path.basename(args.scaler).lower():
-         print(f"⚠️ Potential Mismatch: Contract is {parsed_symbol}, but scaler file is {os.path.basename(args.scaler)}.")
-         print("   Ensure you are using the correct scaler file for this contract.")
-
-
     jwt_token = authenticate(args.username, args.apikey)
     if not jwt_token: return
     
