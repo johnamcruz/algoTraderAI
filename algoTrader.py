@@ -61,13 +61,6 @@ def authenticate(username, api_key):
         return None
 
 # =========================================================
-# UTILITY FUNCTION
-# =========================================================
-def parse_contract_symbol(contract_id):
-    """Extracts the base symbol (e.g., 'ES', 'RTY') from the full contract ID."""
-    return CONTRACTS[contract_id]    
-
-# =========================================================
 # REAL-TIME TRADING BOT CLASS
 # =========================================================
 class RealTimeBot:    
@@ -105,7 +98,7 @@ class RealTimeBot:
         self.ort_session = None
         self.scalers = None
         self.active_scaler = None
-        self.contract_symbol = parse_contract_symbol(self.contract)
+        self.contract_symbol = CONTRACTS.get(self.contract, "ES")
         
         self.feature_cols = [
             'compression_level', 'squeeze_duration', 'bb_expanding',
@@ -523,8 +516,8 @@ Example Usage (RTY Strategy from Backtest #10):
     )
     # --- Existing Args ---
     parser.add_argument('--account', type=str, required=True, help='TopstepX account ID')
-    parser.add_argument('--contract', type=str, required=True, help='Full contract ID (e.g., CON.F.US.RTY.Z25)')
-    parser.add_argument('--size', type=int, required=True, help='Trade size (number of contracts)')
+    parser.add_argument('--contract', type=str, required=True, default="CON.F.US.EP.Z25", help='Full contract ID (e.g., CON.F.US.RTY.Z25)')
+    parser.add_argument('--size', type=int, required=True, default=1, help='Trade size (number of contracts)')
     parser.add_argument('--username', type=str, required=True, help='TopstepX username')
     parser.add_argument('--apikey', type=str, required=True, help='TopstepX API key')
     parser.add_argument('--timeframe', type=int, choices=[1, 3, 5], default=5, help='Bar timeframe in minutes (default: 5)')
