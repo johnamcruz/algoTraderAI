@@ -87,7 +87,7 @@ def parse_contract_symbol(contract_id):
 # =========================================================
 class RealTimeBot:    
     def __init__(self, token,account, contract, size, timeframe_minutes, model_path, scaler_path,
-                 entry_conf, adx_thresh, stop_atr, target_atr):
+                 entry_conf, adx_thresh, stop_atr, target_atr, enable_trailing_stop=False):
         self.hub_url = f"{MARKET_HUB}?access_token={token}"
         self.account = account
         self.contract = contract
@@ -95,6 +95,7 @@ class RealTimeBot:
         self.timeframe_minutes = int(timeframe_minutes)
         self.client = SignalRClient(self.hub_url)
         self.token = token
+        self.enable_trailing_stop = enable_trailing_stop
                 
         self.current_bar = {}
         self.current_bar_time = None
@@ -107,6 +108,8 @@ class RealTimeBot:
         self.entry_price = None
         self.stop_loss = None
         self.profit_target = None
+        self.stop_orderId = None
+        self.limit_orderId = None        
         
         # --- AI & Data Properties ---
         self.num_historical_candles_needed = 60
@@ -331,8 +334,8 @@ class RealTimeBot:
         """enter long/short position"""
         order_url = f"{BASE_URL}/Order/place"
         payload = {            
-            "accountId": self.account, # Replace with your actual account ID
-            "contractId": self.contract, # Replace with the contract ID you want to trade
+            "accountId": self.account, 
+            "contractId": self.contract,
             "type": type, # Market order
             "side": side, # 0 - Bid (buy), 1 = Ask (sell)
             "limitPrice": limitPrice,
@@ -388,8 +391,11 @@ class RealTimeBot:
                         self.profit_target = self.entry_price + (last_bar['atr'] * self.target_atr_mult)
                         print("="*40, f"\n🔥🔥🔥 ENTERING LONG @ {self.entry_price:.2f} 🔥🔥🔥", f"\n  SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}", "\n"+"="*40)
                         await self._place_order(0)
-                        await self._place_order(1, type=4, stopPrice=self.stop_loss) # SELL STOP order
-                        await self._place_order(1, type=1, limitPrice=self.profit_target) # SELL LIMIT order
+                        self.limit_orderId = await self._place_order(1, type=1, limitPrice=self.profit_target) # SELL LIMIT order
+                        if self.enable_trailing_stop:
+                            self.stop_orderId = await self._place_order(1, type=5, trailPrice=self.stop_loss) # SELL TRAIL STOP order
+                        else:
+                            self.stop_orderId = await self._place_order(1, type=4, stopPrice=self.stop_loss) # SELL STOP order                        
 
                     elif is_short_signal:
                         self.in_position = True
@@ -399,8 +405,11 @@ class RealTimeBot:
                         self.profit_target = self.entry_price - (last_bar['atr'] * self.target_atr_mult)
                         print("="*40, f"\n🥶🥶🥶 ENTERING SHORT @ {self.entry_price:.2f} 🥶🥶🥶", f"\n  SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}", "\n"+"="*40)
                         await self._place_order(1)
-                        await self._place_order(0, type=4, stopPrice=self.stop_loss) # BUY STOP order
-                        await self._place_order(0, type=1, limitPrice=self.profit_target) # BUY LIMIT order
+                        self.limit_orderId = await self._place_order(0, type=1, limitPrice=self.profit_target) # BUY LIMIT order
+                        if self.enable_trailing_stop:
+                            self.stop_orderId = await self._place_order(0, type=5, trailPrice=self.stop_loss) # BUY TRAIL STOP order
+                        else:
+                            self.stop_orderId = await self._place_order(0, type=4, stopPrice=self.stop_loss) # BUY STOP order
             except Exception as e:
                 print(f"❌ Error during AI prediction/Entry Logic: {e}")
         
@@ -434,8 +443,8 @@ class RealTimeBot:
         """exit long/short position"""
         exit_position_url = f"{BASE_URL}/Position/closeContract"
         payload = {            
-            "accountId": self.account, # Replace with your actual account ID
-            "contractId": self.contract, # Replace with the contract ID you want to trade
+            "accountId": self.account, 
+            "contractId": self.contract, 
         }
         headers = {'Authorization': f'Bearer {self.token}'}
         try:            
@@ -444,6 +453,22 @@ class RealTimeBot:
             data = response.json()        
         except Exception as e:
             print(f"❌ Could not exit position: {e}.")
+            self.in_position = False
+
+    async def _cancel_order(self, orderId):
+        """exit long/short position"""
+        cancel_order_url = f"{BASE_URL}/Order/cancel"
+        payload = {            
+            "accountId": self.account,
+            "orderId": orderId, 
+        }
+        headers = {'Authorization': f'Bearer {self.token}'}
+        try:            
+            response = requests.post(cancel_order_url, headers=headers, json=payload, timeout=10)
+            response.raise_for_status()
+            data = response.json()        
+        except Exception as e:
+            print(f"❌ Could not cancel order: {e}.")
             self.in_position = False
 
     async def handle_trade(self, trade):
@@ -473,6 +498,10 @@ class RealTimeBot:
                     print("="*40, f"\n🛑🛑🛑 EXIT {self.position_type} @ {exit_price:.2f} ({exit_reason}) 🛑🛑🛑", f"\n  Entry: {self.entry_price:.2f} | PnL Points: {pnl:.2f}", "\n"+"="*40)
                     # TODO: Add actual order execution logic here (e.g., flatten position)
                     #await self._exit_position()
+                    if exit_reason == 'STOP_LOSS' and self.stop_orderId:
+                        self._cancel_order(self.stop_orderId)
+                    elif exit_reason == 'PROFIT_TARGET' and self.limit_orderId:
+                        self._cancel_order(self.limit_orderId)
                     self.in_position, self.position_type, self.entry_price, self.stop_loss, self.profit_target = False, None, None, None, None
 
             # --- Bar Aggregation Logic ---
@@ -521,6 +550,7 @@ Example Usage (RTY Strategy from Backtest #10):
     parser.add_argument('--username', type=str, required=True, help='TopstepX username')
     parser.add_argument('--apikey', type=str, required=True, help='TopstepX API key')
     parser.add_argument('--timeframe', type=int, choices=[1, 3, 5], default=5, help='Bar timeframe in minutes (default: 5)')
+    parser.add_argument('--enable_trailing_stop', type=bool, default=False, help='Enable trailing stop vs stop order')
         
     parser.add_argument('--model', type=str, default="models/model1.onnx", help='Path to the ONNX model file (.onnx)')
     parser.add_argument('--scaler', type=str, default="models/strategy1.pkl", help='Path to the pickled scaler file (.pkl)')
