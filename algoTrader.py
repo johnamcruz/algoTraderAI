@@ -434,6 +434,7 @@ class RealTimeBot:
             data = response.json()        
         except Exception as e:
             print(f"❌ Could not exit position: {e}.")
+            self.in_position = False
 
     async def handle_trade(self, trade):
         """Aggregates ticks into bars and checks for exits on every tick."""
