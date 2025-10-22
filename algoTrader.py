@@ -91,7 +91,7 @@ class RealTimeBot:
         self.hub_url = f"{MARKET_HUB}?access_token={token}"
         self.account = account
         self.contract = contract
-        self.size = size,
+        self.size = size
         self.timeframe_minutes = int(timeframe_minutes)
         self.client = SignalRClient(self.hub_url)
         self.token = token
