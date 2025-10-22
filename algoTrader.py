@@ -7,20 +7,6 @@ flexibility to run different strategies (ES, NQ, YM, RTY) without code changes.
 
 Requirements:
     pip install onnxruntime pandas pandas-ta signalrcore requests numpy scikit-learn python-dateutil
-
-Example Usage (RTY Strategy):
-    python algotrader_ai.py --account YOUR_ACC --contract CON.F.US.RTY.Z25 --size 1 \
-                            --username YOUR_USER --apikey YOUR_KEY --timeframe 5 \
-                            --model "path/to/SUPERTRADER_strategy_3_runX.onnx" \
-                            --scaler "path/to/SUPERTRADER_scalers_strategy_3_runX.pkl" \
-                            --entry_conf 0.55 --adx_thresh 25 --stop_atr 2.0 --target_atr 3.0
-
-Example Usage (ES Strategy - Hypothetical Params):
-    python algotrader_ai.py --account YOUR_ACC --contract CON.F.US.ES.Z25 --size 1 \
-                            --username YOUR_USER --apikey YOUR_KEY --timeframe 5 \
-                            --model "path/to/SUPERTRADER_strategy_1_runX.onnx" \
-                            --scaler "path/to/SUPERTRADER_scalers_strategy_1_runX.pkl" \
-                            --entry_conf 0.60 --adx_thresh 20 --stop_atr 2.5 --target_atr 2.0
 """
 
 import numpy as np
@@ -34,7 +20,6 @@ from collections import deque
 import warnings
 import os
 import pickle
-import re # <-- Added for parsing contract symbol
 
 # --- AI & Data Imports ---
 import onnxruntime
@@ -370,8 +355,7 @@ class RealTimeBot:
                 # Check if prediction was successful
                 if down_prob is not None and last_bar is not None:
                     print(f"🧠 AI PREDICTION [ {last_bar['timestamp']} ]  UP: {up_prob:.2f} | DOWN: {down_prob:.2f}")
-                    
-                    # --- MODIFIED: Use instance attributes for parameters ---
+                                        
                     is_long_signal = (up_prob > self.entry_conf and 
                                       last_bar['adx'] > self.adx_thresh and 
                                       last_bar['squeeze_on'] == 1 and 
@@ -479,11 +463,9 @@ class RealTimeBot:
             volume = trade.get("volume", 0)
 
             if price is None: return
-
-            # --- MODIFIED: Tick-based EXIT LOGIC (using instance attributes) ---
+            
             if self.in_position:
-                exit_price, exit_reason = None, None
-                # --- ADDED: Check if stop_loss/profit_target are set ---
+                exit_price, exit_reason = None, None                
                 if self.stop_loss is None or self.profit_target is None:
                      print("⚠️ Exit check skipped: stop_loss or profit_target not set.")
                 elif self.position_type == 'LONG':
@@ -495,9 +477,7 @@ class RealTimeBot:
                 
                 if exit_reason:
                     pnl = (exit_price - self.entry_price) if self.position_type == 'LONG' else (self.entry_price - exit_price)
-                    print("="*40, f"\n🛑🛑🛑 EXIT {self.position_type} @ {exit_price:.2f} ({exit_reason}) 🛑🛑🛑", f"\n  Entry: {self.entry_price:.2f} | PnL Points: {pnl:.2f}", "\n"+"="*40)
-                    # TODO: Add actual order execution logic here (e.g., flatten position)
-                    #await self._exit_position()
+                    print("="*40, f"\n🛑🛑🛑 EXIT {self.position_type} @ {exit_price:.2f} ({exit_reason}) 🛑🛑🛑", f"\n  Entry: {self.entry_price:.2f} | PnL Points: {pnl:.2f}", "\n"+"="*40)                    
                     if exit_reason == 'STOP_LOSS' and self.stop_orderId:
                         self._cancel_order(self.stop_orderId)
                     elif exit_reason == 'PROFIT_TARGET' and self.limit_orderId:
@@ -512,15 +492,13 @@ class RealTimeBot:
                         # print(f"[Tick] Closing bar for {self.current_bar_time}") # Can be noisy
                         await self._close_and_print_bar()
                     self.current_bar_time = bar_time
-                    self.current_bar = {"timestamp": bar_time.isoformat(), "open": price, "high": price, "low": price, "close": price, "volume": volume}
-                # --- MODIFIED: Ensure current_bar exists before updating ---
+                    self.current_bar = {"timestamp": bar_time.isoformat(), "open": price, "high": price, "low": price, "close": price, "volume": volume}                
                 elif self.current_bar: 
                     self.current_bar["high"] = max(self.current_bar.get("high", price), price)
                     self.current_bar["low"] = min(self.current_bar.get("low", price), price)
                     self.current_bar["close"] = price
                     self.current_bar["volume"] = self.current_bar.get("volume", 0) + volume
-                else: 
-                     # If bar was closed by timer just before this tick arrived
+                else:                      
                      self.current_bar_time = bar_time
                      self.current_bar = {"timestamp": bar_time.isoformat(), "open": price, "high": price, "low": price, "close": price, "volume": volume}
 
@@ -578,7 +556,8 @@ Example Usage (RTY Strategy from Backtest #10):
             entry_conf=args.entry_conf,
             adx_thresh=args.adx_thresh,
             stop_atr=args.stop_atr,
-            target_atr=args.target_atr            
+            target_atr=args.target_atr,
+            enable_trailing_stop=args.enable_trailing_stop
         )
         asyncio.run(bot.run())
     except KeyboardInterrupt: print("\n👋 Bot stopped by user.")
