@@ -110,7 +110,7 @@ class RealTimeBot:
         
         # --- AI & Data Properties ---
         self.num_historical_candles_needed = 60
-        self.historical_bars = deque(maxlen=100)
+        self.historical_bars = deque(maxlen=60)
         self.model_path = model_path
         self.scaler_path = scaler_path
         
