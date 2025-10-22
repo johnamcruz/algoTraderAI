@@ -25,7 +25,6 @@ Example Usage (ES Strategy - Hypothetical Params):
 
 import numpy as np
 import asyncio
-import json
 import argparse
 import requests
 from pysignalr.client import SignalRClient
@@ -46,6 +45,13 @@ warnings.filterwarnings('ignore')
 
 MARKET_HUB = "https://rtc.alphaticks.projectx.com/hubs/market"
 BASE_URL = "https://api.alphaticks.projectx.com/api"
+
+CONTRACTS = {
+    "CON.F.US.ENQ.Z25" : 'NQ',
+    "CON.F.US.EP.Z25" : 'ES',
+    "CON.F.US.YM.Z25" : 'YM',
+    "CON.F.US.RTY.Z25" : 'RTY'
+}
 
 # =========================================================
 # AUTHENTICATION
@@ -74,11 +80,7 @@ def authenticate(username, api_key):
 # =========================================================
 def parse_contract_symbol(contract_id):
     """Extracts the base symbol (e.g., 'ES', 'RTY') from the full contract ID."""
-    match = re.search(r'\.([A-Z]{2,3})\.', contract_id)
-    if match:
-        return match.group(1)
-    print(f"⚠️ Could not parse symbol from contract ID: {contract_id}. Defaulting to ES.")
-    return 'ES' # Default fallback
+    return CONTRACTS[contract_id]    
 
 # =========================================================
 # REAL-TIME TRADING BOT CLASS
@@ -120,8 +122,7 @@ class RealTimeBot:
             'atr_expanding', 'price_in_range', 'rsi',
             'compressed_momentum', 'vol_surge', 'body_strength',
         ]
-        
-        # --- MODIFIED: Store trade parameters from arguments ---
+                
         self.entry_conf = entry_conf
         self.adx_thresh = adx_thresh
         self.stop_atr_mult = stop_atr
@@ -212,8 +213,7 @@ class RealTimeBot:
         df.fillna(method='ffill', inplace=True)
         df.fillna(0, inplace=True)
         return df
-
-    # --- get_ai_prediction remains the same ---
+    
     def get_ai_prediction(self):
         """Runs the ONNX model to get a prediction."""
         if len(self.historical_bars) < self.num_historical_candles_needed:
@@ -243,8 +243,7 @@ class RealTimeBot:
         logits = ort_outs[0][0]
         probs = np.exp(logits) / np.sum(np.exp(logits))
         return probs[0], probs[1], last_bar_data
-
-    # --- fetch_historical_data remains largely the same ---
+    
     async def fetch_historical_data(self):
         """Fetches recent bars to prime the historical data deque."""
         historical_url = f"{BASE_URL}/History/retrieveBars"        
@@ -275,16 +274,14 @@ class RealTimeBot:
                  print(f"⚠️ Warning: Fetched fewer bars ({bars_fetched}) than needed ({self.num_historical_candles_needed}) for full AI warmup.")
         except Exception as e:
             print(f"❌ Could not fetch historical data: {e}.")
-
-    # --- run remains the same ---
+    
     async def run(self):
         """Starts the bot."""
         await self.fetch_historical_data()
         print("🚀 Starting bot connection...")                
         self.closer_task = asyncio.create_task(self.bar_closer_watcher())        
         await self.client.run()
-
-    # --- on_open remains the same ---
+    
     async def on_open(self):
         print("✅ Connected to market hub")
         try: # Added error handling
@@ -293,17 +290,14 @@ class RealTimeBot:
         except Exception as e:
             print(f"❌ Subscription error: {e}")
 
-
-    # --- on_close remains the same ---
+    
     async def on_close(self):
         print('🔌 Disconnected from the server')
         if self.closer_task: self.closer_task.cancel()
-
-    # --- on_error remains the same ---
+    
     async def on_error(self, message):
         print(f"❌ SignalR Error: {message}")
-
-    # --- process_tick remains the same ---
+    
     async def process_tick(self, data):
         """Processes incoming tick data."""
         try:
@@ -382,8 +376,7 @@ class RealTimeBot:
         
         # Reset bar state
         self.current_bar, self.current_bar_time = {}, None
-
-    # --- bar_closer_watcher remains the same ---
+    
     async def bar_closer_watcher(self):
         """Background task to watch the clock and force-close bars."""
         print("⏳ Bar closer watcher started...")
@@ -481,8 +474,7 @@ Example Usage (RTY Strategy from Backtest #10):
     parser.add_argument('--username', type=str, required=True, help='TopstepX username')
     parser.add_argument('--apikey', type=str, required=True, help='TopstepX API key')
     parser.add_argument('--timeframe', type=int, choices=[1, 3, 5], default=5, help='Bar timeframe in minutes (default: 5)')
-    
-    # --- MODIFIED: Added Arguments for Trading Parameters ---
+        
     parser.add_argument('--model', type=str, default="models/model1.onnx", help='Path to the ONNX model file (.onnx)')
     parser.add_argument('--scaler', type=str, default="models/strategy1.pkl", help='Path to the pickled scaler file (.pkl)')
     parser.add_argument('--entry_conf', type=float, default=0.55, help='Min AI confidence to enter (default: 0.55)')
