@@ -63,19 +63,34 @@ class PivotReversalStrategy(BaseStrategy):
         # === CORE INDICATORS ===
         df['atr'] = ta.atr(df['high'], df['low'], df['close'], length=14)
         df['atr'].replace(0, 1e-6, inplace=True)
+        df['atr'].fillna(method='ffill', inplace=True)
+        df['atr'].fillna(1e-6, inplace=True)
+        
         df['ema9'] = ta.ema(df['close'], length=9)
         df['ema21'] = ta.ema(df['close'], length=21)
         df['ema50'] = ta.ema(df['close'], length=50)
+        df['ema9'].fillna(method='ffill', inplace=True)
+        df['ema21'].fillna(method='ffill', inplace=True)
+        df['ema50'].fillna(method='ffill', inplace=True)
         
         adx_df = ta.adx(df['high'], df['low'], df['close'], length=14)
-        df['adx'] = adx_df['ADX_14']
+        df['adx'] = adx_df['ADX_14'] if adx_df is not None and 'ADX_14' in adx_df.columns else 0
+        df['adx'].fillna(method='ffill', inplace=True)
+        df['adx'].fillna(0, inplace=True)
+        
         df['rsi'] = ta.rsi(df['close'], length=14)
+        df['rsi'].fillna(method='ffill', inplace=True)
+        df['rsi'].fillna(50, inplace=True)
         
         stoch_df = ta.stoch(df['high'], df['low'], df['close'], k=14, d=3, smooth_k=3)
-        df['stoch_k'] = stoch_df['STOCHk_14_3_3']
+        df['stoch_k'] = stoch_df['STOCHk_14_3_3'] if stoch_df is not None and 'STOCHk_14_3_3' in stoch_df.columns else 50
+        df['stoch_k'].fillna(method='ffill', inplace=True)
+        df['stoch_k'].fillna(50, inplace=True)
         
         macd_df = ta.macd(df['close'], fast=12, slow=26, signal=9)
-        df['macd_hist'] = macd_df['MACDh_12_26_9']
+        df['macd_hist'] = macd_df['MACDh_12_26_9'] if macd_df is not None and 'MACDh_12_26_9' in macd_df.columns else 0
+        df['macd_hist'].fillna(method='ffill', inplace=True)
+        df['macd_hist'].fillna(0, inplace=True)
 
         # === PIVOT IDENTIFICATION (V1 EXACT LOGIC) ===
         df['pivot_high_val'] = self._find_pivots(df['high'], n)
@@ -83,6 +98,10 @@ class PivotReversalStrategy(BaseStrategy):
         df['pivot_high_val'].fillna(method='ffill', inplace=True)
         df['pivot_low_val'].fillna(method='ffill', inplace=True)
         df['pivot_low_val'] *= -1  # Multiply back
+        
+        # Fill any remaining NaNs with current price
+        df['pivot_high_val'].fillna(df['high'], inplace=True)
+        df['pivot_low_val'].fillna(df['low'], inplace=True)
         
         # Bars since pivot
         df['bars_since_ph'] = df.groupby(
