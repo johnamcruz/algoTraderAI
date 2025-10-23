@@ -38,6 +38,13 @@ CONTRACTS = {
     "CON.F.US.RTY.Z25" : 'RTY'
 }
 
+TICK_INFO = {
+    'ES': {'tick_size': 0.25}, 
+    'NQ': {'tick_size': 0.25}, 
+    'YM': {'tick_size': 1.0}, 
+    'RTY': {'tick_size': 0.1}
+}
+
 # =========================================================
 # AUTHENTICATION
 # =========================================================
@@ -308,7 +315,7 @@ class RealTimeBot:
             bar_time = bar_time.replace(minute=(bar_time.minute // self.timeframe_minutes) * self.timeframe_minutes)
         return bar_time
     
-    async def _place_order(self, side, type = 2, limitPrice = None, stopPrice=None, trailPrice=None):
+    async def _place_order(self, side, type = 2, stop_ticks=10, take_profit_ticks=20):
         """enter long/short position"""
         order_url = f"{BASE_URL}/Order/place"
         payload = {            
@@ -316,10 +323,15 @@ class RealTimeBot:
             "contractId": self.contract,
             "type": type, # Market order
             "side": side, # 0 - Bid (buy), 1 = Ask (sell)
-            "limitPrice": limitPrice,
-            "stopPrice": stopPrice,
-            "trailPrice": trailPrice,
-            "size": self.size # Size of the order
+            "size": self.size, # Size of the order
+            "stopLossBracket": {
+                "ticks": stop_ticks,
+                "type": 5 if self.enable_trailing_stop else 4 
+            },
+            "takeProfitBracket": {
+                "ticks": take_profit_ticks,
+                "type": 1
+            }
         }
         headers = {'Authorization': f'Bearer {self.token}'}
         try:            
@@ -366,14 +378,12 @@ class RealTimeBot:
                         self.entry_price = last_bar['close']
                         self.stop_loss = self.entry_price - (last_bar['atr'] * self.stop_atr_mult)
                         self.profit_target = self.entry_price + (last_bar['atr'] * self.target_atr_mult)
-                        print("="*40, f"\n🔥🔥🔥 ENTERING LONG @ {self.entry_price:.2f} 🔥🔥🔥", f"\n  SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}", "\n"+"="*40)
-                        await self._place_order(0)
-                        self.limit_orderId = await self._place_order(1, type=1, limitPrice=self.profit_target) # SELL LIMIT order
-                        if self.enable_trailing_stop:
-                            self.stop_orderId = await self._place_order(1, type=5, trailPrice=self.stop_loss) # SELL TRAIL STOP order
-                        else:
-                            self.stop_orderId = await self._place_order(1, type=4, stopPrice=self.stop_loss) # SELL STOP order                        
+                        print("="*40, f"\n🔥🔥🔥 ENTERING LONG @ {self.entry_price:.2f} 🔥🔥🔥", f"\n  SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}", "\n"+"="*40)                        
 
+                        stop_loss_ticks = (self.entry_price - self.stop_loss) / TICK_INFO[self.contract_symbol]['tick_size']
+                        take_profit_ticks = (self.profit_target - self.entry_price) / TICK_INFO[self.contract_symbol]['tick_size']
+                        await self._place_order(0, stop_ticks=stop_loss_ticks, take_profit_ticks=take_profit_ticks)
+                        
                     elif is_short_signal:
                         self.in_position = True
                         self.position_type = 'SHORT'
@@ -381,12 +391,11 @@ class RealTimeBot:
                         self.stop_loss = self.entry_price + (last_bar['atr'] * self.stop_atr_mult)
                         self.profit_target = self.entry_price - (last_bar['atr'] * self.target_atr_mult)
                         print("="*40, f"\n🥶🥶🥶 ENTERING SHORT @ {self.entry_price:.2f} 🥶🥶🥶", f"\n  SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}", "\n"+"="*40)
-                        await self._place_order(1)
-                        self.limit_orderId = await self._place_order(0, type=1, limitPrice=self.profit_target) # BUY LIMIT order
-                        if self.enable_trailing_stop:
-                            self.stop_orderId = await self._place_order(0, type=5, trailPrice=self.stop_loss) # BUY TRAIL STOP order
-                        else:
-                            self.stop_orderId = await self._place_order(0, type=4, stopPrice=self.stop_loss) # BUY STOP order
+
+                        stop_loss_ticks = (self.stop_loss - self.entry_price) / TICK_INFO[self.contract_symbol]['tick_size']
+                        take_profit_ticks = (self.entry_price - self.profit_target) / TICK_INFO[self.contract_symbol]['tick_size']
+                        await self._place_order(1, stop_ticks=stop_loss_ticks, take_profit_ticks=take_profit_ticks)
+                                              
             except Exception as e:
                 print(f"❌ Error during AI prediction/Entry Logic: {e}")
         
@@ -471,10 +480,6 @@ class RealTimeBot:
                 if exit_reason:
                     pnl = (exit_price - self.entry_price) if self.position_type == 'LONG' else (self.entry_price - exit_price)
                     print("="*40, f"\n🛑🛑🛑 EXIT {self.position_type} @ {exit_price:.2f} ({exit_reason}) 🛑🛑🛑", f"\n  Entry: {self.entry_price:.2f} | PnL Points: {pnl:.2f}", "\n"+"="*40)                    
-                    if exit_reason == 'STOP_LOSS' and self.stop_orderId:
-                        self._cancel_order(self.stop_orderId)
-                    elif exit_reason == 'PROFIT_TARGET' and self.limit_orderId:
-                        self._cancel_order(self.limit_orderId)
                     self.in_position, self.position_type, self.entry_price, self.stop_loss, self.profit_target = False, None, None, None, None
 
             # --- Bar Aggregation Logic ---
