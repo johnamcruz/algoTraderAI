@@ -53,10 +53,12 @@ class PivotReversalStrategy(BaseStrategy):
         return 40
     
     def add_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Calculate Pivot Reversal features."""
+        """Calculate Pivot Reversal features - EXACT V1 IMPLEMENTATION."""
         # Ensure numeric types
         for col in ['open', 'high', 'low', 'close', 'volume']:
             df[col] = df[col].astype(float)
+
+        n = self.pivot_lookback
 
         # === CORE INDICATORS ===
         df['atr'] = ta.atr(df['high'], df['low'], df['close'], length=14)
@@ -75,11 +77,12 @@ class PivotReversalStrategy(BaseStrategy):
         macd_df = ta.macd(df['close'], fast=12, slow=26, signal=9)
         df['macd_hist'] = macd_df['MACDh_12_26_9']
 
-        # === PIVOT IDENTIFICATION ===
-        df['pivot_high_val'] = self._find_pivots(df['high'], self.pivot_lookback)
-        df['pivot_low_val'] = self._find_pivots(df['low'], self.pivot_lookback)
+        # === PIVOT IDENTIFICATION (V1 EXACT LOGIC) ===
+        df['pivot_high_val'] = self._find_pivots(df['high'], n)
+        df['pivot_low_val'] = self._find_pivots(df['low'], n) * -1  # Multiply by -1
         df['pivot_high_val'].fillna(method='ffill', inplace=True)
         df['pivot_low_val'].fillna(method='ffill', inplace=True)
+        df['pivot_low_val'] *= -1  # Multiply back
         
         # Bars since pivot
         df['bars_since_ph'] = df.groupby(
@@ -95,17 +98,17 @@ class PivotReversalStrategy(BaseStrategy):
         df['dist_to_ph'] = (df['pivot_high_val'] - df['close']) / df['atr']
         df['dist_to_pl'] = (df['close'] - df['pivot_low_val']) / df['atr']
 
-        # === PIVOT BREAK SIGNALS ===
-        df['broke_ph'] = (
+        # === PIVOT BREAK / REVERSAL SIGNALS (V1 EXACT LOGIC) ===
+        broke_ph_cond = (
             (df['close'] > df['pivot_high_val'].shift(1)) & 
             (df['close'] - df['pivot_high_val'].shift(1) > 0.25 * df['atr'])
-        ).astype(float)
-        df['broke_pl'] = (
+        )
+        broke_pl_cond = (
             (df['close'] < df['pivot_low_val'].shift(1)) & 
             (df['pivot_low_val'].shift(1) - df['close'] > 0.25 * df['atr'])
-        ).astype(float)
+        )
 
-        # === CANDLE CHARACTERISTICS ===
+        # === CANDLE CHARACTERISTICS (V1 EXACT LOGIC) ===
         df['body_size'] = abs(df['close'] - df['open'])
         df['upper_wick'] = df['high'] - df[['close', 'open']].max(axis=1)
         df['lower_wick'] = df[['close', 'open']].min(axis=1) - df['low']
@@ -115,36 +118,41 @@ class PivotReversalStrategy(BaseStrategy):
         df['lower_wick_ratio'] = df['lower_wick'] / df['total_range']
         df['body_ratio'] = df['body_size'] / df['total_range']
         
-        # Rejection candles
-        is_bullish_rejection = (
+        # Rejection candles (V1 EXACT LOGIC)
+        is_bullish_rejection_candle = (
             (df['lower_wick_ratio'] > 0.5) & (df['body_ratio'] < 0.3)
         )
-        is_bearish_rejection = (
+        is_bearish_rejection_candle = (
             (df['upper_wick_ratio'] > 0.5) & (df['body_ratio'] < 0.3)
         )
-        df['bullish_rejection_candle'] = is_bullish_rejection.astype(float)
-        df['bearish_rejection_candle'] = is_bearish_rejection.astype(float)
         
-        # Rejection at pivots
+        # Rejection at pivots (V1 EXACT LOGIC)
         near_ph = abs(df['high'] - df['pivot_high_val']) < 0.25 * df['atr']
         near_pl = abs(df['low'] - df['pivot_low_val']) < 0.25 * df['atr']
-        df['reject_at_ph'] = (is_bearish_rejection & near_ph).astype(float)
-        df['reject_at_pl'] = (is_bullish_rejection & near_pl).astype(float)
+        reject_at_ph_cond = is_bearish_rejection_candle & near_ph
+        reject_at_pl_cond = is_bullish_rejection_candle & near_pl
 
-        # === CONTEXT FEATURES ===
+        # === CONTEXT FEATURES (V1 EXACT LOGIC) ===
         df['price_vs_ema50'] = (df['close'] - df['ema50']) / df['atr']
-        df['is_uptrend'] = (
-            (df['close'] > df['ema50']) & (df['ema9'] > df['ema21'])
-        ).astype(float)
-        df['is_downtrend'] = (
-            (df['close'] < df['ema50']) & (df['ema9'] < df['ema21'])
-        ).astype(float)
-        df['is_trending'] = (df['adx'] > 20).astype(float)
+        is_uptrend_cond = (df['close'] > df['ema50']) & (df['ema9'] > df['ema21'])
+        is_downtrend_cond = (df['close'] < df['ema50']) & (df['ema9'] < df['ema21'])
+        is_trending_cond = (df['adx'] > 20)
         df['rsi_slope'] = df['rsi'].diff(3)
         df['stoch_k_slope'] = df['stoch_k'].diff(3)
         df['macd_hist_slope'] = df['macd_hist'].diff(3)
 
-        # Clean up
+        # Convert boolean conditions to float for model (V1 EXACT)
+        df['broke_ph'] = broke_ph_cond.astype(float)
+        df['broke_pl'] = broke_pl_cond.astype(float)
+        df['reject_at_ph'] = reject_at_ph_cond.astype(float)
+        df['reject_at_pl'] = reject_at_pl_cond.astype(float)
+        df['bullish_rejection_candle'] = is_bullish_rejection_candle.astype(float)
+        df['bearish_rejection_candle'] = is_bearish_rejection_candle.astype(float)
+        df['is_uptrend'] = is_uptrend_cond.astype(float)
+        df['is_downtrend'] = is_downtrend_cond.astype(float)
+        df['is_trending'] = is_trending_cond.astype(float)
+
+        # Clean up (V1 EXACT)
         df.replace([np.inf, -np.inf], np.nan, inplace=True)
         df.fillna(method='ffill', inplace=True)
         df.fillna(method='bfill', inplace=True)
@@ -153,7 +161,7 @@ class PivotReversalStrategy(BaseStrategy):
         return df
     
     def _find_pivots(self, series: pd.Series, n: int) -> pd.Series:
-        """Find pivot points (highs or lows)."""
+        """Find pivot points (highs or lows) - EXACT LOGIC FROM V1."""
         pivots = pd.Series(np.nan, index=series.index)
         for i in range(n, len(series) - n):
             is_pivot = True
