@@ -387,7 +387,7 @@ class RealTimeBot:
                 "type": 1
             }
         }
-        print(payload)
+        #print(payload)
         headers = {'Authorization': f'Bearer {self.token}'}
         try:
             response = requests.post(order_url, headers=headers, json=payload, timeout=10)
