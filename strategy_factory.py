@@ -6,7 +6,7 @@ Creates strategy instances based on strategy name.
 """
 
 from strategy_base import BaseStrategy
-from strategy_squeeze_v3 import SqueezeV3Strategy
+from strategy_squeeze import SqueezeV3Strategy
 from strategy_pivot_reversal import PivotReversalStrategy
 
 
