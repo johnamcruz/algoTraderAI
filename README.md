@@ -536,7 +536,7 @@ A: Future support for other platforms coming soon.
 
 ## License & Warranty
 
-This software is provided "as is" without warranty of any kind. The authos is not responsible for any financial losses.
+This software is provided "as is" without warranty of any kind. The author is not responsible for any financial losses.
 
 Trading futures involves substantial risk. Only use risk capital.
 
