@@ -2,18 +2,16 @@
 
 ## Overview
 
-This Python script implements a **real-time algorithmic trading bot** designed for futures markets (specifically tested on ES, NQ, YM, RTY via TopstepX platform). It leverages a machine learning model (LSTM with Attention) trained to predict profitable trend-following breakouts from periods of low volatility (TTM Squeeze).
+This Python script implements a **real-time algorithmic trading bot** for futures markets (ES, NQ, YM, RTY via TopstepX platform) with a **pluggable strategy architecture**. You can easily switch between different AI trading strategies or create your own custom strategies without modifying the core bot code.
 
-### Core Strategy Components
+### Key Features
 
-The bot operates through the following workflow:
-
-1. **Real-time Data**: Connects to the TopstepX SignalR feed for live trade ticks
-2. **Bar Aggregation**: Aggregates incoming ticks into time-based bars (e.g., 5-minute)
-3. **Feature Calculation**: Calculates technical indicators and specific features related to the TTM Squeeze and potential breakouts using `pandas-ta`
-4. **AI Prediction**: Feeds the latest sequence of features (scaled) into a pre-trained ONNX model to predict the probability of a profitable upward or downward breakout
-5. **Signal Generation**: Combines the AI prediction with filter conditions (ADX, Volume Surge, Squeeze ON) to generate entry signals on bar close
-6. **Trade Management**: Enters trades based on signals and manages exits using tick-based ATR stop-loss and profit targets derived from the AI model's training objective
+- 🔌 **Pluggable AI Strategies** - Switch strategies via command-line argument
+- 🤖 **Multiple Strategies Included** - Squeeze V3, Pivot Reversal, and more
+- 📊 **Real-time Data Processing** - Live tick aggregation and bar generation
+- 🎯 **AI-Powered Predictions** - LSTM models for entry signals
+- 💰 **Risk Management** - ATR-based stops and profit targets
+- 🛠️ **Easy to Extend** - Create custom strategies using provided template
 
 ---
 
@@ -23,368 +21,527 @@ The bot operates through the following workflow:
 
 - Use this code **at your own risk**
 - Past performance is **not indicative of future results**
-- Ensure you understand the code and risks before deploying with real capital
 - **Paper trading is highly recommended** before going live
+- Only use risk capital for trading
 
 ---
 
-## Strategy Logic
+## Architecture
 
-The bot aims to capture explosive trend moves that often follow periods of market consolidation, identified by the **TTM Squeeze indicator**.
+The bot separates **trading infrastructure** from **strategy logic**:
 
-### Entry Signal (on Bar Close)
+```
+Trading Bot (Core)
+├── Connection Management
+├── Tick Aggregation
+├── Order Execution
+└── Position Management
 
-All of the following conditions must be met:
+Strategy (Pluggable)
+├── Feature Calculation
+├── AI Model Inference
+└── Entry Signal Logic
+```
 
-- ✅ **TTM Squeeze** must be active (`squeeze_on == 1`)
-- ✅ **Trend strength** must be sufficient (`ADX > adx_thresh`)
-- ✅ **Volume** must confirm potential breakout (`vol_surge == 1`)
-- ✅ **AI model confidence** for the predicted direction (UP or DOWN) must exceed the `entry_conf` threshold
-
-### Exit Logic (Checked on Every Tick)
-
-The bot exits positions when:
-
-- **Stop Loss**: Price touches the initial stop-loss level, calculated as:
-  ```
-  entry_price ± (entry_atr × stop_atr_mult)
-  ```
-
-- **Profit Target**: Price touches the profit target level, calculated as:
-  ```
-  entry_price ± (entry_atr × target_atr_mult)
-  ```
-
-**Note**: The `target_atr_mult` should match the R/R target the loaded AI model was trained on.
-
-> *AI Reversal exit logic from the backtester is not implemented in this version but could be added.*
+This means you can:
+- ✅ Use different AI strategies without changing bot code
+- ✅ Create custom strategies easily
+- ✅ Test strategies independently
+- ✅ Switch strategies via command-line
 
 ---
 
-## AI Model Details
+## Installation
 
-The bot uses a pre-trained neural network saved in the **ONNX format**. The model architecture is an LSTM with an Attention mechanism.
+### 1. Requirements
 
-### Input Specification
+- **Python 3.10+** (managed via `pyenv` recommended)
+- Virtual environment recommended
 
-- **Sequence Length**: Last 60 time steps (bars)
-- **Features per Bar**: 9 engineered features
+### 2. Clone/Download
 
-### Features Used
-
-| Feature | Description |
-|---------|-------------|
-| `compression_level` | Tightness of Bollinger Bands vs Keltner Channels |
-| `squeeze_duration` | Number of bars the squeeze has been active |
-| `bb_expanding` | Is Bollinger Band width increasing? |
-| `atr_expanding` | Is ATR increasing? |
-| `price_in_range` | Price position within Bollinger Bands (0-1) |
-| `rsi` | Standard RSI(14) |
-| `compressed_momentum` | ROC(10) only during a squeeze |
-| `vol_surge` | Volume significantly above its moving average? |
-| `body_strength` | Candle body size relative to ATR |
-
-### Architecture
+Download these files to your project directory:
 
 ```
-Input: [Batch, 60 timesteps, 9 features]
-    ↓
-LSTM Layer (hidden_size=32)
-    ↓
-Linear Attention Layer
-    ↓
-Attention Weighting (softmax)
-    ↓
-Context Vector (weighted sum)
-    ↓
-Dropout (p=0.5)
-    ↓
-FC Layer 1: Linear(32 → 16) + ReLU
-    ↓
-Dropout (p=0.5)
-    ↓
-FC Layer 2: Linear(16 → 2)
-    ↓
-Output: [DOWN_logit, UP_logit]
+your_trading_folder/
+├── algoTrader.py              # Main trading bot
+├── strategy_base.py           # Base class for strategies
+├── strategy_factory.py        # Strategy creation
+├── strategy_squeeze_v3.py     # Squeeze V3 strategy
+├── strategy_pivot_reversal.py # Pivot Reversal strategy
+└── strategy_template.py       # Template for custom strategies
 ```
 
-### Model Output
+### 3. Create Virtual Environment
 
-The bot converts the model's output logits into **probabilities** (confidence scores) using a Softmax function:
-
-```
-confidence_DOWN = softmax(logits)[0]
-confidence_UP = softmax(logits)[1]
-```
-
-### Training Goal
-
-The model was trained to predict whether a squeeze setup would result in:
-
-1. Price hitting a specific **ATR-based profit target** before hitting an ATR-based stop loss
-2. Confirmation by a **Supertrend flip** in the same direction
-3. Within a **20-bar lookahead window**
-
----
-
-## Requirements
-
-### Python Version
-
-- **Python 3.10+** (ideally matching the version used for training)
-- Managed via `pyenv` is recommended
-
-### Dependencies
-
-A virtual environment is **strongly recommended**.
-
-**Required packages:**
-```bash
-pip install onnxruntime pandas pandas-ta signalrcore requests numpy scikit-learn python-dateutil
-```
-
----
-
-## Setup
-
-### 1. Clone/Download
-
-Get the `algotrader_ai.py` script.
-
-### 2. Environment Setup
-
-Navigate to the script's directory in your terminal:
+Navigate to your project directory:
 
 ```bash
-cd /path/to/script
+cd /path/to/your_trading_folder
 ```
 
-Create a Python virtual environment:
+Create and activate virtual environment:
+
 ```bash
+# Create virtual environment
 python3 -m venv venv
+
+# Activate it
+# macOS/Linux:
+source venv/bin/activate
+
+# Windows:
+.\venv\Scripts\activate
 ```
 
-Activate it:
-- **macOS/Linux**: `source venv/bin/activate`
-- **Windows**: `.\venv\Scripts\activate`
-
-### 3. Install Packages
+### 4. Install Dependencies
 
 ```bash
 pip install onnxruntime pandas pandas-ta signalrcore requests numpy scikit-learn python-dateutil
 ```
 
-### 4. API Credentials
+### 5. Get API Credentials
 
-Obtain your **TopstepX** username and API key.
+Obtain your **TopstepX** credentials:
+- Username
+- API Key
 
-⚠️ **Do not hardcode these in the script** - use command-line arguments.
+⚠️ **Never hardcode credentials** - always use command-line arguments
 
-### 5. Model & Scaler Files
+### 6. Prepare Model Files
 
-You need two files generated from your Colab training script:
+You need two files for each strategy:
 
-1. **ONNX model file** (e.g., `SUPERTRADER_strategy_3_runX.onnx`)
-2. **Pickled scaler file** (e.g., `SUPERTRADER_scalers_strategy_3_runX.pkl`)
+1. **ONNX model file** (`.onnx`) - Trained AI model
+2. **Scaler file** (`.pkl`) - Feature scaling parameters
 
-Place these files in a location accessible by the script (e.g., a `models` subfolder).
+Organize in a `models/` folder:
+
+```
+your_trading_folder/
+├── models/
+│   ├── squeeze_v3_model.onnx
+│   ├── squeeze_v3_scaler.pkl
+│   ├── pivot_reversal_model.onnx
+│   └── pivot_reversal_scaler.pkl
+└── ...
+```
 
 ---
 
 ## Usage
 
-Run the bot from your activated virtual environment using command-line arguments.
-
 ### Basic Command Structure
 
 ```bash
-python algotrader_ai.py --account <YOUR_ACCOUNT_ID> \
-                        --contract <FULL_CONTRACT_ID> \
-                        --size <TRADE_SIZE> \
-                        --username <YOUR_USERNAME> \
-                        --apikey <YOUR_API_KEY> \
-                        --timeframe <BAR_TIMEFRAME> \
-                        --model <PATH_TO_ONNX_MODEL> \
-                        --scaler <PATH_TO_SCALER_PKL> \
-                        --entry_conf <CONFIDENCE_THRESHOLD> \
-                        --adx_thresh <ADX_THRESHOLD> \
-                        --stop_atr <STOP_ATR_MULTIPLIER> \
-                        --target_atr <TARGET_ATR_MULTIPLIER> \
-                        --ai_reversal <REVERSAL_CONFIDENCE>
+python algoTrader.py \
+    --account <ACCOUNT_ID> \
+    --contract <CONTRACT_ID> \
+    --size <SIZE> \
+    --username <USERNAME> \
+    --apikey <API_KEY> \
+    --strategy <STRATEGY_NAME> \
+    --model <MODEL_PATH> \
+    --scaler <SCALER_PATH> \
+    --entry_conf <CONFIDENCE> \
+    --adx_thresh <ADX> \
+    --stop_atr <STOP_MULT> \
+    --target_atr <TARGET_MULT>
 ```
 
-### Arguments
+### Required Arguments
 
 | Argument | Description | Example |
 |----------|-------------|---------|
-| `--account` | Your TopstepX account ID | `TS001234SIM` |
-| `--contract` | The full TopstepX contract ID | `CON.F.US.RTY.Z25` |
-| `--size` | Number of contracts per trade | `1` |
-| `--username` | Your TopstepX login username | `MyUser` |
-| `--apikey` | Your TopstepX API key | `MySecretKey` |
-| `--timeframe` | Bar aggregation interval in minutes (1, 3, or 5) | `5` (default) |
-| `--model` | **Required.** Path to your trained `.onnx` model file | `models/model.onnx` |
-| `--scaler` | **Required.** Path to your corresponding `.pkl` scaler file | `models/scaler.pkl` |
-| `--entry_conf` | Minimum AI confidence (0.0 to 1.0) required to enter a trade | `0.55` |
-| `--adx_thresh` | Minimum ADX value required to enter | `25` |
-| `--stop_atr` | Stop loss multiplier (times entry bar ATR) | `2.0` |
-| `--target_atr` | Profit target multiplier (times entry bar ATR). **Must match training target!** | `3.0` |
-| `--ai_reversal` | AI confidence for opposite signal to trigger an exit (0.0 to 1.0) | `0.65` (default) |
+| `--account` | TopstepX account ID | `TS001234SIM` |
+| `--contract` | Full contract ID | `CON.F.US.RTY.Z25` |
+| `--size` | Number of contracts | `1` |
+| `--username` | TopstepX username | `YourUsername` |
+| `--apikey` | TopstepX API key | `YourApiKey` |
+| `--strategy` | Strategy name | `squeeze_v3` or `pivot_reversal` |
+| `--model` | Path to ONNX model | `models/squeeze_v3_model.onnx` |
+| `--scaler` | Path to scaler file | `models/squeeze_v3_scaler.pkl` |
 
-### Example: Running RTY Strategy
+### Optional Arguments
 
-Based on successful backtest parameters (Strategy 3, Run 4):
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `--timeframe` | Bar timeframe (1, 3, or 5 min) | `5` |
+| `--entry_conf` | Min confidence (0.0-1.0) | `0.60` |
+| `--adx_thresh` | Min ADX for entry | `20` |
+| `--stop_atr` | Stop loss (x ATR) | `1.5` |
+| `--target_atr` | Profit target (x ATR) | `2.0` |
+| `--enable_trailing_stop` | Use trailing stop | `False` |
+| `--pivot_lookback` | Pivot lookback (pivot_reversal only) | `5` |
+
+---
+
+## Example Usage
+
+### Example 1: Squeeze V3 Strategy (RTY)
 
 ```bash
-python algotrader_ai.py \
+python algoTrader.py \
     --account TS001234SIM \
     --contract CON.F.US.RTY.Z25 \
     --size 1 \
-    --username MyUser \
-    --apikey MySecretKey \
+    --username YourUsername \
+    --apikey YourApiKey \
     --timeframe 5 \
-    --model "models/SUPERTRADER_strategy_3_run4_logicfix.onnx" \
-    --scaler "models/SUPERTRADER_scalers_strategy_3_run4_logicfix.pkl" \
+    --strategy squeeze_v3 \
+    --model models/squeeze_v3_model.onnx \
+    --scaler models/squeeze_v3_scaler.pkl \
     --entry_conf 0.55 \
     --adx_thresh 25 \
     --stop_atr 2.0 \
     --target_atr 3.0
 ```
 
-### Example: Running ES Strategy
-
-For conservative settings on ES:
+### Example 2: Pivot Reversal Strategy (ES)
 
 ```bash
-python algotrader_ai.py \
+python algoTrader.py \
     --account TS001234SIM \
     --contract CON.F.US.ES.Z25 \
     --size 1 \
-    --username MyUser \
-    --apikey MySecretKey \
+    --username YourUsername \
+    --apikey YourApiKey \
     --timeframe 5 \
-    --model "models/ES_strategy_1.onnx" \
-    --scaler "models/ES_scaler_1.pkl" \
-    --entry_conf 0.60 \
+    --strategy pivot_reversal \
+    --model models/pivot_reversal_model.onnx \
+    --scaler models/pivot_reversal_scaler.pkl \
+    --entry_conf 0.70 \
     --adx_thresh 20 \
-    --stop_atr 2.5 \
-    --target_atr 3.0
+    --stop_atr 1.0 \
+    --target_atr 2.0 \
+    --pivot_lookback 5
 ```
 
 ### Stopping the Bot
 
-Press **Ctrl+C** to stop the bot gracefully.
+Press **Ctrl+C** to stop gracefully.
 
 ---
 
-## Important Notes
+## Available Strategies
 
-### Critical Parameter Alignment
+### Squeeze V3
 
-⚠️ **The `--target_atr` parameter MUST match the target used during model training!**
+**Focus:** Bollinger Band / Keltner Channel compression with momentum analysis
 
-If your model was trained with:
-- `target_atr_mult = 3.0` → Use `--target_atr 3.0`
-- `target_atr_mult = 2.5` → Use `--target_atr 2.5`
-- `target_atr_mult = 2.0` → Use `--target_atr 2.0`
+**Features (9):**
+- Compression level
+- Squeeze duration
+- BB/ATR expanding
+- Price position
+- RSI, momentum, volume surge, body strength
 
-Misalignment will cause the bot to use incorrect profit targets.
+**Best For:**
+- Range breakouts
+- Volatility expansion plays
+- Trending moves after consolidation
 
-### Recommended Parameter Ranges
+**Recommended Settings:**
+- Entry Confidence: 0.55-0.60
+- ADX Threshold: 20-25
+- Stop: 2.0 ATR
+- Target: 3.0 ATR
 
-Based on backtest results:
+### Pivot Reversal
 
-| Parameter | Conservative | Balanced | Aggressive |
-|-----------|--------------|----------|------------|
-| `entry_conf` | 0.60-0.65 | 0.55-0.60 | 0.50-0.55 |
-| `adx_thresh` | 20-25 | 15-20 | 10-15 |
-| `stop_atr` | 2.0-2.5 | 1.5-2.0 | 1.0-1.5 |
-| `target_atr` | 2.0-2.5 | 2.5-3.0 | 3.0-4.0 |
+**Focus:** Pivot point breaks and rejections with trend context
+
+**Features (24):**
+- Pivot distances and bars since pivot
+- Break/rejection signals
+- Candle characteristics
+- Trend and momentum indicators
+
+**Best For:**
+- Support/resistance bounces
+- Pivot break continuations
+- Mean reversion at extremes
+
+**Recommended Settings:**
+- Entry Confidence: 0.65-0.75
+- ADX Threshold: 15-20
+- Stop: 1.0-1.5 ATR
+- Target: 2.0-2.5 ATR
+
+---
+
+## Creating Custom Strategies
+
+Want to create your own strategy? It's easy!
+
+### Step 1: Copy Template
+
+Copy `strategy_template.py` to `strategy_my_custom.py`
+
+### Step 2: Define Features
+
+```python
+def get_feature_columns(self) -> List[str]:
+    return [
+        'my_feature_1',
+        'my_feature_2',
+        'my_feature_3'
+    ]
+```
+
+### Step 3: Calculate Features
+
+```python
+def add_features(self, df: pd.DataFrame) -> pd.DataFrame:
+    df['my_feature_1'] = ...  # Your calculation
+    df['my_feature_2'] = ...
+    df['my_feature_3'] = ...
+    return df
+```
+
+### Step 4: Implement Model Loading
+
+```python
+def load_model(self):
+    self.model = onnxruntime.InferenceSession(self.model_path)
+
+def load_scaler(self):
+    with open(self.scaler_path, 'rb') as f:
+        scalers = pickle.load(f)
+    self.scaler = scalers[self.contract_symbol]
+```
+
+### Step 5: Define Entry Logic
+
+```python
+def should_enter_trade(self, prediction, confidence, bar, entry_conf, adx_thresh):
+    if confidence < entry_conf:
+        return False, None
+    
+    # Your custom filters here
+    
+    if prediction == 1:
+        return True, 'LONG'
+    elif prediction == 2:
+        return True, 'SHORT'
+    return False, None
+```
+
+### Step 6: Register Strategy
+
+In `strategy_factory.py`:
+
+```python
+from strategy_my_custom import MyCustomStrategy
+
+class StrategyFactory:
+    STRATEGIES = {
+        'squeeze_v3': SqueezeV3Strategy,
+        'pivot_reversal': PivotReversalStrategy,
+        'my_custom': MyCustomStrategy,  # Add this
+    }
+```
+
+### Step 7: Use Your Strategy
+
+```bash
+python algoTrader.py \
+    --strategy my_custom \
+    --model models/my_model.onnx \
+    --scaler models/my_scaler.pkl \
+    ...
+```
+
+See `strategy_template.py` for a complete example with comments.
+
+---
+
+## Parameter Guidelines
+
+### Entry Confidence
+
+Controls how confident the AI must be before entering:
+
+| Setting | Confidence | Trade Frequency | Risk |
+|---------|-----------|-----------------|------|
+| Conservative | 0.65-0.75 | Low | Lower |
+| Balanced | 0.55-0.65 | Medium | Medium |
+| Aggressive | 0.45-0.55 | High | Higher |
+
+### ADX Threshold
+
+Controls minimum trend strength:
+
+| Setting | ADX | Use When |
+|---------|-----|----------|
+| Strong Trends | 25-30 | Trending markets |
+| Moderate Trends | 20-25 | Mixed conditions |
+| Any Trend | 15-20 | Range-bound markets |
+
+### Stop/Target Multipliers
+
+Must align with how your model was trained:
+
+| Profile | Stop ATR | Target ATR | Risk/Reward |
+|---------|----------|------------|-------------|
+| Conservative | 2.0-2.5 | 2.0-2.5 | 1:1 |
+| Balanced | 1.5-2.0 | 2.5-3.0 | 1:1.5-2 |
+| Aggressive | 1.0-1.5 | 3.0-4.0 | 1:2-3 |
+
+⚠️ **Critical:** `--target_atr` must match your model's training target!
 
 ---
 
 ## Troubleshooting
 
-### Common Issues
+### Connection Issues
 
-**"Cannot connect to TopstepX"**
-- Verify your username and API key are correct
-- Check your internet connection
-- Ensure TopstepX services are operational
+**Bot won't connect:**
+- Verify username/API key
+- Check internet connection
+- Confirm TopstepX services are up
 
-**"Model file not found"**
-- Verify the path to your `.onnx` file is correct
-- Use absolute paths if relative paths fail
-- Check file permissions
+### File Issues
 
-**"Scaler file not found"**
-- Verify the path to your `.pkl` file is correct
-- Ensure the scaler corresponds to the correct model
-- Check file permissions
+**"Model file not found":**
+- Use absolute paths: `/full/path/to/model.onnx`
+- Check file exists: `ls models/`
+- Verify file permissions
 
-**"No trades being placed"**
-- Lower `--entry_conf` threshold (try 0.50)
-- Lower `--adx_thresh` threshold (try 15)
-- Verify squeeze conditions are occurring in the market
-- Check if volume surge condition is too restrictive
+**"Scaler not found":**
+- Ensure scaler matches model
+- Check contract symbol in scaler file
+- Verify pickle file isn't corrupted
 
-**"Too many losing trades"**
-- Increase `--entry_conf` threshold (try 0.65)
-- Increase `--adx_thresh` threshold (try 25)
-- Review if `--target_atr` matches model training
-- Consider paper trading different parameter combinations
+### Strategy Issues
+
+**"Unknown strategy":**
+- Check spelling: `squeeze_v3` not `squeeze-v3`
+- Verify strategy registered in `strategy_factory.py`
+- Run: `python algoTrader.py --help` to see available strategies
+
+### Trading Issues
+
+**No trades:**
+- Lower `--entry_conf` (try 0.50)
+- Lower `--adx_thresh` (try 15)
+- Check market is active (not Asian hours)
+- Verify strategy conditions occur in current market
+
+**Too many losses:**
+- Increase `--entry_conf` (try 0.65)
+- Increase `--adx_thresh` (try 25)
+- Paper trade different parameters
+- Review if model/scaler are correct
 
 ---
 
 ## Performance Monitoring
 
-### Key Metrics to Track
+### Key Metrics
 
-While the bot is running, monitor:
+Track these metrics while bot is running:
 
-- **Win Rate**: Should be 50-60% for healthy performance
-- **Profit Factor**: Should be > 1.3 (ideally 1.5+)
-- **Average Win vs Average Loss**: Avg Win should be > Avg Loss
-- **Max Drawdown**: Track consecutive losses
-- **Trade Frequency**: Should see 5-10 setups per week per ticker
+- **Win Rate**: Target 50-60%
+- **Profit Factor**: Target > 1.5
+- **Avg Win vs Avg Loss**: Win should be larger
+- **Max Drawdown**: Monitor consecutive losses
+- **Trade Frequency**: 5-15 setups/week expected
 
 ### Logging
 
-The bot logs all actions. Review logs regularly:
-- Entry signals and reasons
-- Exit signals and P&L
-- Model predictions and confidence levels
-- Technical indicator values at entry
+The bot logs all activity. Monitor for:
+- Entry signals and confidence levels
+- Exit reasons (stop/target/time)
+- Technical indicator values
+- Position P&L
 
 ---
 
-## Next Steps
+## Best Practices
 
-1. **Paper Trade First**: Run on simulation account for at least 2-4 weeks
-2. **Track Performance**: Compare live results to backtest expectations
-3. **Parameter Tuning**: Adjust confidence/ADX thresholds based on live results
-4. **Multiple Tickers**: Consider running multiple instances on different contracts
-5. **Walk-Forward Testing**: Retrain model monthly on recent data
+### Before Going Live
+
+1. ✅ **Paper trade** for 2-4 weeks minimum
+2. ✅ **Compare results** to backtest expectations
+3. ✅ **Test different parameters** on paper account
+4. ✅ **Understand the strategy** you're using
+5. ✅ **Have a plan** for drawdowns
+
+### Risk Management
+
+- 💰 Only trade with risk capital
+- 📊 Start with 1 contract per trade
+- 🎯 Set maximum daily loss limits
+- ⏰ Avoid trading during news events
+- 📉 Stop trading after 3 consecutive losses
+
+### System Requirements
+
+- 🔌 Stable internet connection
+- 💻 Computer that stays on during trading hours
+- 📱 Mobile alerts for order fills
+- 🔄 Backup power supply recommended
 
 ---
 
-## License & Warranty
+## Files Included
 
-This software is provided "as is" without warranty of any kind. The authors are not responsible for any financial losses incurred through use of this software.
+| File | Description |
+|------|-------------|
+| `algoTrader.py` | Main trading bot |
+| `strategy_base.py` | Abstract base class for strategies |
+| `strategy_factory.py` | Creates strategy instances |
+| `strategy_squeeze_v3.py` | Squeeze V3 strategy |
+| `strategy_pivot_reversal.py` | Pivot Reversal strategy |
+| `strategy_template.py` | Template for custom strategies |
+| `README.md` | This file |
 
-Trading futures and options involves substantial risk of loss and is not appropriate for all investors. Only risk capital should be used for trading.
+---
+
+## Support & Resources
+
+### Documentation
+
+- See `strategy_template.py` for custom strategy examples
+- Check docstrings in strategy files for details
+- Review `strategy_base.py` for required methods
+
+### Common Questions
+
+**Q: Can I run multiple strategies at once?**
+A: Yes, run separate instances with different contracts or strategies.
+
+**Q: How do I update a strategy?**
+A: Just modify the strategy file - no need to change the bot code.
+
+**Q: Can I use my own model?**
+A: Yes! Create a custom strategy, train your model, export to ONNX.
+
+**Q: What if my broker isn't TopstepX?**
+A: Future support for other platforms coming soon.
 
 ---
 
 ## Version History
 
-- **v1.0**: Initial release with LSTM + Attention model
-- **v1.1**: Added AI reversal exit logic (optional)
-- **v1.2**: Improved tick-based exit handling
-- **v2.0**: Multi-timeframe support (1, 3, 5 minute bars)
+- **v1.0**: Initial release with hardcoded strategy
+- **v2.0**: Refactored with pluggable strategy architecture
+  - Added strategy base class
+  - Included Squeeze V3 and Pivot Reversal
+  - Added strategy template
+  - Separated trading logic from AI logic
+
+---
+
+## License & Warranty
+
+This software is provided "as is" without warranty of any kind. The authos is not responsible for any financial losses.
+
+Trading futures involves substantial risk. Only use risk capital.
 
 ---
 
 **Happy Trading! 🚀**
 
-*Remember: The best trade is often the one you don't take. Always prioritize capital preservation.*
+*The best trade is often the one you don't take. Always prioritize capital preservation.*
