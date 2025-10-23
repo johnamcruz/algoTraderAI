@@ -165,7 +165,7 @@ class PivotReversalStrategy(BaseStrategy):
         reject_at_pl_cond = is_bullish_rejection_candle & near_pl
 
         # === CONTEXT FEATURES ===
-        # THIS IS THE LINE THAT WAS CAUSING THE ERROR
+        df['price_vs_ema50'] = (df['close'] - df['ema50']) / df['atr']
         is_uptrend_cond = (df['close'] > df['ema50']) & (df['ema9'] > df['ema21'])
         
         is_downtrend_cond = (df['close'] < df['ema50']) & (df['ema9'] < df['ema21'])
