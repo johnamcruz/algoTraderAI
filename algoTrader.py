@@ -528,12 +528,12 @@ Example Usage (RTY Strategy from Backtest #10):
     parser.add_argument('--timeframe', type=int, choices=[1, 3, 5], default=5, help='Bar timeframe in minutes (default: 5)')
     parser.add_argument('--enable_trailing_stop', type=bool, default=False, help='Enable trailing stop vs stop order')
         
-    parser.add_argument('--model', type=str, default="models/model1.onnx", help='Path to the ONNX model file (.onnx)')
-    parser.add_argument('--scaler', type=str, default="models/strategy1.pkl", help='Path to the pickled scaler file (.pkl)')
-    parser.add_argument('--entry_conf', type=float, default=0.55, help='Min AI confidence to enter (default: 0.55)')
-    parser.add_argument('--adx_thresh', type=int, default=25, help='Min ADX value to enter (default: 25)')
-    parser.add_argument('--stop_atr', type=float, default=2.0, help='Stop loss multiplier (x ATR) (default: 2.0)')
-    parser.add_argument('--target_atr', type=float, default=3.0, help='Profit target multiplier (x ATR) (default: 3.0)')    
+    parser.add_argument('--model', type=str, default="models/SqueezeV3_model_v3_final.onnx", help='Path to the ONNX model file (.onnx)')
+    parser.add_argument('--scaler', type=str, default="models/SqueezeV3_scalers_v3_final.pkl", help='Path to the pickled scaler file (.pkl)')
+    parser.add_argument('--entry_conf', type=float, default=0.60, help='Min AI confidence to enter (default: 0.55)')
+    parser.add_argument('--adx_thresh', type=int, default=20, help='Min ADX value to enter (default: 25)')
+    parser.add_argument('--stop_atr', type=float, default=1.5, help='Stop loss multiplier (x ATR) (default: 2.0)')
+    parser.add_argument('--target_atr', type=float, default=2.0, help='Profit target multiplier (x ATR) (default: 3.0)')    
     
     args = parser.parse_args()
     
