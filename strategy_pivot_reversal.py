@@ -69,9 +69,16 @@ class PivotReversalStrategy(BaseStrategy):
         df['ema9'] = ta.ema(df['close'], length=9)
         df['ema21'] = ta.ema(df['close'], length=21)
         df['ema50'] = ta.ema(df['close'], length=50)
+
+        # FIX: Fill gaps first, then fill leading NaNs with 0
         df['ema9'].fillna(method='ffill', inplace=True)
+        df['ema9'].fillna(0, inplace=True) 
+
         df['ema21'].fillna(method='ffill', inplace=True)
+        df['ema21'].fillna(0, inplace=True)
+        
         df['ema50'].fillna(method='ffill', inplace=True)
+        df['ema50'].fillna(0, inplace=True)
         
         adx_df = ta.adx(df['high'], df['low'], df['close'], length=14)
         df['adx'] = adx_df['ADX_14'] if adx_df is not None and 'ADX_14' in adx_df.columns else 0
