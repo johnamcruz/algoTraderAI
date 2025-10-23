@@ -296,11 +296,6 @@ class PivotReversalStrategy(BaseStrategy):
         if confidence < entry_conf:
             return False, None
         
-        # Check ADX threshold
-        adx = bar.get('adx', 0)
-        if adx_thresh > 0 and adx < adx_thresh:
-            return False, None
-        
         # Check prediction
         if prediction == 1:  # Buy signal
             return True, 'LONG'
