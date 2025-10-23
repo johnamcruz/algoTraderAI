@@ -54,9 +54,13 @@ class PivotReversalStrategy(BaseStrategy):
     
     def add_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Calculate Pivot Reversal features - FIXED NON-REPAINTING LOGIC."""
-        # Ensure numeric types
+        # === FIX: CLEAN OHLCV DATA FIRST ===
+        # Use pd.to_numeric for safety, then fill all NaNs.
+        # This prevents 'float' vs 'NoneType' errors.
         for col in ['open', 'high', 'low', 'close', 'volume']:
-            df[col] = df[col].astype(float)
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+            df[col].fillna(method='ffill', inplace=True) # Fill gaps
+            df[col].fillna(0, inplace=True)             # Fill leading NaNs
 
         n = self.pivot_lookback
 
