@@ -566,12 +566,12 @@ Example Usage (Pivot Reversal):
                         help='Bar timeframe in minutes (default: 5)')
     
     # Strategy Selection
-    parser.add_argument('--strategy', type=str, default="squeeze_v3",
+    parser.add_argument('--strategy', type=str, default="pivot_reversal",
                         choices=StrategyFactory.list_strategies(),
                         help='Strategy to use')
-    parser.add_argument('--model', type=str, default="models/model_squeeze_v3_final.onnx",
+    parser.add_argument('--model', type=str, default="models/model_pivot_reversal_v2_final.onnx",
                         help='Path to the ONNX model file (.onnx)')
-    parser.add_argument('--scaler', type=str, default="models/scalers_squeeze_v3_final.pkl",
+    parser.add_argument('--scaler', type=str, default="models/scalers_pivot_reversal_v2_final.pkl",
                         help='Path to the pickled scaler file (.pkl)')
     
     # Trading Parameters
