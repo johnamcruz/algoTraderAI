@@ -50,7 +50,7 @@ class PivotReversalStrategy(BaseStrategy):
     
     def get_sequence_length(self) -> int:
         """Pivot Reversal uses 40 bars."""
-        return 60
+        return 40
     
     def add_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Calculate Pivot Reversal features - FIXED NON-REPAINTING LOGIC."""
