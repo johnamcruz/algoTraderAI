@@ -392,10 +392,12 @@ class RealTimeBot:
         try:
             response = requests.post(order_url, headers=headers, json=payload, timeout=10)
             response.raise_for_status()
-            data = response.json()
+            data = response.json()            
             if data.get('success') and data.get('orderId'):
+                print(f"✅ Order placed successfully: {data.get('orderId')}")
                 return data.get("orderId")
             else:
+                print(f"❌ Order failed: {data.get('errorMessage')}")
                 return None
         except Exception as e:
             print(f"❌ Could not place order: {e}.")
