@@ -15,7 +15,6 @@ import argparse
 import requests
 from pysignalr.client import SignalRClient
 from datetime import datetime, timedelta, timezone
-from dateutil.relativedelta import relativedelta 
 from collections import deque
 import warnings
 import pandas as pd
@@ -183,8 +182,10 @@ class RealTimeBot:
         """Fetches recent bars to prime the historical data deque - ORIGINAL METHOD."""
         historical_url = f"{BASE_URL}/History/retrieveBars"
         end_time_dt = datetime.now(timezone.utc).replace(microsecond=0)
-        # Fetch a bit more history (e.g., 3 days) to ensure enough warmup for indicators
-        start_time_dt = end_time_dt - relativedelta(days=3)
+        # Fetch a bit more history (e.g., 3 days) to ensure enough warmup for indicators        
+        duration_minutes = self.strategy.get_sequence_length() * self.timeframe_minutes
+        buffer_minutes = 5 * self.timeframe_minutes # Optional safety buffer
+        start_time_dt = end_time_dt - timedelta(minutes=(duration_minutes + buffer_minutes))
         payload = {
             "contractId": self.contract,
             "live": False,
@@ -552,6 +553,10 @@ Example Usage (Pivot Reversal):
                   --entry_conf 0.70 --adx_thresh 20 --stop_atr 1.0 --target_atr 2.0
 """
     )
+
+    # Config file option
+    parser.add_argument('--config', type=str, 
+                        help='Path to YAML config file. Command-line args override config values.')
     
     # Account & Contract
     parser.add_argument('--account', type=str, required=True,
