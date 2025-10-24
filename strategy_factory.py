@@ -7,8 +7,8 @@ Creates strategy instances based on strategy name.
 
 from strategy_base import BaseStrategy
 from strategy_squeeze import SqueezeV3Strategy
-from strategy_pivot_reversal import PivotReversalStrategy
-
+from strategy_pivot_reversal_5min import PivotReversal5minStrategy
+from strategy_pivot_reversal_3min import PivotReversal3minStrategy
 
 class StrategyFactory:
     """
@@ -18,7 +18,8 @@ class StrategyFactory:
     # Registry of available strategies
     STRATEGIES = {
         'squeeze_v3': SqueezeV3Strategy,
-        'pivot_reversal': PivotReversalStrategy,
+        '5min_pivot_reversal': PivotReversal5minStrategy,
+        '3min_pivot_reversal': PivotReversal3minStrategy,
     }
     
     @classmethod
