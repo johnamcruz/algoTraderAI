@@ -354,9 +354,9 @@ class RealTimeBot:
                     print(f"  SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}")
                     print("="*40)
                     
-                    # Calculate ticks (ORIGINAL CALCULATION)
+                    # Calculate ticks (ORIGINAL CALCULATION)                    
                     stop_loss_ticks = int((self.stop_loss - self.entry_price) / tick_size)
-                    take_profit_ticks = int((self.entry_price - self.profit_target) / tick_size)
+                    take_profit_ticks = int((self.profit_target - self.entry_price) / tick_size) 
                     
                     # Place order with ORIGINAL parameters
                     await self._place_order(1, stop_ticks=stop_loss_ticks, take_profit_ticks=take_profit_ticks)
