@@ -65,8 +65,7 @@ class PivotReversal3minStrategy(BaseStrategy):
         """
         Calculate Pivot Reversal features - FIXED NON-REPAINTING LOGIC.
         Uses the instance's self.pivot_lookback.
-        """
-        print(f"  Adding features with pivot_lookback={self.pivot_lookback}...") # Added print for clarity
+        """        
         # === FIX: CLEAN OHLCV DATA FIRST (NO INPLACE=TRUE) ===
         for col in ['open', 'high', 'low', 'close', 'volume']:
             df[col] = pd.to_numeric(df[col], errors='coerce')
