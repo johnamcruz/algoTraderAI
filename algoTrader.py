@@ -612,7 +612,7 @@ Example Usage (Pivot Reversal):
         
         # Create strategy
         strategy_kwargs = {}
-        if args.strategy == 'pivot_reversal':
+        if args.strategy == '3min_pivot_reversal' or args.strategy == '5min_pivot_reversal':
             strategy_kwargs['pivot_lookback'] = args.pivot_lookback
         
         strategy = StrategyFactory.create_strategy(
