@@ -74,15 +74,15 @@ def authenticate(username, api_key):
     auth_url = f"{BASE_URL}/Auth/loginKey"
     payload = {"userName": username, "apiKey": api_key}
     try:
-        print("🔐 Authenticating...")
+        logging.info("🔐 Authenticating...")
         response = requests.post(auth_url, json=payload, timeout=10)
         response.raise_for_status()
         data = response.json()
         if data.get('success') and data.get('token'):
-            print("✅ Authentication successful!")
+            logging.info("✅ Authentication successful!")
             return data['token']
         else:
-            print(f"❌ Authentication failed: {data.get('errorMessage', 'Unknown error')}")
+            logging.error(f"❌ Authentication failed: {data.get('errorMessage', 'Unknown error')}")
             return None
     except Exception as e:
         logging.exception(f"❌ Authentication error: {e}")
