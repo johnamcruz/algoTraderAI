@@ -557,7 +557,7 @@ Example Usage (Pivot Reversal):
     parser.add_argument('--account', type=str, required=True,
                         help='TopstepX account ID')
     parser.add_argument('--contract', type=str, required=True,
-                        help='Full contract ID (e.g., CON.F.US.RTY.Z25)')
+                        help='Full contract ID (e.g., CON.F.US.ENQ.Z25)')
     parser.add_argument('--size', type=int, default=1,
                         help='Trade size (number of contracts)')
     parser.add_argument('--username', type=str, required=True,
