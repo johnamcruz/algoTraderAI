@@ -19,6 +19,8 @@ from collections import deque
 import warnings
 import pandas as pd
 
+import logging
+
 from strategy_factory import StrategyFactory
 from strategy_base import BaseStrategy
 
@@ -41,6 +43,28 @@ TICK_INFO = {
     'RTY': {'tick_size': 0.1}
 }
 
+# =========================================================
+# LOGGING SETUP
+# =========================================================
+def setup_logging(level=logging.INFO, log_file=None):
+    """Configures basic logging, prioritizing file if specified."""
+    log_format = '%(asctime)s - %(levelname)s - %(message)s'
+    handlers = [] # Start with no handlers
+
+    if log_file:
+        print(f"Logging configured to file: {log_file}") # Still print confirmation to console
+        handlers.append(logging.FileHandler(log_file))
+    else:
+        # Fallback to console only if no log file is given
+        print("Logging configured to console.")
+        handlers.append(logging.StreamHandler())
+
+    # If no handlers were added (e.g., log_file was empty string), add console handler
+    if not handlers:
+         handlers.append(logging.StreamHandler())
+
+    logging.basicConfig(level=level, format=log_format, handlers=handlers, force=True) # Use force=True to allow reconfiguration
+    logging.info("--- Log Start ---") # Add a marker for new log session
 
 # =========================================================
 # AUTHENTICATION
@@ -61,7 +85,7 @@ def authenticate(username, api_key):
             print(f"❌ Authentication failed: {data.get('errorMessage', 'Unknown error')}")
             return None
     except Exception as e:
-        print(f"❌ Authentication error: {e}")
+        logging.exception(f"❌ Authentication error: {e}")
         return None
 
 
@@ -161,9 +185,9 @@ class RealTimeBot:
         print("✅ Connected to market hub")
         try:
             await self.client.send("SubscribeContractTrades", [self.contract])
-            print(f"✅ Subscription successful for {self.contract}")
+            logging.info(f"✅ Subscription successful for {self.contract}")
         except Exception as e:
-            print(f"❌ Subscription error: {e}")
+            logging.exception(f"❌ Subscription error: {e}")
 
     async def on_close(self):
         """Callback when connection closes."""
@@ -173,7 +197,7 @@ class RealTimeBot:
 
     async def on_error(self, message):
         """Callback on error."""
-        print(f"❌ SignalR Error: {message}")
+        logging.exception(f"❌ SignalR Error: {message}")
 
     # =========================================================
     # HISTORICAL DATA FETCHING (ORIGINAL METHOD PRESERVED)
@@ -216,7 +240,7 @@ class RealTimeBot:
                 print(f"⚠️ Warning: Fetched fewer bars ({bars_fetched}) than needed "
                       f"({self.num_historical_candles_needed}) for full AI warmup.")
         except Exception as e:
-            print(f"❌ Could not fetch historical data: {e}.")
+            logging.exception(f"❌ Could not fetch historical data: {e}.")
 
     # =========================================================
     # TICK PROCESSING (ORIGINAL LOGIC)
@@ -236,7 +260,7 @@ class RealTimeBot:
             for trade in trades:
                 await self.handle_trade(trade)
         except Exception as e:
-            print(f"❌ process_tick error: {e} | Data: {data}")
+            logging.exception(f"❌ process_tick error: {e} | Data: {data}")
 
     # =========================================================
     # BAR AGGREGATION & AI PREDICTION
@@ -270,7 +294,7 @@ class RealTimeBot:
         if len(self.historical_bars) >= self.num_historical_candles_needed:
             await self._run_ai_prediction()
         else:
-            print(f"⏳ Waiting for more bars... "
+            logging.info(f"⏳ Waiting for more bars... "
                   f"({len(self.historical_bars)}/{self.num_historical_candles_needed})")
         
         # Reset bar state
@@ -290,7 +314,7 @@ class RealTimeBot:
             
             # Validate features
             if not self.strategy.validate_features(df):
-                print("❌ Feature validation failed")
+                logging.exception("❌ Feature validation failed")
                 return
             
             # Get prediction from strategy
@@ -319,7 +343,7 @@ class RealTimeBot:
                 atr = latest_bar.get('atr', 0)
                 
                 if atr <= 0:
-                    print("❌ Invalid ATR, skipping entry")
+                    logging.exception("❌ Invalid ATR, skipping entry")
                     return
                 
                 tick_size = TICK_INFO[self.contract_symbol]['tick_size']
@@ -363,9 +387,7 @@ class RealTimeBot:
                     await self._place_order(1, stop_ticks=stop_loss_ticks, take_profit_ticks=take_profit_ticks)
                 
         except Exception as e:
-            print(f"❌ Error during AI prediction: {e}")
-            import traceback
-            traceback.print_exc()
+            logging.exception(f"❌ Error during AI prediction: {e}")            
 
     # =========================================================
     # ORDER MANAGEMENT (ORIGINAL LOGIC PRESERVED)
@@ -395,13 +417,13 @@ class RealTimeBot:
             response.raise_for_status()
             data = response.json()            
             if data.get('success') and data.get('orderId'):
-                print(f"✅ Order placed successfully: {data.get('orderId')}")
+                logging.info(f"✅ Order placed successfully: {data.get('orderId')}")
                 return data.get("orderId")
             else:
-                print(f"❌ Order failed: {data.get('errorMessage')}")
+                logging.exception(f"❌ Order failed: {data.get('errorMessage')}")
                 return None
         except Exception as e:
-            print(f"❌ Could not place order: {e}.")
+            logging.exception(f"❌ Could not place order: {e}.")
             return None
 
     # =========================================================
@@ -409,7 +431,7 @@ class RealTimeBot:
     # =========================================================
     async def bar_closer_watcher(self):
         """Background task to watch the clock and force-close bars."""
-        print("⏳ Bar closer watcher started...")
+        logging.info("⏳ Bar closer watcher started...")
         while True:
             try:
                 if not self.current_bar_time:
@@ -431,10 +453,10 @@ class RealTimeBot:
                         await self._close_and_print_bar()
                         
             except asyncio.CancelledError:
-                print("Bar closer watcher stopping.")
+                logging.info("Bar closer watcher stopping.")
                 break
             except Exception as e:
-                print(f"Error in bar_closer_watcher: {e}")
+                logging.exception(f"Error in bar_closer_watcher: {e}")
                 await asyncio.sleep(1)
 
     # =========================================================
@@ -513,7 +535,7 @@ class RealTimeBot:
                     }
                     
         except Exception as e:
-            print(f"❌ handle_trade error: {e} | Trade: {trade}")
+            logging.exception(f"❌ handle_trade error: {e} | Trade: {trade}")
 
     # =========================================================
     # MAIN RUN LOOP (ORIGINAL SEQUENCE)
@@ -530,6 +552,8 @@ class RealTimeBot:
 # MAIN
 # =========================================================
 def main():
+    setup_logging(level=logging.INFO, log_file="bot_log.log")
+
     parser = argparse.ArgumentParser(
         description='Real-Time AI Futures Trading Bot with Pluggable Strategies',
         formatter_class=argparse.RawTextHelpFormatter,
@@ -604,7 +628,7 @@ Example Usage (Pivot Reversal):
     if not jwt_token:
         return
     
-    print(f"\n🎫 Token received. Creating strategy...")
+    logging.info(f"\n🎫 Token received. Creating strategy...")
     
     try:
         # Get contract symbol
@@ -646,9 +670,7 @@ Example Usage (Pivot Reversal):
     except KeyboardInterrupt:
         print("\n👋 Bot stopped by user.")
     except Exception as e:
-        print(f"\n❌ A critical error occurred: {e}")
-        import traceback
-        traceback.print_exc()
+        logging.exception(f"\n❌ A critical error occurred: {e}")        
 
 
 if __name__ == "__main__":
