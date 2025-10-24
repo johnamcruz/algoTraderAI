@@ -564,16 +564,16 @@ Example Usage (Pivot Reversal):
                         help='TopstepX username')
     parser.add_argument('--apikey', type=str, required=True,
                         help='TopstepX API key')
-    parser.add_argument('--timeframe', type=int, choices=[1, 3, 5], default=5,
+    parser.add_argument('--timeframe', type=int, choices=[1, 3, 5], default=3,
                         help='Bar timeframe in minutes (default: 5)')
     
     # Strategy Selection
-    parser.add_argument('--strategy', type=str, default="pivot_reversal",
+    parser.add_argument('--strategy', type=str, default="3min_pivot_reversal",
                         choices=StrategyFactory.list_strategies(),
                         help='Strategy to use')
-    parser.add_argument('--model', type=str, default="models/model_pivot_reversal_v2_final.onnx",
+    parser.add_argument('--model', type=str, default="models/model_3min_pivot_reversal_v2_final.onnx",
                         help='Path to the ONNX model file (.onnx)')
-    parser.add_argument('--scaler', type=str, default="models/scalers_pivot_reversal_v2_final.pkl",
+    parser.add_argument('--scaler', type=str, default="models/scalers_3min_pivot_reversal_v2_final.pkl",
                         help='Path to the pickled scaler file (.pkl)')
     
     # Trading Parameters

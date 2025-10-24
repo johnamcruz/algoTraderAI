@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Pivot Reversal Strategy Implementation
+Pivot Reversal Strategy Implementation (5-Minute Timeframe Version)
 
 This strategy uses pivot point breaks and rejections with momentum analysis.
 """
@@ -15,7 +15,7 @@ from typing import Dict, List, Tuple, Optional
 from strategy_base import BaseStrategy
 
 
-class PivotReversalStrategy(BaseStrategy):
+class PivotReversal5minStrategy(BaseStrategy):
     """
     Pivot Reversal trading strategy based on pivot breaks/rejections.
     """
