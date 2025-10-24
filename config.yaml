@@ -1,0 +1,11 @@
+account: "TS001234SIM"
+username: "YourUsername"
+apikey: "YourApiKey"
+contract: "CON.F.US.RTY.Z25"
+strategy: "squeeze_v3"
+model: "models/squeeze_model.onnx"
+scaler: "models/squeeze_scaler.pkl"
+entry_conf: 0.55
+adx_thresh: 25
+stop_atr: 2.0
+target_atr: 3.0
