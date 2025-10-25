@@ -11,6 +11,7 @@ import numpy as np
 import onnxruntime
 import pickle
 import os
+import logging
 from typing import Dict, List, Tuple, Optional
 from strategy_base import BaseStrategy
 
@@ -225,9 +226,9 @@ class PivotReversal5minStrategy(BaseStrategy):
                 raise FileNotFoundError(f"Model file not found: {self.model_path}")
             
             self.model = onnxruntime.InferenceSession(self.model_path)
-            print(f"✅ Loaded Pivot Reversal model: {os.path.basename(self.model_path)}")
+            logging.info(f"✅ Loaded Pivot Reversal model: {os.path.basename(self.model_path)}")
         except Exception as e:
-            print(f"❌ Error loading Pivot Reversal model: {e}")
+            logging.exception(f"❌ Error loading Pivot Reversal model: {e}")
             raise
     
     def load_scaler(self):
@@ -241,7 +242,7 @@ class PivotReversal5minStrategy(BaseStrategy):
             
             if self.contract_symbol in scalers:
                 self.scaler = scalers[self.contract_symbol]
-                print(f"✅ Loaded '{self.contract_symbol}' scaler for Pivot Reversal")
+                logging.info(f"✅ Loaded '{self.contract_symbol}' scaler for Pivot Reversal")
             else:
                 available = list(scalers.keys())
                 raise ValueError(
@@ -249,7 +250,7 @@ class PivotReversal5minStrategy(BaseStrategy):
                     f"Available: {available}"
                 )
         except Exception as e:
-            print(f"❌ Error loading Pivot Reversal scaler: {e}")
+            logging.exception(f"❌ Error loading Pivot Reversal scaler: {e}")
             raise
     
     def predict(self, df: pd.DataFrame) -> Tuple[int, float]:
