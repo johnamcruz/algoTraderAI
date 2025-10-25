@@ -163,7 +163,7 @@ class RealTimeBot:
         
         print(f"🤖 Bot initialized for {self.contract} ({self.contract_symbol}) "
               f"on {self.timeframe_minutes}-min timeframe.")
-        print(f"📊 Strategy: {self.strategy.__class__.__name__}")
+        logging.info(f"📊 Strategy: {self.strategy.__class__.__name__}")
         print(f"📈 Trade Params: Entry={self.entry_conf}, ADX={self.adx_thresh}, "
               f"Stop={self.stop_atr_mult} ATR, Target={self.target_atr_mult} ATR")
         
@@ -290,6 +290,13 @@ class RealTimeBot:
               f"C:{self.current_bar['close']:.2f} "
               f"V:{self.current_bar['volume']}")
         
+        logging.info(f"📊 Bar: {bar_time_str} | "
+              f"O:{self.current_bar['open']:.2f} "
+              f"H:{self.current_bar['high']:.2f} "
+              f"L:{self.current_bar['low']:.2f} "
+              f"C:{self.current_bar['close']:.2f} "
+              f"V:{self.current_bar['volume']}")
+        
         # Run AI if enough bars
         if len(self.historical_bars) >= self.num_historical_candles_needed:
             await self._run_ai_prediction()
@@ -336,6 +343,7 @@ class RealTimeBot:
             pred_labels = {0: "HOLD", 1: "BUY", 2: "SELL"}
             print(f"🤖 AI: {pred_labels[prediction]} (Conf: {confidence:.2%}) | "
                   f"ADX: {latest_bar.get('adx', 0):.1f}")
+            logging.info(f"AI: {pred_labels[prediction]} (Conf: {confidence:.2%}) ADX: {latest_bar.get('adx', 0):.1f}")
             
             if should_enter:
                 # ORIGINAL ENTRY LOGIC PRESERVED
@@ -359,6 +367,7 @@ class RealTimeBot:
                     print(f"🔥🔥🔥 ENTERING LONG @ {self.entry_price:.2f} 🔥🔥🔥")
                     print(f"  SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}")
                     print("="*40)
+                    logging.info(f"LONG @ {self.entry_price:.2f} SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}")
                     
                     # Calculate ticks                    
                     stop_loss_ticks = int((self.entry_price - self.stop_loss) / tick_size)                    
@@ -378,6 +387,7 @@ class RealTimeBot:
                     print(f"🥶🥶🥶 ENTERING SHORT @ {self.entry_price:.2f} 🥶🥶🥶")
                     print(f"  SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}")
                     print("="*40)
+                    logging.info(f"SHORT @ {self.entry_price:.2f} SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}")
                     
                     # Calculate ticks (ORIGINAL CALCULATION)                    
                     stop_loss_ticks = int((self.stop_loss - self.entry_price) / tick_size)
@@ -409,8 +419,7 @@ class RealTimeBot:
                 "ticks": take_profit_ticks,
                 "type": 1
             }
-        }
-        #print(payload)
+        }        
         headers = {'Authorization': f'Bearer {self.token}'}
         try:
             response = requests.post(order_url, headers=headers, json=payload, timeout=10)
@@ -477,7 +486,7 @@ class RealTimeBot:
                 exit_price, exit_reason = None, None
                 
                 if self.stop_loss is None or self.profit_target is None:
-                    print("⚠️ Exit check skipped: stop_loss or profit_target not set.")
+                    logging.error("⚠️ Exit check skipped: stop_loss or profit_target not set.")
                 elif self.position_type == 'LONG':
                     if price <= self.stop_loss:
                         exit_price, exit_reason = self.stop_loss, 'STOP_LOSS'
@@ -496,6 +505,7 @@ class RealTimeBot:
                     print(f"🛑 EXIT {self.position_type} @ {exit_price:.2f} ({exit_reason})")
                     print(f"  Entry: {self.entry_price:.2f} | PnL Points: {pnl:.2f}")
                     print("="*40)
+                    logging.info(f"EXIT {self.position_type} @ {exit_price:.2f} ({exit_reason}) Entry: {self.entry_price:.2f} | PnL Points: {pnl:.2f}")
                     
                     self.in_position = False
                     self.position_type = None
@@ -647,8 +657,8 @@ Example Usage (Pivot Reversal):
             **strategy_kwargs
         )
         
-        print(f"✅ Strategy '{args.strategy}' created successfully!")
-        print(f"\n🚀 Starting bot...")
+        logging.info(f"✅ Strategy '{args.strategy}' created successfully!")
+        logging.info(f"\n Starting bot...")
         
         # Create and run bot
         bot = RealTimeBot(
