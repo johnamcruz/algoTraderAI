@@ -638,7 +638,7 @@ Example Usage (Pivot Reversal):
     if not jwt_token:
         return
     
-    logging.info(f"\n🎫 Token received. Creating strategy...")
+    logging.info(f"🎫 Token received. Creating strategy...")
     
     try:
         # Get contract symbol
@@ -658,7 +658,7 @@ Example Usage (Pivot Reversal):
         )
         
         logging.info(f"✅ Strategy '{args.strategy}' created successfully!")
-        logging.info(f"\n Starting bot...")
+        logging.info(f"Starting bot...")
         
         # Create and run bot
         bot = RealTimeBot(
