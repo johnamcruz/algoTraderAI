@@ -164,8 +164,10 @@ class RealTimeBot:
         
         print(f"🤖 Bot initialized for {self.contract} ({self.contract_symbol}) "
               f"on {self.timeframe_minutes}-min timeframe.")
-        logging.info(f"📊 Strategy: {self.strategy.__class__.__name__}")
         print(f"📈 Trade Params: Entry={self.entry_conf}, ADX={self.adx_thresh}, "
+              f"Stop={self.stop_atr_mult} ATR, Target={self.target_atr_mult} ATR")
+        logging.info(f"📊 Strategy: {self.strategy.__class__.__name__}")        
+        logging.info(f"📈 Trade Params: Entry={self.entry_conf}, ADX={self.adx_thresh}, "
               f"Stop={self.stop_atr_mult} ATR, Target={self.target_atr_mult} ATR")
         
         # Load strategy model and scaler
