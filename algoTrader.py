@@ -669,6 +669,9 @@ Example Usage (Pivot Reversal):
             parser.print_help()
             return
     
+    # log config data for debugging
+    logging.info(config)
+
     # Authenticate
     jwt_token = authenticate(config["base_url"], config["username"], config["apikey"])
     if not jwt_token:
