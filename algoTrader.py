@@ -70,9 +70,9 @@ def setup_logging(level=logging.INFO, log_file=None):
 # =========================================================
 # AUTHENTICATION
 # =========================================================
-def authenticate(username, api_key):
+def authenticate(base_url, username, api_key):
     """Authenticates and returns a JWT token."""
-    auth_url = f"{BASE_URL}/Auth/loginKey"
+    auth_url = f"{base_url}/Auth/loginKey"
     payload = {"userName": username, "apiKey": api_key}
     try:
         logging.info("🔐 Authenticating...")
@@ -92,12 +92,14 @@ def authenticate(username, api_key):
 
 
 # =========================================================
-# REAL-TIME TRADING BOT CLASS (REFACTORED)
+# REAL-TIME TRADING BOT CLASS
 # =========================================================
 class RealTimeBot:
     def __init__(
         self, 
         token, 
+        market_hub,
+        base_url,
         account, 
         contract, 
         size, 
@@ -124,8 +126,9 @@ class RealTimeBot:
             stop_atr: Stop loss ATR multiplier
             target_atr: Profit target ATR multiplier
             enable_trailing_stop: Enable trailing stops
-        """
-        self.hub_url = f"{MARKET_HUB}?access_token={token}"
+        """        
+        self.hub_url = f"{market_hub}?access_token={token}"
+        self.base_url = base_url
         self.account = account
         self.contract = contract
         self.size = size
@@ -182,7 +185,7 @@ class RealTimeBot:
         self.client.on("GatewayTrade", self.process_tick)
 
     # =========================================================
-    # CONNECTION HANDLERS (ORIGINAL LOGIC)
+    # CONNECTION HANDLERS
     # =========================================================
     async def on_open(self):
         """Callback when connection opens - ORIGINAL METHOD."""
@@ -204,11 +207,11 @@ class RealTimeBot:
         logging.exception(f"❌ SignalR Error: {message}")
 
     # =========================================================
-    # HISTORICAL DATA FETCHING (ORIGINAL METHOD PRESERVED)
+    # HISTORICAL DATA FETCHING
     # =========================================================
     async def fetch_historical_data(self):
         """Fetches recent bars to prime the historical data deque - ORIGINAL METHOD."""
-        historical_url = f"{BASE_URL}/History/retrieveBars"
+        historical_url = f"{self.base_url}/History/retrieveBars"
         end_time_dt = datetime.now(timezone.utc).replace(microsecond=0)
         # Fetch a bit more history (e.g., 3 days) to ensure enough warmup for indicators        
         duration_minutes = self.strategy.get_sequence_length() * self.timeframe_minutes
@@ -247,7 +250,7 @@ class RealTimeBot:
             logging.exception(f"❌ Could not fetch historical data: {e}.")
 
     # =========================================================
-    # TICK PROCESSING (ORIGINAL LOGIC)
+    # TICK PROCESSING
     # =========================================================
     async def process_tick(self, data):
         """Processes incoming tick data - ORIGINAL METHOD."""
@@ -404,11 +407,11 @@ class RealTimeBot:
             logging.exception(f"❌ Error during AI prediction: {e}")            
 
     # =========================================================
-    # ORDER MANAGEMENT (ORIGINAL LOGIC PRESERVED)
+    # ORDER MANAGEMENT
     # =========================================================
     async def _place_order(self, side, type=2, stop_ticks=10, take_profit_ticks=20):
         """Enter long/short position"""
-        order_url = f"{BASE_URL}/Order/place"
+        order_url = f"{self.base_url}/Order/place"
         payload = {
             "accountId": self.account,
             "contractId": self.contract,
@@ -608,7 +611,12 @@ Example Usage (Pivot Reversal):
     parser.add_argument('--apikey', type=str,
                         help='TopstepX API key')
     parser.add_argument('--timeframe', type=int, choices=[1, 3, 5], default=3,
-                        help='Bar timeframe in minutes (default: 3)')
+                        help='Bar timeframe in minutes (default: 3)')    
+    parser.add_argument('--market_hub', type=str, default=MARKET_HUB,
+                        help='Market Hub URL')
+    
+    parser.add_argument('--base_url', type=str, default=BASE_URL,
+                        help='ProjectX Base URL')
     
     # Strategy Selection
     parser.add_argument('--strategy', type=str, default="3min_pivot_reversal",
@@ -661,7 +669,7 @@ Example Usage (Pivot Reversal):
             return
     
     # Authenticate
-    jwt_token = authenticate(config["username"], config["apikey"])
+    jwt_token = authenticate(config["base_url"], config["username"], config["apikey"])
     if not jwt_token:
         return
     
@@ -690,6 +698,8 @@ Example Usage (Pivot Reversal):
         # Create and run bot
         bot = RealTimeBot(
             token=jwt_token,
+            market_hub=config["market_hub"],
+            base_url=config["base_url"],
             account=config["account"],
             contract=config["contract"],
             size=config["size"],

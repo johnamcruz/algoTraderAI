@@ -82,7 +82,7 @@ def validate_config(config: Dict[str, Any]) -> None:
     Raises:
         ValueError: If required values are missing
     """
-    required = ['account', 'contract', 'username', 'apikey', 'strategy', 'model', 'scaler']
+    required = ['account', 'contract', 'username', 'apikey', 'strategy', 'model', 'scaler', 'market_hub', 'base_url']
     
     missing = [key for key in required if key not in config or config[key] is None]
     
