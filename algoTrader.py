@@ -612,9 +612,10 @@ Example Usage (Pivot Reversal):
                         help='TopstepX API key')
     parser.add_argument('--timeframe', type=int, choices=[1, 3, 5], default=3,
                         help='Bar timeframe in minutes (default: 3)')    
+    
+    #RealTime Market URL and Base URL
     parser.add_argument('--market_hub', type=str, default=MARKET_HUB,
                         help='Market Hub URL')
-    
     parser.add_argument('--base_url', type=str, default=BASE_URL,
                         help='ProjectX Base URL')
     
@@ -629,11 +630,11 @@ Example Usage (Pivot Reversal):
     
     # Trading Parameters
     parser.add_argument('--entry_conf', type=float, default=0.60,
-                        help='Min AI confidence to enter (default: 0.60)')
+                        help='Min AI confidence to enter (default: 0.80)')
     parser.add_argument('--adx_thresh', type=int, default=20,
                         help='Min ADX value to enter (default: 20)')
     parser.add_argument('--stop_atr', type=float, default=1.5,
-                        help='Stop loss multiplier (x ATR) (default: 1.5)')
+                        help='Stop loss multiplier (x ATR) (default: 1.0)')
     parser.add_argument('--target_atr', type=float, default=2.0,
                         help='Profit target multiplier (x ATR) (default: 2.0)')
     parser.add_argument('--enable_trailing_stop', action='store_true',
