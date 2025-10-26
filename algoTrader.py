@@ -15,6 +15,7 @@ import argparse
 import requests
 from pysignalr.client import SignalRClient
 from datetime import datetime, timedelta, timezone
+from config_loader import load_config, merge_config_with_args, validate_config
 from collections import deque
 import warnings
 import pandas as pd
@@ -604,7 +605,7 @@ Example Usage (Pivot Reversal):
     parser.add_argument('--apikey', type=str, required=True,
                         help='TopstepX API key')
     parser.add_argument('--timeframe', type=int, choices=[1, 3, 5], default=3,
-                        help='Bar timeframe in minutes (default: 5)')
+                        help='Bar timeframe in minutes (default: 3)')
     
     # Strategy Selection
     parser.add_argument('--strategy', type=str, default="3min_pivot_reversal",
@@ -628,10 +629,33 @@ Example Usage (Pivot Reversal):
                         help='Enable trailing stop vs stop order')
     
     # Strategy-specific parameters
-    parser.add_argument('--pivot_lookback', type=int, default=5,
+    parser.add_argument('--pivot_lookback', type=int, default=8,
                         help='Pivot lookback period (for pivot_reversal strategy)')
     
     args = parser.parse_args()
+
+    # Load configuration
+    if args.config:
+        # Config file provided - load and merge with args
+        try:
+            config = load_config(args.config)
+            config = merge_config_with_args(config, args)
+            validate_config(config)
+            logging.info(f"Loaded config from: {args.config}")
+        except (FileNotFoundError, ValueError, ImportError) as e:
+            logging.exception(f"Configuration error: {e}")
+            return
+    else:
+        # No config file - use args directly
+        config = vars(args)        
+        config.pop('config', None)
+        
+        # Validate required fields
+        try:
+            validate_config(config)
+        except ValueError as e:            
+            parser.print_help()
+            return
     
     # Authenticate
     jwt_token = authenticate(args.username, args.apikey)
