@@ -76,6 +76,7 @@ def authenticate(username, api_key):
     payload = {"userName": username, "apiKey": api_key}
     try:
         logging.info("🔐 Authenticating...")
+        logging.info(payload)     
         response = requests.post(auth_url, json=payload, timeout=10)
         response.raise_for_status()
         data = response.json()
@@ -596,15 +597,15 @@ Example Usage (Pivot Reversal):
                         help='Path to YAML config file. Command-line args override config values.')
     
     # Account & Contract
-    parser.add_argument('--account', type=str, required=True,
+    parser.add_argument('--account', type=str,
                         help='TopstepX account ID')
-    parser.add_argument('--contract', type=str, required=True,
+    parser.add_argument('--contract', type=str,
                         help='Full contract ID (e.g., CON.F.US.ENQ.Z25)')
     parser.add_argument('--size', type=int, default=1,
                         help='Trade size (number of contracts)')
-    parser.add_argument('--username', type=str, required=True,
+    parser.add_argument('--username', type=str,
                         help='TopstepX username')
-    parser.add_argument('--apikey', type=str, required=True,
+    parser.add_argument('--apikey', type=str,
                         help='TopstepX API key')
     parser.add_argument('--timeframe', type=int, choices=[1, 3, 5], default=3,
                         help='Bar timeframe in minutes (default: 3)')
@@ -660,7 +661,7 @@ Example Usage (Pivot Reversal):
             return
     
     # Authenticate
-    jwt_token = authenticate(args.username, args.apikey)
+    jwt_token = authenticate(config["username"], config["apikey"])
     if not jwt_token:
         return
     
@@ -673,12 +674,12 @@ Example Usage (Pivot Reversal):
         # Create strategy
         strategy_kwargs = {}
         if args.strategy == '3min_pivot_reversal' or args.strategy == '5min_pivot_reversal':
-            strategy_kwargs['pivot_lookback'] = args.pivot_lookback
+            strategy_kwargs['pivot_lookback'] = config["pivot_lookback"]
         
         strategy = StrategyFactory.create_strategy(
-            strategy_name=args.strategy,
-            model_path=args.model,
-            scaler_path=args.scaler,
+            strategy_name=config["strategy"],
+            model_path=config["model"],
+            scaler_path=config["scaler"],
             contract_symbol=contract_symbol,
             **strategy_kwargs
         )
@@ -689,16 +690,16 @@ Example Usage (Pivot Reversal):
         # Create and run bot
         bot = RealTimeBot(
             token=jwt_token,
-            account=args.account,
-            contract=args.contract,
-            size=args.size,
-            timeframe_minutes=args.timeframe,
+            account=config["account"],
+            contract=config["contract"],
+            size=config["size"],
+            timeframe_minutes=config["timeframe"],
             strategy=strategy,
-            entry_conf=args.entry_conf,
-            adx_thresh=args.adx_thresh,
-            stop_atr=args.stop_atr,
-            target_atr=args.target_atr,
-            enable_trailing_stop=args.enable_trailing_stop
+            entry_conf=config["entry_conf"],
+            adx_thresh=config["adx_thresh"],
+            stop_atr=config["stop_atr"],
+            target_atr=config["target_atr"],
+            enable_trailing_stop=config["enable_trailing_stop"]
         )
         
         asyncio.run(bot.run())
