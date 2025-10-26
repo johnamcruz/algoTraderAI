@@ -214,9 +214,7 @@ class RealTimeBot:
         historical_url = f"{self.base_url}/History/retrieveBars"
         end_time_dt = datetime.now(timezone.utc).replace(microsecond=0)
         # Fetch a bit more history (e.g., 3 days) to ensure enough warmup for indicators        
-        duration_minutes = self.strategy.get_sequence_length() * self.timeframe_minutes
-        buffer_minutes = 5 * self.timeframe_minutes # Optional safety buffer
-        start_time_dt = end_time_dt - timedelta(minutes=(duration_minutes + buffer_minutes))
+        start_time_dt = end_time_dt - timedelta(days=3)
         payload = {
             "contractId": self.contract,
             "live": False,
