@@ -375,7 +375,7 @@ class RealTimeBot:
                     logging.info(f"LONG @ {self.entry_price:.2f} SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}")
                     
                     # Calculate ticks                    
-                    stop_loss_ticks = int((self.entry_price - self.stop_loss) / tick_size)                    
+                    stop_loss_ticks = int((self.stop_loss - self.entry_price) / tick_size)
                     take_profit_ticks = int((self.profit_target - self.entry_price) / tick_size)
                     
                     # Place order with ORIGINAL parameters
@@ -394,7 +394,7 @@ class RealTimeBot:
                     print("="*40)
                     logging.info(f"SHORT @ {self.entry_price:.2f} SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}")
                     
-                    # Calculate ticks (ORIGINAL CALCULATION)                    
+                    # Calculate ticks
                     stop_loss_ticks = int((self.stop_loss - self.entry_price) / tick_size)
                     take_profit_ticks = int((self.profit_target - self.entry_price) / tick_size) 
                     
