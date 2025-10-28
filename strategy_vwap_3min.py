@@ -71,16 +71,15 @@ class VWAP3minStrategy(BaseStrategy):
         # --- Matches seq_len from training script ---
         return 40
 
-    def add_features(self, df: pd.DataFrame) -> pd.DataFrame:        
+    def add_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Adds features required by the VWAP Mean Reversion model and filters.
         Matches the logic in add_vwap_mean_reversion_features from training.
-        Includes robust datetime index handling.
+        Includes robust datetime index handling and corrected NaN handling order.
         """
         stretch_mult=0.5 # As used in training
 
-        # --- Core Indicators & Momentum ---
-        # (These calculations are likely okay, assuming OHLCV data is valid)
+        # --- Step 1: Calculate Base Indicators ---
         df['atr'] = ta.atr(df['high'], df['low'], df['close'], length=14); df['atr'].replace(0, 1e-6, inplace=True)
         df['ema20'] = ta.ema(df['close'], length=20)
         df[f'ema{self.trend_ema_period}'] = ta.ema(df['close'], length=self.trend_ema_period)
@@ -91,40 +90,31 @@ class VWAP3minStrategy(BaseStrategy):
         macd_df = ta.macd(df['close'], fast=12, slow=26, signal=9); df['macd_hist'] = macd_df['MACDh_12_26_9']
         df['rsi_slope'] = df['rsi'].diff(3); df['stoch_k_slope'] = df['stoch_k'].diff(3); df['macd_hist_slope'] = df['macd_hist'].diff(3)
 
-        # --- Daily Resetting VWAP ---
-        # --- FIX: Robust Datetime Index Conversion ---
+        # --- Step 2: Calculate Daily Resetting VWAP ---
+        # (Robust datetime index conversion logic from previous fix)
         if not pd.api.types.is_datetime64_any_dtype(df.index):
              original_index_type = df.index.dtype
              logging.warning(f"Index is not datetime (type: {original_index_type}). Attempting conversion...")
              try:
                  df.index = pd.to_datetime(df.index, errors='coerce')
-                 # Check how many NaT values were created
                  nat_count = df.index.isna().sum()
                  if nat_count > 0:
-                     logging.warning(f"Found {nat_count} invalid timestamp(s) in index after conversion attempt. Dropping these rows.")
-                     # Drop rows where the index conversion failed (became NaT)
+                     logging.warning(f"Found {nat_count} invalid timestamp(s) in index. Dropping these rows.")
                      df = df[df.index.notna()]
                  if df.empty:
-                      logging.error("DataFrame became empty after dropping invalid timestamps. Cannot proceed.")
-                      # Depending on your bot's logic, you might return an empty df or raise error
+                      logging.error("DataFrame became empty after dropping invalid timestamps.")
                       raise ValueError("DataFrame empty after dropping invalid timestamps.")
                  logging.info("Index successfully converted to datetime.")
              except Exception as e:
-                 logging.error(f"CRITICAL: Failed to convert index to datetime for VWAP calc: {e}", exc_info=True)
-                 # Re-raise the error to stop processing if conversion fails fundamentally
-                 raise ValueError(f"DataFrame index could not be converted to datetime. Check input data format. Error: {e}")
-        # --- END FIX ---
+                 logging.error(f"CRITICAL: Failed to convert index to datetime: {e}", exc_info=True)
+                 raise ValueError(f"Index could not be converted to datetime. Error: {e}")
 
-        # Proceed only if the index is now definitely datetime
         if not pd.api.types.is_datetime64_any_dtype(df.index):
-             # This should ideally not be reached if the above logic is correct
-             raise ValueError("Index is still not datetime after conversion attempt. VWAP cannot be calculated.")
+             raise ValueError("Index is still not datetime after conversion attempt.")
 
-        # Calculate VWAP using the datetime index
         dates = pd.Series(df.index.date, index=df.index)
-        # Ensure dates align with the potentially modified df index
         if dates.empty or not dates.index.equals(df.index):
-             logging.warning("Date series calculation issue post-cleanup. Assigning NaN to VWAP.")
+             logging.warning("Date series issue post-cleanup. Assigning NaN to VWAP.")
              df['vwap'] = np.nan
         else:
             df['day_id'] = (dates != dates.shift(1)).cumsum()
@@ -133,40 +123,58 @@ class VWAP3minStrategy(BaseStrategy):
             if 'day_id' in df.columns and df['day_id'].nunique() > 0:
                 cum_tpv = df.groupby('day_id')['tpv'].cumsum()
                 cum_vol = df.groupby('day_id')['volume'].cumsum()
-                # Use np.where to handle potential division by zero safely
                 df['vwap'] = np.where(cum_vol != 0, cum_tpv / cum_vol, np.nan)
                 df.drop(columns=['day_id', 'tp', 'tpv'], inplace=True, errors='ignore')
             else:
-                 logging.warning("Could not group by 'day_id' for VWAP calculation. Assigning NaN.")
+                 logging.warning("Could not group by 'day_id'. Assigning NaN to VWAP.")
                  df['vwap'] = np.nan
 
-        # --- Context Features (used by model) ---
+        # --- Step 3: Handle Initial NaN/INF Values ---
+        # Replace inf/-inf first, then fill NaNs generated by indicators
+        df.replace([np.inf, -np.inf], np.nan, inplace=True);
+        df.fillna(method='ffill', inplace=True) # Forward fill first
+        df.fillna(method='bfill', inplace=True) # Back fill remaining NaNs at the beginning
+        df.fillna(0, inplace=True) # Fill any absolute remaining NaNs with 0
+
+        # --- Step 4: Calculate Derived Features (using cleaned indicators) ---
+        # These comparisons should now work as NaNs are handled
         df['is_uptrend'] = (df['close'] > df['ema200']).astype(float)
         df['is_downtrend'] = (df['close'] < df['ema200']).astype(float)
-        # Ensure VWAP calculation succeeded before calculating dependent features
-        if 'vwap' in df.columns and not df['vwap'].isna().all():
-             df['price_vs_vwap'] = (df['close'] - df['vwap']) / df['atr']
-             vwap_upper_band = df['vwap'] + (stretch_mult * df['atr'])
+
+        # Safely calculate VWAP-dependent features
+        if 'vwap' in df.columns and not df['vwap'].eq(0).all(): # Check if VWAP isn't all zero after fillna(0)
+             # Ensure ATR is not zero before dividing
+             safe_atr = df['atr'].replace(0, 1e-6) # Use a safe ATR version for division
+             df['price_vs_vwap'] = (df['close'] - df['vwap']) / safe_atr
+             vwap_upper_band = df['vwap'] + (stretch_mult * df['atr']) # ATR itself is fine here
              vwap_lower_band = df['vwap'] - (stretch_mult * df['atr'])
              df['is_overbought'] = (df['close'] > vwap_upper_band).astype(float)
              df['is_oversold'] = (df['close'] < vwap_lower_band).astype(float)
+             df['price_vs_ema20'] = (df['close'] - df['ema20']) / safe_atr
+             df['price_vs_ema50'] = (df['close'] - df[f'ema{self.trend_ema_period}']) / safe_atr
+             df['price_vs_ema200'] = (df['close'] - df['ema200']) / safe_atr
         else:
-             logging.warning("VWAP column missing or all NaN. Setting VWAP-dependent features to 0.")
+             logging.warning("VWAP column missing or zero. Setting VWAP-dependent features to 0.")
              df['price_vs_vwap'] = 0.0
              df['is_overbought'] = 0.0
              df['is_oversold'] = 0.0
+             # Still calculate other price_vs features if possible
+             safe_atr = df['atr'].replace(0, 1e-6)
+             df['price_vs_ema20'] = (df['close'] - df['ema20']) / safe_atr
+             df['price_vs_ema50'] = (df['close'] - df[f'ema{self.trend_ema_period}']) / safe_atr
+             df['price_vs_ema200'] = (df['close'] - df['ema200']) / safe_atr
 
-        df['price_vs_ema20'] = (df['close'] - df['ema20']) / df['atr']
-        df['price_vs_ema50'] = (df['close'] - df[f'ema{self.trend_ema_period}']) / df['atr']
-        df['price_vs_ema200'] = (df['close'] - df['ema200']) / df['atr']
 
-        # --- Clean up ---
-        # Final fillna after all calculations
-        df.replace([np.inf, -np.inf], np.nan, inplace=True);
-        # Use more specific fillnas if needed, but ffill/bfill/0 should cover most cases
-        df.fillna(method='ffill', inplace=True)
-        df.fillna(method='bfill', inplace=True)
-        df.fillna(0, inplace=True) # Fill any remaining NaNs (e.g., at the very start) with 0
+        # --- Final Check & Clean up ---
+        # Ensure all feature columns exist and fill any unexpected NaNs again just in case
+        feature_cols_needed = self.get_feature_columns()
+        for col in feature_cols_needed:
+            if col not in df.columns:
+                logging.warning(f"Feature column '{col}' missing after calculations. Setting to 0.")
+                df[col] = 0.0
+        # Final pass of fillna
+        df.fillna(0, inplace=True)
+
         logging.debug(f"VWAP features added for {self.contract_symbol}")
         return df
 
