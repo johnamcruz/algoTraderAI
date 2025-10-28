@@ -173,6 +173,8 @@ python algoTrader.py \
 | `--target_atr` | Profit target (x ATR) | `2.0` |
 | `--enable_trailing_stop` | Use trailing stop | `False` |
 | `--pivot_lookback` | Pivot lookback (pivot_reversal only) | `5` |
+| `--market_hub` | ProjectX MarketHub URL | `https://rtc.topstepx.com/hubs/market` |
+| `--base_url` | ProjectX Base URL | `https://api.topstepx.com/api` |
 
 ---
 
@@ -519,7 +521,7 @@ A: Just modify the strategy file - no need to change the bot code.
 A: Yes! Create a custom strategy, train your model, export to ONNX.
 
 **Q: What if my broker isn't TopstepX?**
-A: Future support for other platforms coming soon.
+A: If your prop firm utilizes the ProjectX API framework, simply update the Market HUB URL and the Base URL within your configuration files to match your broker's specific API endpoints.
 
 ---
 
