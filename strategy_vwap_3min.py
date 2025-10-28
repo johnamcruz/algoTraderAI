@@ -94,7 +94,7 @@ class VWAP3minStrategy(BaseStrategy):
         # (Robust datetime index conversion logic from previous fix)
         if not pd.api.types.is_datetime64_any_dtype(df.index):
              original_index_type = df.index.dtype
-             logging.warning(f"Index is not datetime (type: {original_index_type}). Attempting conversion...")
+             logging.debug(f"Index is not datetime (type: {original_index_type}). Attempting conversion...")
              try:
                  df.index = pd.to_datetime(df.index, errors='coerce')
                  nat_count = df.index.isna().sum()
@@ -104,7 +104,7 @@ class VWAP3minStrategy(BaseStrategy):
                  if df.empty:
                       logging.error("DataFrame became empty after dropping invalid timestamps.")
                       raise ValueError("DataFrame empty after dropping invalid timestamps.")
-                 logging.info("Index successfully converted to datetime.")
+                 logging.debug("Index successfully converted to datetime.")
              except Exception as e:
                  logging.error(f"CRITICAL: Failed to convert index to datetime: {e}", exc_info=True)
                  raise ValueError(f"Index could not be converted to datetime. Error: {e}")
