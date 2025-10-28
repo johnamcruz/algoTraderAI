@@ -30,20 +30,6 @@ warnings.filterwarnings('ignore')
 MARKET_HUB = "https://rtc.topstepx.com/hubs/market"
 BASE_URL = "https://api.topstepx.com/api"
 
-CONTRACTS = {
-    "CON.F.US.ENQ.Z25": 'NQ',
-    "CON.F.US.EP.Z25": 'ES',
-    "CON.F.US.YM.Z25": 'YM',
-    "CON.F.US.RTY.Z25": 'RTY'
-}
-
-TICK_INFO = {
-    'ES': {'tick_size': 0.25},
-    'NQ': {'tick_size': 0.25},
-    'YM': {'tick_size': 1.0},
-    'RTY': {'tick_size': 0.1}
-}
-
 # =========================================================
 # LOGGING SETUP
 # =========================================================
@@ -153,7 +139,7 @@ class RealTimeBot:
         
         # Strategy
         self.strategy = strategy
-        self.contract_symbol = CONTRACTS.get(self.contract, "ES")
+        self.contracts = None        
         
         # Historical bars (strategy determines how many needed)
         seq_len = self.strategy.get_sequence_length()
@@ -166,8 +152,7 @@ class RealTimeBot:
         self.stop_atr_mult = stop_atr
         self.target_atr_mult = target_atr
         
-        print(f"🤖 Bot initialized for {self.contract} ({self.contract_symbol}) "
-              f"on {self.timeframe_minutes}-min timeframe.")
+        print(f"🤖 Bot initialized for {self.contract} on {self.timeframe_minutes}-min timeframe.")
         print(f"📈 Trade Params: Entry={self.entry_conf}, ADX={self.adx_thresh}, "
               f"Stop={self.stop_atr_mult} ATR, Target={self.target_atr_mult} ATR")
         logging.info(f"📊 Strategy: {self.strategy.__class__.__name__}")        
@@ -207,10 +192,35 @@ class RealTimeBot:
         logging.exception(f"❌ SignalR Error: {message}")
 
     # =========================================================
+    # CONTRACTS FETCHING
+    # =========================================================
+    async def fetch_contract_data(self):
+        """Fetches contracts."""
+        contracts_url = f"{self.base_url}/Contract/available"
+        payload = { "live": False }
+        headers = {'Authorization': f'Bearer {self.token}'}
+        try:
+            response = requests.post(contracts_url, headers=headers, json=payload, timeout=10)            
+            response.raise_for_status()
+            self.contracts = response.json().get('contracts', [])
+            logging.debug(self.contracts)
+            logging.info("✅ Successfully retrieve contracts")
+        except Exception as e:
+            logging.exception(f"❌ Could not fetch historical data: {e}.")
+
+    def find_contract(self, contract_id):
+        """Find contract in contracts array"""
+        for item in self.contracts:
+            if item.get('id') == contract_id:
+                return item
+
+        return None             
+
+    # =========================================================
     # HISTORICAL DATA FETCHING
     # =========================================================
     async def fetch_historical_data(self):
-        """Fetches recent bars to prime the historical data deque - ORIGINAL METHOD."""
+        """Fetches recent bars to prime the historical data deque"""
         historical_url = f"{self.base_url}/History/retrieveBars"
         end_time_dt = datetime.now(timezone.utc).replace(microsecond=0)
         # Fetch a bit more history (e.g., 3 days) to ensure enough warmup for indicators        
@@ -359,7 +369,7 @@ class RealTimeBot:
                     logging.exception("❌ Invalid ATR, skipping entry")
                     return
                 
-                tick_size = TICK_INFO[self.contract_symbol]['tick_size']
+                tick_size = self.find_contract(self.contract)['tick_size']
                 
                 if direction == 'LONG':
                     self.in_position = True
@@ -558,6 +568,7 @@ class RealTimeBot:
     async def run(self):
         """Starts the bot - ORIGINAL SEQUENCE."""
         await self.fetch_historical_data()
+        await self.fetch_contract_data()
         print("🚀 Starting bot connection...")
         self.closer_task = asyncio.create_task(self.bar_closer_watcher())
         await self.client.run()
@@ -678,8 +689,6 @@ Example Usage (Pivot Reversal):
     logging.info(f"🎫 Token received. Creating strategy...")
     
     try:
-        # Get contract symbol
-        contract_symbol = CONTRACTS.get(args.contract, "ES")
         
         # Create strategy
         strategy_kwargs = {}
@@ -690,7 +699,7 @@ Example Usage (Pivot Reversal):
             strategy_name=config["strategy"],
             model_path=config["model"],
             scaler_path=config["scaler"],
-            contract_symbol=contract_symbol,
+            contract_symbol="NQ", # replace with contract name lookup as contracts array doesnt contain this data
             **strategy_kwargs
         )
         
