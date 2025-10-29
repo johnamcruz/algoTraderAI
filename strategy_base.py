@@ -36,6 +36,10 @@ class BaseStrategy(ABC):
         self.contract_symbol = contract_symbol
         self.model = None
         self.scaler = None
+
+    def set_contract_symbol(self, symbol):
+        """Method to set the contract symbol after initialization."""
+        self.contract_symbol = symbol        
         
     @abstractmethod
     def get_feature_columns(self) -> List[str]:

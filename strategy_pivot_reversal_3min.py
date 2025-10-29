@@ -37,8 +37,7 @@ class PivotReversal3minStrategy(BaseStrategy):
         """
         super().__init__(model_path, scaler_path, contract_symbol)
         # Store the pivot lookback specific to this instance
-        self.pivot_lookback = pivot_lookback
-        logging.info(f"** Initializing PivotReversalStrategy for {contract_symbol} (3-min TF) with pivot_lookback={self.pivot_lookback} **")
+        self.pivot_lookback = pivot_lookback        
 
 
     def get_feature_columns(self) -> List[str]:
