@@ -242,77 +242,80 @@ class VWAP3minStrategy(BaseStrategy):
             logging.exception(f"❌ Prediction error (VWAP): {e}")
             return 0, 0.0
 
-    def should_enter_trade(
-        self,
-        prediction: int,
-        confidence: float,
-        bar: Dict, # Requires 'close', 'adx', and the trend EMA (e.g., 'ema50')
-        entry_conf: float,
-        adx_thresh: float # Per BaseStrategy, this is passed in. We'll use it as the MIN threshold.
-    ) -> Tuple[bool, Optional[str]]:
-        """
-        Determine if VWAP Mean Reversion entry conditions are met, including
-        internal ADX range and Trend Alignment filters. Adheres to BaseStrategy signature.
-        """
-        # --- Step 0: Use the passed adx_thresh as our internal minimum threshold ---
-        current_adx_min_thresh = adx_thresh # Use the parameter from the base class signature
-
-        # --- Step 1: Check Confidence Threshold ---
-        if confidence < entry_conf:
-            logging.debug(f" VWAP Skip: Confidence {confidence:.2f} < {entry_conf}")
-            return False, None
-
-        # --- Step 2: Check ADX Range Filter ---
-        adx = bar.get('adx', 0) # Get ADX from the latest bar data
-        if pd.isna(adx):
-             logging.warning(" VWAP Skip: ADX is NaN.")
-             return False, None
-        # Check MINIMUM ADX (using the passed-in adx_thresh)
-        if adx < current_adx_min_thresh:
-            logging.debug(f" VWAP Skip: ADX {adx:.1f} < {current_adx_min_thresh} (Chop Filter using adx_thresh param)")
-            return False, None
-        # Check MAXIMUM ADX (using the internal self.adx_max_thresh)
-        if adx > self.adx_max_thresh:
-            logging.debug(f" VWAP Skip: ADX {adx:.1f} > {self.adx_max_thresh} (Strong Trend Filter using internal max thresh)")
-            return False, None
-
-        # --- Step 3: Check Trend Alignment Filter (If Enabled) ---
-        if self.trend_align_filter:
-            close_price = bar.get('close', None)
-            # Dynamically get the correct EMA column name based on the period
-            ema_trend_col = f'ema{self.trend_ema_period}'
-            ema_trend = bar.get(ema_trend_col, None)
-
-            if close_price is None or ema_trend is None or pd.isna(ema_trend):
-                logging.warning(f" VWAP Skip: Missing data for Trend Alignment Filter (Close or {ema_trend_col}).")
-                return False, None
-
-            is_uptrend = close_price > ema_trend
-            is_downtrend = close_price < ema_trend
-
-            # Model prediction: 1=Short Win, 2=Long Win
-            # Base class expectation: 1=Buy, 2=Sell (We need to map internally)
-
-            # Check Long Signal (Model predicts 2)
-            if prediction == 2 and not is_uptrend:
-                 logging.debug(f" VWAP Skip: LONG signal (pred=2) blocked by DOWNTREND filter (Close {close_price:.2f} <= {ema_trend_col} {ema_trend:.2f})")
-                 return False, None
-            # Check Short Signal (Model predicts 1)
-            if prediction == 1 and not is_downtrend:
-                 logging.debug(f" VWAP Skip: SHORT signal (pred=1) blocked by UPTREND filter (Close {close_price:.2f} >= {ema_trend_col} {ema_trend:.2f})")
-                 return False, None
-
-        # --- Step 4: Map Prediction to Trade Direction ---
-        # Training labels: 1 = SHORT WIN, 2 = LONG WIN
-        if prediction == 1: # Model predicts a successful SHORT
-            logging.info(f" VWAP Signal: SHORT (Conf: {confidence:.2f}, ADX: {adx:.1f})")
-            return True, 'SHORT'
-        elif prediction == 2: # Model predicts a successful LONG
-            logging.info(f" VWAP Signal: LONG (Conf: {confidence:.2f}, ADX: {adx:.1f})")
-            return True, 'LONG'
-
-        # Prediction is 0 (Hold) or filtered out
+def should_enter_trade(
+    self,
+    prediction: int,
+    confidence: float,
+    bar: Dict,
+    entry_conf: float,
+    adx_thresh: float # We use this as the MIN threshold
+) -> Tuple[bool, Optional[str]]:
+    """
+    Determine if VWAP Mean Reversion entry conditions are met, ensuring 
+    the signal is a BUY/SELL and passes ADX range filters.
+    """
+    
+    # --- Step 1: Filter Out HOLD Signals and Check CONFIDENCE ---
+    # We ONLY proceed if the prediction is a trade (1 or 2) AND its confidence is high enough.
+    
+    # Note: If prediction is 1 or 2, 'confidence' should be the score for that class.
+    if prediction == 0:
         return False, None
+    
+    if confidence < entry_conf:
+        logging.debug(f" VWAP Skip: {('SHORT' if prediction == 1 else 'LONG')} Conf {confidence:.2f} < {entry_conf}")
+        return False, None
+    
+    current_adx_min_thresh = adx_thresh
+
+    # --- Step 2: Check ADX Range Filter ---
+    adx = bar.get('adx', 0)
+    if pd.isna(adx):
+         logging.warning(" VWAP Skip: ADX is NaN.")
+         return False, None
+         
+    # Check MINIMUM ADX (Chop Filter)
+    if adx < current_adx_min_thresh:
+        logging.debug(f" VWAP Skip: ADX {adx:.1f} < {current_adx_min_thresh} (Chop Filter)")
+        return False, None
+        
+    # Check MAXIMUM ADX (Strong Trend Filter using internal max thresh)
+    if adx > self.adx_max_thresh: # Assumes self.adx_max_thresh is defined (e.g., 40)
+        logging.debug(f" VWAP Skip: ADX {adx:.1f} > {self.adx_max_thresh} (Strong Trend Filter)")
+        return False, None
+
+    # --- Step 3: Check Trend Alignment Filter (If Enabled) ---
+    if self.trend_align_filter:
+        close_price = bar.get('close', None)
+        ema_trend_col = f'ema{self.trend_ema_period}' # Assumes self.trend_ema_period is defined (e.g., 50)
+        ema_trend = bar.get(ema_trend_col, None)
+
+        if close_price is None or ema_trend is None or pd.isna(ema_trend):
+            logging.warning(f" VWAP Skip: Missing data for Trend Alignment Filter.")
+            return False, None
+
+        is_uptrend = close_price > ema_trend
+        is_downtrend = close_price < ema_trend
+
+        # Check Long Signal (Prediction == 2)
+        if prediction == 2 and not is_uptrend:
+             logging.debug(f" VWAP Skip: LONG signal blocked by DOWNTREND filter.")
+             return False, None
+        # Check Short Signal (Prediction == 1)
+        if prediction == 1 and not is_downtrend:
+             logging.debug(f" VWAP Skip: SHORT signal blocked by UPTREND filter.")
+             return False, None
+
+    # --- Step 4: Map Prediction to Trade Direction ---
+    # All filters passed, execute trade.
+    if prediction == 1:
+        logging.info(f" VWAP Signal: SHORT (Conf: {confidence:.2f}, ADX: {adx:.1f})")
+        return True, 'SHORT'
+    elif prediction == 2:
+        logging.info(f" VWAP Signal: LONG (Conf: {confidence:.2f}, ADX: {adx:.1f})")
+        return True, 'LONG'
+
+    return False, None
 
     # --- _softmax method is static and utility, no changes needed ---
     @staticmethod
