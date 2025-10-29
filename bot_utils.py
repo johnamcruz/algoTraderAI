@@ -1,6 +1,13 @@
+#!/usr/bin/env python3
+"""
+Bot Utilities & Constants 
+
+This provides shared helper functions and global constants for the
+AI trading bot.
+"""
+
 import logging
 import requests
-
 
 # =========================================================
 # CONSTANTS
