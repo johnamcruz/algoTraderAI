@@ -1,3 +1,15 @@
+#!/usr/bin/env python3
+"""
+Real time Bot Engine - which manages all live trading 
+operations. Its primary responsibilities are:
+
+1.  Connecting to the exchange API (SignalR for ticks, REST for orders/history).
+2.  Aggregating real-time tick data into time-based (e.g., 3-min) OHLCV bars.
+3.  Calling a pluggable AI strategy (from BaseStrategy) on each bar close.
+4.  Executing trades and managing position state with ATR-based stop-loss 
+    and profit-target brackets.
+"""
+
 import asyncio
 import logging
 import requests
