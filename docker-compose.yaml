@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  algo-bot: # Example service name
+    build:
+      context: .
+    container_name: algo-bot-AI
+
+    # Mount volumes for code and models (same as before)
+    volumes:
+      - .:/app
+      - ./models:/app/models
+
+    # Define ALL configuration parameters as environment variables
+    environment:
+      # --- AUTH ---
+      USERNAME: "YOUR_TOPSTEPX_USERNAME"  # REPLACE
+      API_KEY: "YOUR_TOPSTEPX_API_KEY"      # REPLACE
+      ACCOUNT_ID: "T1234567"               # REPLACE
+
+      # --- ENDPOINTS ---
+      MARKET_HUB: 'https://rtc.topstepx.com/hubs/market'
+      BASE_URL: 'https://api.topstepx.com/api'
+
+      # --- TRADING ---
+      CONTRACT_ID: 'CON.F.US.ENQ.Z25'
+      SIZE: '1' # Use strings for direct command line insertion
+      TIMEFRAME: '3'
+
+      # --- STRATEGY ---
+      STRATEGY_NAME: '3min_vwap_mean_reversion' # Or your chosen strategy
+      MODEL_PATH: 'models/model_nq_vwap_final.onnx' # REPLACE
+      SCALER_PATH: 'models/scalers_nq_vwap_final.pkl' # REPLACE
+
+      # --- STRATEGY PARAMS ---
+      ENTRY_CONF: '0.75' # Use strings
+      ADX_THRESH: '20'   # Use strings
+      STOP_ATR: '1.0'    # Use strings
+      TARGET_ATR: '3.0'  # Use strings
+      # For boolean flags like enable_trailing_stop: Set to 'true' or leave unset/empty
+      TRAIL_STOP_ENABLED: '' # Set to 'true' to enable, leave empty or remove to disable
+      PIVOT_LOOKBACK: '8' # Only relevant if using pivot strategy
+
+    # Construct the command using the environment variables
+    # Note the ${VAR_NAME} syntax to substitute environment variables
+    # We use 'sh -c' to handle the conditional trailing stop flag
+    command: >
+      sh -c 'python algoTrader.py \
+        --account ${ACCOUNT_ID} \
+        --contract ${CONTRACT_ID} \
+        --size ${SIZE} \
+        --username ${USERNAME} \
+        --apikey ${API_KEY} \
+        --timeframe ${TIMEFRAME} \
+        --market_hub ${MARKET_HUB} \
+        --base_url ${BASE_URL} \
+        --strategy ${STRATEGY_NAME} \
+        --model ${MODEL_PATH} \
+        --scaler ${SCALER_PATH} \
+        --entry_conf ${ENTRY_CONF} \
+        --adx_thresh ${ADX_THRESH} \
+        --stop_atr ${STOP_ATR} \
+        --target_atr ${TARGET_ATR} \
+        --pivot_lookback ${PIVOT_LOOKBACK} \
+        $${TRAIL_STOP_ENABLED:+--enable_trailing_stop}'
+      # The last line conditionally adds '--enable_trailing_stop' ONLY if TRAIL_STOP_ENABLED is set and not empty
+
+    restart: always # Or "no" depending on your needs
