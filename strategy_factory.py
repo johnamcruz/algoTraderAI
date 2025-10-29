@@ -10,6 +10,7 @@ from strategy_squeeze import SqueezeV3Strategy
 from strategy_pivot_reversal_5min import PivotReversal5minStrategy
 from strategy_pivot_reversal_3min import PivotReversal3minStrategy
 from strategy_vwap_3min import VWAP3minStrategy
+from strategy_trend_pullback import TrendPullbackStrategy
 
 class StrategyFactory:
     """
@@ -22,6 +23,7 @@ class StrategyFactory:
         '5min_pivot_reversal': PivotReversal5minStrategy,
         '3min_pivot_reversal': PivotReversal3minStrategy,
         'vwap': VWAP3minStrategy,
+        'trend_pullback': TrendPullbackStrategy,
     }
     
     @classmethod
