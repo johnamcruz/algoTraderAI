@@ -82,17 +82,28 @@ def authenticate(base_url, username, api_key):
 def parse_future_symbol(contract_name):    
     if not contract_name:
         return None
-    
+        
+    abbreviated_name = contract_name.upper().split('.')[-1]    
+    parsed_symbol = ""
     month_codes = "FGHJKMNQUVXZ"
-    symbol_end_index = len(contract_name)
     
-    for i, char in enumerate(contract_name):        
-        if char.isdigit() or char.upper() in month_codes: 
-            symbol_end_index = i            
-            break        
-    parsed_symbol = contract_name[:symbol_end_index].upper()
-    
-    return parsed_symbol
+    for char in abbreviated_name:
+        if char.isalpha():
+            # If we already have 2 letters AND the current char is a month code, STOP.
+            # This handles NQZ5: NQ (2) + Z (month code) -> STOP at Z.
+            if len(parsed_symbol) >= 2 and char in month_codes:
+                break
+                
+            # If we have 3 letters (MGC), the next char MUST be a month code or number.
+            if len(parsed_symbol) >= 3 and char.isalpha():
+                break
+                
+            parsed_symbol += char
+        else:
+            # Stop at the first number (year)
+            break
+            
+    return parsed_symbol.upper()
 
 # =========================================================
 # REAL-TIME TRADING BOT CLASS
@@ -175,10 +186,6 @@ class RealTimeBot:
         logging.info(f"📊 Strategy: {self.strategy.__class__.__name__}")        
         logging.info(f"📈 Trade Params: Entry={self.entry_conf}, ADX={self.adx_thresh}, "
               f"Stop={self.stop_atr_mult} ATR, Target={self.target_atr_mult} ATR")
-        
-        # Load strategy model and scaler
-        self.strategy.load_model()
-        self.strategy.load_scaler()
         
         # Register handlers
         self.client.on_open(self.on_open)
@@ -586,6 +593,24 @@ class RealTimeBot:
         """Starts the bot - ORIGINAL SEQUENCE."""
         await self.fetch_historical_data()
         await self.fetch_contract_data()
+
+        contract_details = self.find_contract(self.contract)
+        contract_symbol = None        
+        if contract_details and contract_details.get('name'):            
+            full_contract_name = contract_details['name']
+            contract_symbol = parse_future_symbol(full_contract_name)            
+            logging.info(f"Identified Contract Symbol: {contract_symbol} from name: {full_contract_name}")            
+        else:                        
+            logging.error("⚠️ Could not find full contract name via API. ")
+            return
+        
+        # Initialize the strategy with the derived symbol
+        self.strategy.set_contract_symbol(contract_symbol)
+
+        # Load strategy model and scaler
+        self.strategy.load_model()
+        self.strategy.load_scaler()
+
         print("🚀 Starting bot connection...")
         self.closer_task = asyncio.create_task(self.bar_closer_watcher())
         await self.client.run()
@@ -716,7 +741,7 @@ Example Usage (Pivot Reversal):
             strategy_name=config["strategy"],
             model_path=config["model"],
             scaler_path=config["scaler"],
-            contract_symbol="NQ", # replace with contract name lookup as contracts array doesnt contain this data
+            contract_symbol=None,
             **strategy_kwargs
         )
         
