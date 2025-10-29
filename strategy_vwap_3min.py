@@ -242,81 +242,32 @@ class VWAP3minStrategy(BaseStrategy):
             logging.exception(f"❌ Prediction error (VWAP): {e}")
             return 0, 0.0
 
-def should_enter_trade(
-    self,
-    prediction: int,
-    confidence: float,
-    bar: Dict,
-    entry_conf: float,
-    adx_thresh: float # We use this as the MIN threshold
-) -> Tuple[bool, Optional[str]]:
-    """
-    Determine if VWAP Mean Reversion entry conditions are met, ensuring 
-    the signal is a BUY/SELL and passes ADX range filters.
-    """
-    
-    # --- Step 1: Filter Out HOLD Signals and Check CONFIDENCE ---
-    # We ONLY proceed if the prediction is a trade (1 or 2) AND its confidence is high enough.
-    
-    # Note: If prediction is 1 or 2, 'confidence' should be the score for that class.
-    if prediction == 0:
-        return False, None
-    
-    if confidence < entry_conf:
-        logging.debug(f" VWAP Skip: {('SHORT' if prediction == 1 else 'LONG')} Conf {confidence:.2f} < {entry_conf}")
-        return False, None
-    
-    current_adx_min_thresh = adx_thresh
+    def should_enter_trade(
+        self,
+        prediction: int,
+        confidence: float,
+        bar: Dict, # Assuming bar contains the latest data
+        entry_conf: float,
+        adx_thresh: float 
+    ) -> Tuple[bool, Optional[str]]:
+        """Determine if entry conditions are met (No ADX filter)."""        
 
-    # --- Step 2: Check ADX Range Filter ---
-    adx = bar.get('adx', 0)
-    if pd.isna(adx):
-         logging.warning(" VWAP Skip: ADX is NaN.")
-         return False, None
-         
-    # Check MINIMUM ADX (Chop Filter)
-    if adx < current_adx_min_thresh:
-        logging.debug(f" VWAP Skip: ADX {adx:.1f} < {current_adx_min_thresh} (Chop Filter)")
-        return False, None
+        # Check confidence threshold
+        if confidence < entry_conf:
+            return False, None
         
-    # Check MAXIMUM ADX (Strong Trend Filter using internal max thresh)
-    if adx > self.adx_max_thresh: # Assumes self.adx_max_thresh is defined (e.g., 40)
-        logging.debug(f" VWAP Skip: ADX {adx:.1f} > {self.adx_max_thresh} (Strong Trend Filter)")
-        return False, None
-
-    # --- Step 3: Check Trend Alignment Filter (If Enabled) ---
-    if self.trend_align_filter:
-        close_price = bar.get('close', None)
-        ema_trend_col = f'ema{self.trend_ema_period}' # Assumes self.trend_ema_period is defined (e.g., 50)
-        ema_trend = bar.get(ema_trend_col, None)
-
-        if close_price is None or ema_trend is None or pd.isna(ema_trend):
-            logging.warning(f" VWAP Skip: Missing data for Trend Alignment Filter.")
+        # Check ADX threshold (if ADX available in bar)
+        adx = bar.get('adx', 0)
+        if adx_thresh > 0 and adx < adx_thresh:
             return False, None
 
-        is_uptrend = close_price > ema_trend
-        is_downtrend = close_price < ema_trend
+        # Check prediction
+        if prediction == 1:  # Buy signal
+            return True, 'LONG'
+        elif prediction == 2:  # Sell signal
+            return True, 'SHORT'
 
-        # Check Long Signal (Prediction == 2)
-        if prediction == 2 and not is_uptrend:
-             logging.debug(f" VWAP Skip: LONG signal blocked by DOWNTREND filter.")
-             return False, None
-        # Check Short Signal (Prediction == 1)
-        if prediction == 1 and not is_downtrend:
-             logging.debug(f" VWAP Skip: SHORT signal blocked by UPTREND filter.")
-             return False, None
-
-    # --- Step 4: Map Prediction to Trade Direction ---
-    # All filters passed, execute trade.
-    if prediction == 1:
-        logging.info(f" VWAP Signal: SHORT (Conf: {confidence:.2f}, ADX: {adx:.1f})")
-        return True, 'SHORT'
-    elif prediction == 2:
-        logging.info(f" VWAP Signal: LONG (Conf: {confidence:.2f}, ADX: {adx:.1f})")
-        return True, 'LONG'
-
-    return False, None
-
+        return False, None
     # --- _softmax method is static and utility, no changes needed ---
     @staticmethod
     def _softmax(x):
