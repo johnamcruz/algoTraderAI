@@ -76,6 +76,23 @@ def authenticate(base_url, username, api_key):
         logging.exception(f"❌ Authentication error: {e}")
         return None
 
+# =========================================================
+# Parse Future Symbol
+# =========================================================
+def parse_future_symbol(contract_name):    
+    if not contract_name:
+        return None
+    
+    month_codes = "FGHJKMNQUVXZ"
+    symbol_end_index = len(contract_name)
+    
+    for i, char in enumerate(contract_name):        
+        if char.isdigit() or char.upper() in month_codes: 
+            symbol_end_index = i            
+            break        
+    parsed_symbol = contract_name[:symbol_end_index].upper()
+    
+    return parsed_symbol
 
 # =========================================================
 # REAL-TIME TRADING BOT CLASS
