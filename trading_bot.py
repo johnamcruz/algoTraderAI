@@ -18,11 +18,7 @@ from collections import deque
 from datetime import datetime, timedelta, timezone
 from pysignalr.client import SignalRClient
 from strategy_base import BaseStrategy
-
-# Import your custom utility functions
 from bot_utils import parse_future_symbol
-
-
 
 # =========================================================
 # REAL-TIME TRADING BOT CLASS
