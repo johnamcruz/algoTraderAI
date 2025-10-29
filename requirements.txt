@@ -1,0 +1,10 @@
+# requirements.txt
+numpy
+pandas
+pandas-ta
+torch
+onnxruntime
+scikit-learn
+requests
+pysignalr
+python-dateutil
