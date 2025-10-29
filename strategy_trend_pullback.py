@@ -216,10 +216,11 @@ class TrendPullbackStrategy(BaseStrategy):
 
     def should_enter_trade(
         self,
-        prediction: int,
+        prediction: int, 
         confidence: float,
-        bar: Dict, # Bar must contain 'is_long_pullback' and 'is_short_pullback'
-        entry_conf: float
+        bar: Dict,
+        entry_conf: float,
+        adx_thresh: float
     ) -> Tuple[bool, Optional[str]]:
         """
         Determine if Trend Pullback (V7.0) entry conditions are met.
