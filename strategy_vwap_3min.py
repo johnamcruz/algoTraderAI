@@ -49,7 +49,7 @@ class VWAP3minStrategy(BaseStrategy):
         self.trend_align_filter = VWAP_TREND_ALIGN_FILTER
         self.trend_ema_period = VWAP_TREND_EMA_PERIOD
         # Log the filter settings being used
-        logging.info(f"   Filters: ADX Range=({self.adx_min_thresh}-{self.adx_max_thresh}), TrendAlign={self.trend_align_filter} (EMA{self.trend_ema_period})")
+        logging.info(f"Filters: ADX Range=({self.adx_min_thresh}-{self.adx_max_thresh}), TrendAlign={self.trend_align_filter} (EMA{self.trend_ema_period})")
 
 
     def get_feature_columns(self) -> List[str]:
@@ -180,8 +180,7 @@ class VWAP3minStrategy(BaseStrategy):
 
 
     def load_model(self):
-        """Load ONNX model for VWAP Mean Reversion."""
-        # --- (Implementation is identical to previous version, logging message updated) ---
+        """Load ONNX model for VWAP Mean Reversion."""        
         try:
             if not os.path.exists(self.model_path):
                 raise FileNotFoundError(f"VWAP Model file not found: {self.model_path}")
@@ -193,8 +192,7 @@ class VWAP3minStrategy(BaseStrategy):
             raise
 
     def load_scaler(self):
-        """Load scaler for VWAP Mean Reversion."""
-        # --- (Implementation is identical to previous version, logging message updated) ---
+        """Load scaler for VWAP Mean Reversion."""        
         try:
             if not os.path.exists(self.scaler_path):
                 raise FileNotFoundError(f"VWAP Scaler file not found: {self.scaler_path}")
@@ -219,8 +217,7 @@ class VWAP3minStrategy(BaseStrategy):
             raise
 
     def predict(self, df: pd.DataFrame) -> Tuple[int, float]:
-        """Generate prediction using VWAP Mean Reversion model."""
-        # --- (Implementation uses BaseStrategy.preprocess_features and is identical to previous version) ---
+        """Generate prediction using VWAP Mean Reversion model."""        
         try:
             features = self.preprocess_features(df) # Handles scaling using self.scaler
 
