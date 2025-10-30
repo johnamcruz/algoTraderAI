@@ -343,10 +343,10 @@ timeframe: 5
 **Recommended Settings:**
 ```yaml
 strategy: vwap
-entry_conf: 0.55-0.65
+entry_conf: 0.8
 adx_thresh: 20
-stop_atr: 1.5-2.0
-target_atr: 2.0-2.5
+stop_atr: 1.0
+target_atr: 2.5-3.0
 timeframe: 3
 ```
 
@@ -371,11 +371,11 @@ timeframe: 3
 **Recommended Settings:**
 ```yaml
 strategy: trend_pullback
-entry_conf: 0.60-0.70
-adx_thresh: 20-25
-stop_atr: 1.5-2.0
+entry_conf: 0.70-0.80
+adx_thresh: 20
+stop_atr: 1.0
 target_atr: 2.5-3.0
-timeframe: 3 or 5
+timeframe: 3
 ```
 
 **Key Concept:** The strategy waits for price to pull back to the fast EMA (15) within a 0.5 ATR range while the trend is intact (fast > slow EMA). This provides low-risk entries in the direction of the trend.
@@ -389,11 +389,11 @@ timeframe: 3 or 5
 **Recommended Settings:**
 ```yaml
 strategy: trend_pullback2
-entry_conf: 0.60-0.70
-adx_thresh: 20-25
-stop_atr: 1.5-2.0
+entry_conf: 0.70-0.80
+adx_thresh: 20
+stop_atr: 1.0
 target_atr: 2.5-3.0
-timeframe: 3 or 5
+timeframe: 3
 ```
 
 ---
@@ -403,11 +403,11 @@ timeframe: 3 or 5
 | Strategy | Timeframe | Features | Market Type | Win Rate Target | Risk/Reward |
 |----------|-----------|----------|-------------|-----------------|-------------|
 | Squeeze V3 | 5min | 9 | Breakout | 50-55% | 1:1.5 |
-| 3min Pivot | 3min | 24 | Reversal/Bounce | 55-60% | 1:1.3 |
-| 5min Pivot | 5min | 24 | Reversal/Swing | 55-60% | 1:1.5-2 |
-| VWAP | 3min | 15 | Mean Reversion | 50-60% | 1:1.3-1.5 |
-| Trend Pullback V1 | 3-5min | 11 | Trend Continuation | 55-65% | 1:1.5-2 |
-| Trend Pullback V2 | 3-5min | 11 | Trend Continuation | 55-65% | 1:1.5-2 |
+| 3min Pivot | 3min | 24 | Reversal/Bounce | 55-60% | 1:2 |
+| 5min Pivot | 5min | 24 | Reversal/Swing | 55-60% | 1:2 |
+| VWAP | 3min | 15 | Mean Reversion | 55-65% | 1:2.5-3 |
+| Trend Pullback V1 | 3min | 11 | Trend Continuation | 55-65% | 1:2-2.5 |
+| Trend Pullback V2 | 3min | 11 | Trend Continuation | 55-65% | 1:2-2.5 |
 
 ---
 
