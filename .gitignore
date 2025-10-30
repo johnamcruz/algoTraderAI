@@ -27,6 +27,7 @@ share/python-wheels/
 MANIFEST
 run.py
 run2.py
+run3.py
 .DS_Store
 
 # PyInstaller
