@@ -308,7 +308,7 @@ class RealTimeBot:
                     logging.exception("❌ Invalid ATR, skipping entry")
                     return
                 
-                tick_size = self.find_contract(self.contract)['tick_size']
+                tick_size = self.find_contract(self.contract)['tickSize']
                 
                 if direction == 'LONG':
                     self.in_position = True
