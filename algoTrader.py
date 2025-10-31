@@ -25,8 +25,6 @@ warnings.filterwarnings('ignore')
 # MAIN
 # =========================================================
 def main():
-    setup_logging(level=logging.INFO, log_file="bot_log.log")
-
     parser = argparse.ArgumentParser(
         description='Real-Time AI Futures Trading Bot with Pluggable Strategies',
         formatter_class=argparse.RawTextHelpFormatter,
@@ -53,7 +51,9 @@ Example Usage (Pivot Reversal):
 
     # Config file option
     parser.add_argument('--config', type=str, 
-                        help='Path to YAML config file. Command-line args override config values.')
+                        help='Path to YAML config file. Command-line args override config values.')     
+    parser.add_argument('--debug', action='store_true',
+                        help='Enable DEBUG level logging (default: INFO)')
     
     # Account & Contract
     parser.add_argument('--account', type=str,
@@ -101,6 +101,11 @@ Example Usage (Pivot Reversal):
                         help='Pivot lookback period (for pivot_reversal strategy)')
     
     args = parser.parse_args()
+
+    # setup logging
+    log_level = logging.DEBUG if args.debug else logging.INFO
+    setup_logging(level=log_level, log_file="bot_log.log")    
+    logging.info(f"Logging level set to: {'DEBUG' if args.debug else 'INFO'}")
 
     # Load configuration
     if args.config:
