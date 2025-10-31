@@ -176,6 +176,7 @@ class RealTimeBot:
             "limit": self.historical_bars.maxlen,
             "includePartialBar": False
         }
+        logging.debug(payload)
         headers = {'Authorization': f'Bearer {self.token}'}
         try:
             response = requests.post(historical_url, headers=headers, json=payload, timeout=10)
@@ -381,11 +382,13 @@ class RealTimeBot:
                 "type": 1
             }
         }        
+        logging.debug(payload)
         headers = {'Authorization': f'Bearer {self.token}'}
         try:
             response = requests.post(order_url, headers=headers, json=payload, timeout=10)
             response.raise_for_status()
-            data = response.json()            
+            data = response.json()
+            logging.debug(data)            
             if data.get('success') and data.get('orderId'):
                 logging.info(f"✅ Order placed successfully: {data.get('orderId')}")
                 return data.get("orderId")
