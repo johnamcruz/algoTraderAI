@@ -99,7 +99,7 @@ class RealTimeBot:
         print(f"📈 Trade Params: Entry={self.entry_conf}, ADX={self.adx_thresh}, "
               f"Stop={self.stop_atr_mult} ATR, Target={self.target_atr_mult} ATR")
         print(f"📊 Strategy: {self.strategy.__class__.__name__}")
-        
+
         logging.info(f"📊 Strategy: {self.strategy.__class__.__name__}")        
         logging.info(f"📈 Trade Params: Entry={self.entry_conf}, ADX={self.adx_thresh}, "
               f"Stop={self.stop_atr_mult} ATR, Target={self.target_atr_mult} ATR")
@@ -181,7 +181,12 @@ class RealTimeBot:
             response = requests.post(historical_url, headers=headers, json=payload, timeout=10)
             response.raise_for_status()
             bars_fetched = 0
-            for bar in response.json().get('bars', []):
+
+            bars_from_api = response.json().get('bars', [])
+            bars_from_api.reverse()
+            logging.debug(bars_from_api)
+            
+            for bar in bars_from_api:
                 self.historical_bars.append({
                     "timestamp": datetime.fromisoformat(bar['t']).isoformat(),
                     "open": bar['o'],
