@@ -196,9 +196,9 @@ class SupertrendPullbackStrategy(BaseStrategy):
         self,
         prediction: int,
         confidence: float,
-        bar: Dict, # Bar must contain 'adx', 'close', 'ema200', 'st_direction'
+        bar: Dict, 
         entry_conf: float,
-        adx_thresh: float # This will be the ADX > 20 filter
+        adx_thresh: float
     ) -> Tuple[bool, Optional[str]]:
         """
         Determine if Supertrend V3 entry conditions are met.
@@ -209,20 +209,30 @@ class SupertrendPullbackStrategy(BaseStrategy):
         if confidence < entry_conf:
             return False, None
         
+        # Use .get() and ensure the value is not None before proceeding with comparison
+        # Using 0.0 as a safe numeric fallback for all keys in comparison
+
+        # Get values with safe fallback if key is missing or value is None
+        close = bar.get('close') if bar.get('close') is not None else 0.0
+        ema200 = bar.get('ema200') if bar.get('ema200') is not None else 0.0
+        st_direction = bar.get('st_direction') if bar.get('st_direction') is not None else 0.0
+        adx = bar.get('adx') if bar.get('adx') is not None else 0.0
+        
         # 2. Chop Filter (Uses the passed adx_thresh)
-        adx = bar.get('adx', 0)
         if adx_thresh > 0 and adx < adx_thresh:
             return False, None # Market is choppy
             
         # 3. Model Prediction Filter
         if prediction == 1: # Model wants to BUY
             # 4. Macro-Trend & Alignment Filters
-            if bar.get('close', 0) > bar.get('ema200', 0) and bar.get('st_direction', 0) == 1:
+            # Check 1: close > ema200 AND Check 2: st_direction == 1
+            if close > ema200 and st_direction == 1: # No more comparison with NoneType
                 return True, 'LONG'
                 
         elif prediction == 2: # Model wants to SELL
             # 4. Macro-Trend & Alignment Filters
-            if bar.get('close', 0) < bar.get('ema200', 0) and bar.get('st_direction', 0) == -1:
+            # Check 1: close < ema200 AND Check 2: st_direction == -1
+            if close < ema200 and st_direction == -1: # No more comparison with NoneType
                 return True, 'SHORT'
 
         # Prediction is 0 (Hold) or filters failed

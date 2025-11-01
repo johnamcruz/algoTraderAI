@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """
-Pivot Reversal Strategy Implementation (V2 - Transformer)
+Pivot Reversal Strategy Implementation (V2.2 - Transformer)
 
 This strategy uses a Transformer model to trade pivot reversals based on
-the V2.0 "Heuristic Labeling" and "Sequential Tagging" training.
-The class name and function signatures comply with the original strategy_base.
+the V2.2 "Max Context" (120 bars + CSC + 15min Macro) training.
 """
 
 import pandas as pd
@@ -26,15 +25,14 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # CLASS NAME REMAINS 'PivotReversal3minStrategy' FOR COMPLIANCE
 class PivotReversal3minStrategy(BaseStrategy):
     """
-    Pivot Reversal V2.0 (Transformer) trading strategy.
-    Class name is kept from V1 for base class compatibility.
+    Pivot Reversal V2.2 (Transformer) trading strategy.
+    Implements 120-bar context, CSC, and 15-min Macro filters.
     """
 
-    # UPDATED: Default pivot_lookback changed from 8 to 10 to match V2 training
     def __init__(self, model_path: str, scaler_path: str, contract_symbol: str, pivot_lookback: int = 10):
         """
-        Initialize Pivot Reversal V2.0 strategy.
-        Default pivot_lookback is 10, matching the V2 model training.
+        Initialize Pivot Reversal V2.2 strategy.
+        Default pivot_lookback is 10, matching the V2.2 model training.
         """
         super().__init__(model_path, scaler_path, contract_symbol)
         # Store the pivot lookback specific to this instance
@@ -43,32 +41,32 @@ class PivotReversal3minStrategy(BaseStrategy):
 
     def get_feature_columns(self) -> List[str]:
         """
-        UPDATED: Returns the 14 feature columns for the V2 Transformer model.
+        UPDATED: Returns the 16 feature columns for the V2.2 Transformer model.
         """
         return [
             'dist_to_pivot', 'bars_since_pivot', 'pivot_type',
             'price_vel_10', 'price_vel_20', 'rsi', 'rsi_vel_10',
             'body_size', 'wick_ratio', 'rejection_wick',
             'price_vs_ema50','price_vs_ema200', 'ema50_vs_ema200', 'adx',
+            'change_since_confirm',  # Optimization 1
+            'macro_trend_slope'      # Optimization 2
         ]
 
-    # UPDATED: Sequence length changed from 67 to 80
+    # UPDATED: Sequence length changed from 80 to 120
     def get_sequence_length(self) -> int:
-        """Pivot Reversal V2.0 (Transformer) uses 80 bars."""
-        return 80
+        """Pivot Reversal V2.2 (Transformer) uses 120 bars."""
+        return 120
 
     # =========================================================
-    # V2.0 FEATURE ENGINEERING (REPLACED)
+    # V2.2 FEATURE ENGINEERING (REPLACED)
     # =========================================================
     
     def add_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        UPDATED: Calculate Pivot Reversal V2.0 features - FIXED NON-REPAINTING LOGIC.
-        Uses the instance's self.pivot_lookback (default 10).
+        UPDATED: Calculate Pivot Reversal V2.2 features (16 total) with bug fix.
         """        
-        logging.debug(f"Adding V2 features. Input shape: {df.shape}")
+        logging.debug(f"Adding V2.2 features. Input shape: {df.shape}")
         
-        # Create a copy to avoid SettingWithCopyWarning
         df = df.copy()
 
         # === FIX: CLEAN OHLCV DATA FIRST ===
@@ -77,14 +75,13 @@ class PivotReversal3minStrategy(BaseStrategy):
             df[col] = df[col].fillna(method='ffill')
             df[col] = df[col].fillna(0)             
 
-        # Use the lookback set during initialization
         n = self.pivot_lookback
 
         # === CORE INDICATORS ===
         df['atr'] = ta.atr(df['high'], df['low'], df['close'], length=14)
         df['atr'] = df['atr'].replace(0, 1e-6)
         df['atr'] = df['atr'].fillna(method='ffill')
-        df['atr'] = df['atr'].fillna(1e-6) # Handle leading NaNs
+        df['atr'] = df['atr'].fillna(1e-6) 
 
         df['ema9'] = ta.ema(df['close'], length=9)
         df['ema21'] = ta.ema(df['close'], length=21)
@@ -97,7 +94,6 @@ class PivotReversal3minStrategy(BaseStrategy):
         df['rsi'] = ta.rsi(df['close'], length=14)
         
         # === PIVOT IDENTIFICATION (V2.0 LOGIC) ===
-        # Note: _find_pivots is the V2 version now
         df['pivot_val'] = self._find_pivots(df['close'], n, n) 
         df['pivot_type'] = np.sign(df['pivot_val']).fillna(method='ffill').fillna(0)
         df['pivot_val'] = df['pivot_val'].abs().fillna(method='ffill').fillna(0)
@@ -107,6 +103,9 @@ class PivotReversal3minStrategy(BaseStrategy):
         ).cumcount()
         
         df['dist_to_pivot'] = (df['pivot_val'] - df['close']) / df['atr'] * df['pivot_type'] 
+        
+        # ⭐️ OPTIMIZATION 1: CHANGE SINCE CONFIRMATION (CSC) ⭐️
+        df['change_since_confirm'] = (df['close'] - df['close'].shift(n)) / df['atr']
         
         # === V2.0: RELATIVE VELOCITY & DIVERGENCE FEATURES ===
         df['price_vel_10'] = df['close'].diff(10) / df['atr']
@@ -125,27 +124,40 @@ class PivotReversal3minStrategy(BaseStrategy):
                                     (df['close'] - df['low']) / df['atr'], 
                                     (df['high'] - df['close']) / df['atr']) 
 
+        # ⭐️ OPTIMIZATION 2: 15-MIN MACRO CONTEXT (FIX APPLIED) ⭐️
+        df_15m = df[['close']].resample('15Min', label='left', closed='left').ohlc().dropna()
+        df_15m.columns = df_15m.columns.droplevel(0) 
+        
+        df_15m['ema40'] = ta.ema(df_15m['close'], length=40)
+        
+        # 💥 FIX: Fill NaNs from EMA lookback with 0 before calculating the slope
+        df_15m['ema40'] = df_15m['ema40'].fillna(0) # <-- THE FIX
+        
+        df_15m['ema40_slope'] = df_15m['ema40'].diff(3) 
+        df_15m = df_15m[['ema40_slope']]
+        
+        df = df.merge(df_15m, left_index=True, right_index=True, how='left')
+        df['ema40_slope'] = df['ema40_slope'].fillna(method='ffill')
+        df['ema40_slope'] = df['ema40_slope'].fillna(0) 
+        
+        df['macro_trend_slope'] = df['ema40_slope'] / df['atr']
+
         # === FINAL CLEANUP ===
-        # Ensure all feature cols exist even if ta failed (set to 0)
         all_feature_cols = self.get_feature_columns()
         for col in all_feature_cols:
             if col not in df.columns:
                 df[col] = 0.0
                 
         df[all_feature_cols] = df[all_feature_cols].replace([np.inf, -np.inf], np.nan)
-        df[all_feature_cols] = df[all_feature_cols].fillna(method='ffill') # Fill gaps
-        df[all_feature_cols] = df[all_feature_cols].fillna(0) # Fill leading NaNs
+        df[all_feature_cols] = df[all_feature_cols].fillna(method='ffill') 
+        df[all_feature_cols] = df[all_feature_cols].fillna(0) 
 
-        logging.debug(f"V2 features added. Shape after features: {df.shape}")
+        logging.debug(f"V2.2 features added. Shape after features: {df.shape}")
         return df
 
     def _find_pivots(self, series: pd.Series, n_left: int, n_right: int) -> pd.Series:
         """
-        UPDATED: V2.0 find_pivots logic.
-        Finds pivot points (highs or lows).
-        - Highs are positive values
-        - Lows are negative values
-        - V2.0 does not shift; repainting is handled by model learning.
+        V2.0 find_pivots logic WITH NON-REPAINTING FIX
         """
         pivots = pd.Series(np.nan, index=series.index)
         
@@ -165,12 +177,14 @@ class PivotReversal3minStrategy(BaseStrategy):
                 pivots.iloc[i] = series.iloc[i]
             elif is_pivot_l:
                 pivots.iloc[i] = series.iloc[i] * -1
-        
-        # V2.0 Training logic did not shift pivots.
+                
+        # ⭐️ CRITICAL NON-REPAINTING FIX ⭐️
+        pivots = pivots.shift(n_right)
+
         return pivots
 
     # =========================================================
-    # LIVE EXECUTION FUNCTIONS
+    # LIVE EXECUTION FUNCTIONS (Unchanged)
     # =========================================================
 
     def load_model(self):
@@ -212,15 +226,13 @@ class PivotReversal3minStrategy(BaseStrategy):
 
     def predict(self, df: pd.DataFrame) -> Tuple[int, float]:
         """
-        UPDATED: Generate prediction using V2 Transformer model.
-        Handles the (B, L, C) output shape.
+        Generate prediction using V2 Transformer model.
         """
         try:
-            # preprocess_features is assumed to be in BaseStrategy
-            # It handles scaling and selecting the final feature columns
+            # preprocess_features is in BaseStrategy
             features = self.preprocess_features(df) 
 
-            seq_len = self.get_sequence_length() # Will get 80
+            seq_len = self.get_sequence_length() # Will get 120
             if len(features) < seq_len:
                 logging.warning(f"⚠️ Not enough data for prediction. Need {seq_len}, have {len(features)}. Returning Hold.")
                 return 0, 0.0
@@ -231,9 +243,9 @@ class PivotReversal3minStrategy(BaseStrategy):
             # Run inference
             input_name = self.model.get_inputs()[0].name
             output_name = self.model.get_outputs()[0].name
-            logits_sequence = self.model.run([output_name], {input_name: X})[0] # Shape: (1, 80, 3)
+            logits_sequence = self.model.run([output_name], {input_name: X})[0] # Shape: (1, 120, 3)
 
-            # UPDATED: Get logits from the LAST time step
+            # Get logits from the LAST time step
             last_logits = logits_sequence[0, -1, :] # Shape: (3,)
 
             # Get prediction and confidence
@@ -257,17 +269,15 @@ class PivotReversal3minStrategy(BaseStrategy):
     ) -> Tuple[bool, Optional[str]]:
         """
         Determine if Pivot Reversal V2 entry conditions are met.
-        NOTE: adx_thresh is ignored as ADX is now a feature inside the model.
         """
         
         # Check confidence threshold
         if confidence < entry_conf:
             return False, None
         
-        # The external adx_thresh from V1 is no longer used, 
-        # as the V2 model has learned the ADX context internally.
+        # ADX filter is ignored, as ADX is now a feature *inside* the model.
         
-        # UPDATED: V2 model uses 1=BUY, 2=SELL
+        # V2 model uses 1=BUY, 2=SELL
         if prediction == 1:
             return True, 'LONG'
         elif prediction == 2:
