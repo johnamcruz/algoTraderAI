@@ -314,13 +314,13 @@ class SimulationBot(TradingBot):
                         self._reset_position_state()
                         
                         # Check if profit target or max loss reached
-                        if self.total_pnl_dollars >= self.profit_target:
+                        if self.profit_target is not None and self.total_pnl_dollars >= self.profit_target:
                             print("\n" + "="*50)
                             print(f"🎉 PROFIT TARGET REACHED: ${self.total_pnl_dollars:,.2f}")
                             print("="*50 + "\n")
                             return True  # Stop simulation
                         
-                        if self.total_pnl_dollars <= -self.max_loss_limit:
+                        if self.max_loss_limit is not None and self.total_pnl_dollars <= -self.max_loss_limit:
                             print("\n" + "="*50)
                             print(f"⛔ MAX LOSS LIMIT HIT: ${self.total_pnl_dollars:,.2f}")
                             print("="*50 + "\n")
