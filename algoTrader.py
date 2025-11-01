@@ -5,6 +5,8 @@ Real-Time Trading Bot with Pluggable Strategies
 This version supports multiple AI strategies through a clean strategy pattern.
 Each strategy handles its own features, predictions, and entry logic.
 
+Now includes simulation/backtesting mode via SimulationBot.
+
 Requirements:
     pip install onnxruntime pandas pandas-ta signalrcore requests numpy scikit-learn python-dateutil
 """
@@ -17,6 +19,7 @@ from bot_utils import setup_logging, authenticate, MARKET_HUB, BASE_URL
 from config_loader import load_config, merge_config_with_args, validate_config
 from strategy_factory import StrategyFactory
 from trading_bot import RealTimeBot
+from simulation_bot import SimulationBot
 import warnings
 
 warnings.filterwarnings('ignore')
@@ -31,7 +34,7 @@ def main():
         epilog=f"""
 Available Strategies: {', '.join(StrategyFactory.list_strategies())}
 
-Example Usage (Squeeze V3):
+Example Usage (Live Trading):
   python %(prog)s --account ACC123 --contract CON.F.US.RTY.Z25 --size 1 \\
                   --username USER --apikey KEY --timeframe 5 \\
                   --strategy squeeze_v3 \\
@@ -39,13 +42,14 @@ Example Usage (Squeeze V3):
                   --scaler models/squeeze_v3_scalers.pkl \\
                   --entry_conf 0.55 --adx_thresh 25 --stop_atr 2.0 --target_atr 3.0
 
-Example Usage (Pivot Reversal):
-  python %(prog)s --account ACC123 --contract CON.F.US.ES.Z25 --size 1 \\
-                  --username USER --apikey KEY --timeframe 5 \\
-                  --strategy pivot_reversal \\
-                  --model models/pivot_reversal_model.onnx \\
-                  --scaler models/pivot_reversal_scalers.pkl \\
-                  --entry_conf 0.70 --adx_thresh 20 --stop_atr 1.0 --target_atr 2.0
+Example Usage (Backtesting):
+  python %(prog)s --backtest --backtest_data data/historical.csv \\
+                  --contract RTY --size 1 --timeframe 5 \\
+                  --strategy squeeze_v3 \\
+                  --model models/squeeze_v3_model.onnx \\
+                  --scaler models/squeeze_v3_scalers.pkl \\
+                  --entry_conf 0.55 --adx_thresh 25 --stop_atr 2.0 --target_atr 3.0 \\
+                  --tick_size 0.1 --profit_target 6000 --max_loss 3000
 """
     )
 
@@ -55,25 +59,40 @@ Example Usage (Pivot Reversal):
     parser.add_argument('--debug', action='store_true',
                         help='Enable DEBUG level logging (default: INFO)')
     
+    # Backtesting options
+    parser.add_argument('--backtest', action='store_true',
+                        help='Run in backtesting mode using historical CSV data')
+    parser.add_argument('--backtest_data', type=str,
+                        help='Path to CSV file with historical OHLCV data for backtesting')
+    parser.add_argument('--tick_size', type=float, default=0.01,
+                        help='Contract tick size (for backtesting calculations)')
+    parser.add_argument('--profit_target', type=float, default=6000,
+                        help='Profit target in dollars for backtesting (default: 6000)')
+    parser.add_argument('--max_loss', type=float, default=3000,
+                        help='Maximum loss limit in dollars for backtesting (default: 3000)')    
+    parser.add_argument('--simulation-days', type=int, 
+                        help='(Backtest Only) Limit the backtest to the first N days of the CSV data.'
+    )
+    
     # Account & Contract
     parser.add_argument('--account', type=str,
-                        help='TopstepX account ID')
+                        help='TopstepX account ID (not required for backtesting)')
     parser.add_argument('--contract', type=str,
-                        help='Full contract ID (e.g., CON.F.US.ENQ.Z25)')
+                        help='Full contract ID (e.g., CON.F.US.ENQ.Z25) or symbol for backtesting')
     parser.add_argument('--size', type=int, default=1,
                         help='Trade size (number of contracts)')
     parser.add_argument('--username', type=str,
-                        help='TopstepX username')
+                        help='TopstepX username (not required for backtesting)')
     parser.add_argument('--apikey', type=str,
-                        help='TopstepX API key')
+                        help='TopstepX API key (not required for backtesting)')
     parser.add_argument('--timeframe', type=int, choices=[1, 3, 5], default=3,
                         help='Bar timeframe in minutes (default: 3)')    
     
-    #RealTime Market URL and Base URL
+    # RealTime Market URL and Base URL
     parser.add_argument('--market_hub', type=str, default=MARKET_HUB,
-                        help='Market Hub URL')
+                        help='Market Hub URL (not required for backtesting)')
     parser.add_argument('--base_url', type=str, default=BASE_URL,
-                        help='ProjectX Base URL')
+                        help='ProjectX Base URL (not required for backtesting)')
     
     # Strategy Selection
     parser.add_argument('--strategy', type=str, default="3min_pivot_reversal",
@@ -86,11 +105,11 @@ Example Usage (Pivot Reversal):
     
     # Trading Parameters
     parser.add_argument('--entry_conf', type=float, default=0.60,
-                        help='Min AI confidence to enter (default: 0.80)')
+                        help='Min AI confidence to enter (default: 0.60)')
     parser.add_argument('--adx_thresh', type=int, default=20,
                         help='Min ADX value to enter (default: 20)')
     parser.add_argument('--stop_atr', type=float, default=1.5,
-                        help='Stop loss multiplier (x ATR) (default: 1.0)')
+                        help='Stop loss multiplier (x ATR) (default: 1.5)')
     parser.add_argument('--target_atr', type=float, default=2.0,
                         help='Profit target multiplier (x ATR) (default: 2.0)')
     parser.add_argument('--enable_trailing_stop', action='store_true',
@@ -102,7 +121,7 @@ Example Usage (Pivot Reversal):
     
     args = parser.parse_args()
 
-    # setup logging
+    # Setup logging
     log_level = logging.DEBUG if args.debug else logging.INFO
     setup_logging(level=log_level, log_file="bot_log.log")    
     logging.info(f"Logging level set to: {'DEBUG' if args.debug else 'INFO'}")
@@ -123,16 +142,87 @@ Example Usage (Pivot Reversal):
         config = vars(args)        
         config.pop('config', None)
         
-        # Validate required fields
+        # Validate required fields based on mode
         try:
-            validate_config(config)
-        except ValueError as e:            
+            if config.get('backtest'):
+                # Backtesting mode - only require certain fields
+                if not config.get('backtest_data'):
+                    raise ValueError("--backtest_data is required when using --backtest")
+                if not config.get('contract'):
+                    raise ValueError("--contract is required")
+            else:
+                # Live trading mode - validate all required fields
+                validate_config(config)
+        except ValueError as e:
+            logging.error(f"Configuration error: {e}")
             parser.print_help()
             return
     
-    # log config data for debugging
+    # Log config data for debugging
     logging.info(config)
 
+    # Check mode
+    if config.get('backtest'):
+        run_backtesting(config)
+    else:
+        run_live_trading(config)
+
+
+def run_backtesting(config):
+    """Run in backtesting mode using SimulationBot"""
+    print("\n" + "="*60)
+    print("🔬 BACKTESTING MODE")
+    print("="*60 + "\n")
+    
+    try:
+        # Create strategy
+        strategy_kwargs = {}
+        if config['strategy'] == '3min_pivot_reversal' or config['strategy'] == '5min_pivot_reversal':
+            strategy_kwargs['pivot_lookback'] = config.get("pivot_lookback", 8)
+        
+        strategy = StrategyFactory.create_strategy(
+            strategy_name=config["strategy"],
+            model_path=config["model"],
+            scaler_path=config["scaler"],
+            contract_symbol=config["contract"],  # Use contract as symbol directly in backtest
+            **strategy_kwargs
+        )
+        
+        logging.info(f"✅ Strategy '{config['strategy']}' created successfully!")
+        
+        # Create simulation bot
+        bot = SimulationBot(
+            csv_path=config["backtest_data"],
+            contract=config["contract"],
+            size=config["size"],
+            timeframe_minutes=config["timeframe"],
+            strategy=strategy,
+            entry_conf=config["entry_conf"],
+            adx_thresh=config["adx_thresh"],
+            stop_atr=config["stop_atr"],
+            target_atr=config["target_atr"],
+            tick_size=config.get("tick_size", 0.01),
+            profit_target=config.get("profit_target", 6000),
+            max_loss_limit=config.get("max_loss", 3000),
+            enable_trailing_stop=config.get("enable_trailing_stop", False),
+            simulation_days=config.get("simulation_days"),
+        )
+        
+        # Run simulation
+        asyncio.run(bot.run())
+        
+    except KeyboardInterrupt:
+        print("\n👋 Backtesting stopped by user.")
+    except Exception as e:
+        logging.exception(f"\n❌ A critical error occurred: {e}")
+
+
+def run_live_trading(config):
+    """Run in live trading mode using RealTimeBot"""
+    print("\n" + "="*60)
+    print("📡 LIVE TRADING MODE")
+    print("="*60 + "\n")
+    
     # Authenticate
     jwt_token = authenticate(config["base_url"], config["username"], config["apikey"])
     if not jwt_token:
@@ -141,11 +231,10 @@ Example Usage (Pivot Reversal):
     logging.info(f"🎫 Token received. Creating strategy...")
     
     try:
-        
         # Create strategy
         strategy_kwargs = {}
-        if args.strategy == '3min_pivot_reversal' or args.strategy == '5min_pivot_reversal':
-            strategy_kwargs['pivot_lookback'] = config["pivot_lookback"]
+        if config['strategy'] == '3min_pivot_reversal' or config['strategy'] == '5min_pivot_reversal':
+            strategy_kwargs['pivot_lookback'] = config.get("pivot_lookback", 8)
         
         strategy = StrategyFactory.create_strategy(
             strategy_name=config["strategy"],
@@ -155,7 +244,7 @@ Example Usage (Pivot Reversal):
             **strategy_kwargs
         )
         
-        logging.info(f"✅ Strategy '{args.strategy}' created successfully!")
+        logging.info(f"✅ Strategy '{config['strategy']}' created successfully!")
         logging.info(f"Starting bot...")
         
         # Create and run bot
@@ -172,7 +261,7 @@ Example Usage (Pivot Reversal):
             adx_thresh=config["adx_thresh"],
             stop_atr=config["stop_atr"],
             target_atr=config["target_atr"],
-            enable_trailing_stop=config["enable_trailing_stop"]
+            enable_trailing_stop=config.get("enable_trailing_stop", False)
         )
         
         asyncio.run(bot.run())
@@ -180,7 +269,7 @@ Example Usage (Pivot Reversal):
     except KeyboardInterrupt:
         print("\n👋 Bot stopped by user.")
     except Exception as e:
-        logging.exception(f"\n❌ A critical error occurred: {e}")        
+        logging.exception(f"\n❌ A critical error occurred: {e}")
 
 
 if __name__ == "__main__":

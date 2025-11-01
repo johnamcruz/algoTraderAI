@@ -14,16 +14,16 @@ import asyncio
 import logging
 import requests
 import pandas as pd
-from collections import deque
 from datetime import datetime, timedelta, timezone
 from pysignalr.client import SignalRClient
 from strategy_base import BaseStrategy
 from bot_utils import parse_future_symbol
+from trading_bot_base import TradingBot
 
 # =========================================================
 # REAL-TIME TRADING BOT CLASS
 # =========================================================
-class RealTimeBot:
+class RealTimeBot(TradingBot):
     def __init__(
         self, 
         token, 
@@ -41,10 +41,12 @@ class RealTimeBot:
         enable_trailing_stop=False
     ):
         """
-        Initialize the trading bot with a strategy.
+        Initialize the real-time trading bot.
         
         Args:
             token: Authentication token
+            market_hub: Market hub URL
+            base_url: Base API URL
             account: Trading account ID
             contract: Contract ID
             size: Position size
@@ -55,54 +57,37 @@ class RealTimeBot:
             stop_atr: Stop loss ATR multiplier
             target_atr: Profit target ATR multiplier
             enable_trailing_stop: Enable trailing stops
-        """        
+        """
+        # Initialize base class
+        super().__init__(
+            contract=contract,
+            size=size,
+            timeframe_minutes=timeframe_minutes,
+            strategy=strategy,
+            entry_conf=entry_conf,
+            adx_thresh=adx_thresh,
+            stop_atr=stop_atr,
+            target_atr=target_atr,
+            enable_trailing_stop=enable_trailing_stop
+        )
+        
+        # Real-time specific attributes
         self.hub_url = f"{market_hub}?access_token={token}"
         self.base_url = base_url
         self.account = account
-        self.contract = contract
-        self.size = size
-        self.timeframe_minutes = int(timeframe_minutes)
         self.client = SignalRClient(self.hub_url)
         self.token = token
-        self.enable_trailing_stop = enable_trailing_stop
         
         self.current_bar = {}
         self.current_bar_time = None
         self.bar_lock = asyncio.Lock()
         self.closer_task = None
-        
-        # State Management
-        self.in_position = False
-        self.position_type = None
-        self.entry_price = None
-        self.stop_loss = None
-        self.profit_target = None
-        self.stop_orderId = None
-        self.limit_orderId = None
-        
-        # Strategy
-        self.strategy = strategy
-        self.contracts = None        
-        
-        # Historical bars (strategy determines how many needed)
-        seq_len = self.strategy.get_sequence_length()
-        self.num_historical_candles_needed = seq_len
-        self.historical_bars = deque(maxlen=seq_len)
-        
-        # Trading parameters
-        self.entry_conf = entry_conf
-        self.adx_thresh = adx_thresh
-        self.stop_atr_mult = stop_atr
-        self.target_atr_mult = target_atr
+        self.contracts = None
         
         print(f"🤖 Bot initialized for {self.contract} on {self.timeframe_minutes}-min timeframe.")
         print(f"📈 Trade Params: Entry={self.entry_conf}, ADX={self.adx_thresh}, "
               f"Stop={self.stop_atr_mult} ATR, Target={self.target_atr_mult} ATR")
         print(f"📊 Strategy: {self.strategy.__class__.__name__}")
-
-        logging.info(f"📊 Strategy: {self.strategy.__class__.__name__}")        
-        logging.info(f"📈 Trade Params: Entry={self.entry_conf}, ADX={self.adx_thresh}, "
-              f"Stop={self.stop_atr_mult} ATR, Target={self.target_atr_mult} ATR")
         
         # Register handlers
         self.client.on_open(self.on_open)
@@ -111,10 +96,27 @@ class RealTimeBot:
         self.client.on("GatewayTrade", self.process_tick)
 
     # =========================================================
+    # BAR TIME CALCULATION (RealTimeBot specific)
+    # =========================================================
+    def _get_bar_time(self, ts):
+        """
+        Rounds down a timestamp to the nearest timeframe boundary.
+        Used for aggregating ticks into bars.
+        
+        Args:
+            ts: datetime object
+            
+        Returns:
+            datetime: Rounded bar time
+        """
+        minute = (ts.minute // self.timeframe_minutes) * self.timeframe_minutes
+        return ts.replace(minute=minute, second=0, microsecond=0)
+
+    # =========================================================
     # CONNECTION HANDLERS
     # =========================================================
     async def on_open(self):
-        """Callback when connection opens - ORIGINAL METHOD."""
+        """Callback when connection opens."""
         print("✅ Connected to market hub")
         try:
             await self.client.send("SubscribeContractTrades", [self.contract])
@@ -154,7 +156,6 @@ class RealTimeBot:
         for item in self.contracts:
             if item.get('id') == contract_id:
                 return item
-
         return None             
 
     # =========================================================
@@ -205,40 +206,20 @@ class RealTimeBot:
             logging.exception(f"❌ Could not fetch historical data: {e}.")
 
     # =========================================================
-    # TICK PROCESSING
+    # BAR PROCESSING
     # =========================================================
-    async def process_tick(self, data):
-        """Processes incoming tick data - ORIGINAL METHOD."""
-        try:
-            # Handle list format: ['CONTRACT', [ {...}, {...} ]]
-            if isinstance(data, list) and len(data) >= 2 and isinstance(data[1], list):
-                trades = data[1]
-            # Handle single dict format: { ... }
-            elif isinstance(data, dict):
-                trades = [data]
-            else:
-                trades = []
-
-            for trade in trades:
-                await self.handle_trade(trade)
-        except Exception as e:
-            logging.exception(f"❌ process_tick error: {e} | Data: {data}")
-
-    # =========================================================
-    # BAR AGGREGATION & AI PREDICTION
-    # =========================================================
-    def _get_bar_time(self, ts):
-        """Get the bar time for a given timestamp."""
-        ts = ts.replace(second=0, microsecond=0)
-        minutes = (ts.minute // self.timeframe_minutes) * self.timeframe_minutes
-        return ts.replace(minute=minutes)
+    def _get_tick_size(self):
+        """Get tick size from contract details."""
+        contract_details = self.find_contract(self.contract)
+        if contract_details and contract_details.get('tickSize'):
+            return contract_details['tickSize']
+        return 0.01  # Default fallback
 
     async def _close_and_print_bar(self):
-        """Close current bar and run AI prediction."""
+        """Finalize current bar and run strategy."""
         if not self.current_bar:
             return
         
-        # Add to historical bars
         self.historical_bars.append(self.current_bar)
         
         bar_time_str = datetime.fromisoformat(
@@ -261,105 +242,23 @@ class RealTimeBot:
         
         # Run AI if enough bars
         if len(self.historical_bars) >= self.num_historical_candles_needed:
-            await self._run_ai_prediction()
+            await self._run_ai_prediction()  # Use base class method
         else:
             logging.info(f"⏳ Waiting for more bars... "
                   f"({len(self.historical_bars)}/{self.num_historical_candles_needed})")
         
         # Reset bar state
-        self.current_bar, self.current_bar_time = {}, None
+        self.current_bar = {}
 
-    async def _run_ai_prediction(self):
-        """Run AI prediction using the strategy"""
-        if self.in_position:
-            return
-        
-        try:
-            # Convert historical bars to DataFrame
-            df = pd.DataFrame(list(self.historical_bars))
-            
-            # Add strategy-specific features
-            df = self.strategy.add_features(df)
-            
-            # Validate features
-            if not self.strategy.validate_features(df):
-                logging.exception("❌ Feature validation failed")
-                return
-            
-            # Get prediction from strategy
-            prediction, confidence = self.strategy.predict(df)
-            
-            # Get latest bar for entry checks
-            latest_bar = df.iloc[-1].to_dict()
-            
-            # Check if should enter trade
-            should_enter, direction = self.strategy.should_enter_trade(
-                prediction,
-                confidence,
-                latest_bar,
-                self.entry_conf,
-                self.adx_thresh
-            )
-            
-            # Display prediction
-            pred_labels = {0: "HOLD", 1: "BUY", 2: "SELL"}
-            print(f"🤖 AI: {pred_labels[prediction]} (Conf: {confidence:.2%}) | "
-                  f"ADX: {latest_bar.get('adx', 0):.1f}")
-            logging.info(f"AI: {pred_labels[prediction]} (Conf: {confidence:.2%}) ADX: {latest_bar.get('adx', 0):.1f}")
-            
-            if should_enter:
-                # ORIGINAL ENTRY LOGIC PRESERVED
-                close_price = latest_bar['close']
-                atr = latest_bar.get('atr', 0)
-                
-                if atr <= 0:
-                    logging.exception("❌ Invalid ATR, skipping entry")
-                    return
-                
-                tick_size = self.find_contract(self.contract)['tickSize']
-                
-                if direction == 'LONG':
-                    self.in_position = True
-                    self.position_type = 'LONG'
-                    self.entry_price = close_price
-                    self.stop_loss = self.entry_price - (atr * self.stop_atr_mult)
-                    self.profit_target = self.entry_price + (atr * self.target_atr_mult)
-                    
-                    print("="*40)
-                    print(f"🔥🔥🔥 ENTERING LONG @ {self.entry_price:.2f} 🔥🔥🔥")
-                    print(f"  SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}")
-                    print("="*40)
-                    logging.info(f"LONG @ {self.entry_price:.2f} SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}")
-                    
-                    # Calculate ticks                    
-                    stop_loss_ticks = int((self.stop_loss - self.entry_price) / tick_size)
-                    take_profit_ticks = int((self.profit_target - self.entry_price) / tick_size)
-                    
-                    # Place order with ORIGINAL parameters
-                    await self._place_order(0, stop_ticks=stop_loss_ticks, take_profit_ticks=take_profit_ticks)
-                    
-                else:  # SHORT
-                    self.in_position = True
-                    self.position_type = 'SHORT'
-                    self.entry_price = close_price
-                    self.stop_loss = self.entry_price + (atr * self.stop_atr_mult)
-                    self.profit_target = self.entry_price - (atr * self.target_atr_mult)
-                    
-                    print("="*40)
-                    print(f"🥶🥶🥶 ENTERING SHORT @ {self.entry_price:.2f} 🥶🥶🥶")
-                    print(f"  SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}")
-                    print("="*40)
-                    logging.info(f"SHORT @ {self.entry_price:.2f} SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}")
-                    
-                    # Calculate ticks
-                    stop_loss_ticks = int((self.stop_loss - self.entry_price) / tick_size)
-                    take_profit_ticks = int((self.profit_target - self.entry_price) / tick_size) 
-                    
-                    # Place order with ORIGINAL parameters
-                    await self._place_order(1, stop_ticks=stop_loss_ticks, take_profit_ticks=take_profit_ticks)
-                
-        except Exception as e:
-            logging.exception(f"❌ Error during AI prediction: {e}")            
+
+    # =========================================================
+    # TICK PROCESSING
+    # =========================================================
+    async def process_tick(self, data):
+        """Process incoming tick data."""
+        trades = data[0] if isinstance(data, list) and len(data) > 0 else None
+        if trades:
+            await self.handle_trade(trades)
 
     # =========================================================
     # ORDER MANAGEMENT
@@ -370,9 +269,9 @@ class RealTimeBot:
         payload = {
             "accountId": self.account,
             "contractId": self.contract,
-            "type": type,  # Market order
-            "side": side,  # 0 = Bid (buy), 1 = Ask (sell)
-            "size": self.size,  # Size of the order
+            "type": type,
+            "side": side,
+            "size": self.size,
             "stopLossBracket": {
                 "ticks": stop_ticks,
                 "type": 5 if self.enable_trailing_stop else 4
@@ -447,35 +346,12 @@ class RealTimeBot:
             
             # Check exits if in position
             if self.in_position:
-                exit_price, exit_reason = None, None
-                
-                if self.stop_loss is None or self.profit_target is None:
-                    logging.error("⚠️ Exit check skipped: stop_loss or profit_target not set.")
-                elif self.position_type == 'LONG':
-                    if price <= self.stop_loss:
-                        exit_price, exit_reason = self.stop_loss, 'STOP_LOSS'
-                    elif price >= self.profit_target:
-                        exit_price, exit_reason = self.profit_target, 'PROFIT_TARGET'
-                elif self.position_type == 'SHORT':
-                    if price >= self.stop_loss:
-                        exit_price, exit_reason = self.stop_loss, 'STOP_LOSS'
-                    elif price <= self.profit_target:
-                        exit_price, exit_reason = self.profit_target, 'PROFIT_TARGET'
+                exit_price, exit_reason = self._check_exit_conditions(price)
                 
                 if exit_reason:
-                    pnl = ((exit_price - self.entry_price) if self.position_type == 'LONG'
-                           else (self.entry_price - exit_price))
-                    print("="*40)
-                    print(f"🛑 EXIT {self.position_type} @ {exit_price:.2f} ({exit_reason})")
-                    print(f"  Entry: {self.entry_price:.2f} | PnL Points: {pnl:.2f}")
-                    print("="*40)
-                    logging.info(f"EXIT {self.position_type} @ {exit_price:.2f} ({exit_reason}) Entry: {self.entry_price:.2f} | PnL Points: {pnl:.2f}")
-                    
-                    self.in_position = False
-                    self.position_type = None
-                    self.entry_price = None
-                    self.stop_loss = None
-                    self.profit_target = None
+                    pnl = self._calculate_pnl(exit_price)
+                    self._log_exit(exit_price, exit_reason, pnl)
+                    self._reset_position_state()
             
             # Bar aggregation
             bar_time = self._get_bar_time(ts)
@@ -512,10 +388,10 @@ class RealTimeBot:
             logging.exception(f"❌ handle_trade error: {e} | Trade: {trade}")
 
     # =========================================================
-    # MAIN RUN LOOP (ORIGINAL SEQUENCE)
+    # MAIN RUN LOOP
     # =========================================================
     async def run(self):
-        """Starts the bot - ORIGINAL SEQUENCE."""
+        """Starts the bot."""
         await self.fetch_historical_data()
         await self.fetch_contract_data()
 
