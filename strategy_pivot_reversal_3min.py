@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Pivot Reversal Strategy Implementation (V2.2 - Transformer)
+Pivot Reversal Strategy Implementation (V2.5 - Multi-Objective)
 
 This strategy uses a Transformer model to trade pivot reversals based on
-the V2.2 "Max Context" (120 bars + CSC + 15min Macro) training.
+the V2.5 "Three-Objective" (Risk + Frequency) and 19-feature training.
 """
 
 import pandas as pd
@@ -25,47 +25,54 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # CLASS NAME REMAINS 'PivotReversal3minStrategy' FOR COMPLIANCE
 class PivotReversal3minStrategy(BaseStrategy):
     """
-    Pivot Reversal V2.2 (Transformer) trading strategy.
-    Implements 120-bar context, CSC, and 15-min Macro filters.
+    Pivot Reversal V2.5 (Multi-Objective Transformer) trading strategy.
+    Implements 120-bar context, 19 features, and a proximity filter.
     """
 
-    def __init__(self, model_path: str, scaler_path: str, contract_symbol: str, pivot_lookback: int = 10):
+    def __init__(self, model_path: str, scaler_path: str, contract_symbol: str, 
+                 pivot_lookback: int = 10, 
+                 proximity_thresh: float = 0.35): # NEW: Proximity threshold
         """
-        Initialize Pivot Reversal V2.2 strategy.
-        Default pivot_lookback is 10, matching the V2.2 model training.
+        Initialize Pivot Reversal V2.5 strategy.
         """
         super().__init__(model_path, scaler_path, contract_symbol)
-        # Store the pivot lookback specific to this instance
-        self.pivot_lookback = pivot_lookback        
+        self.pivot_lookback = pivot_lookback
+        self.proximity_thresh = proximity_thresh # NEW: Store proximity threshold
+        logging.info(f"Initialized PivotReversal3minStrategy V2.5 (Risk-Aware)")
+        logging.info(f"V2.5 Proximity Threshold set to: {self.proximity_thresh}")
 
 
     def get_feature_columns(self) -> List[str]:
         """
-        UPDATED: Returns the 16 feature columns for the V2.2 Transformer model.
+        V2.5 UPDATE: Returns the 19 feature columns for the V2.5 Transformer.
         """
         return [
             'dist_to_pivot', 'bars_since_pivot', 'pivot_type',
             'price_vel_10', 'price_vel_20', 'rsi', 'rsi_vel_10',
             'body_size', 'wick_ratio', 'rejection_wick',
             'price_vs_ema50','price_vs_ema200', 'ema50_vs_ema200', 'adx',
-            'change_since_confirm',  # Optimization 1
-            'macro_trend_slope'      # Optimization 2
+            'change_since_confirm', 
+            'macro_trend_slope',
+            # V2.5 NEW FEATURES
+            'price_roc_slope',          
+            'inverse_volatility_score', 
+            'volume_velocity'           
         ]
 
-    # UPDATED: Sequence length changed from 80 to 120
+    # UPDATED: Sequence length remains 120
     def get_sequence_length(self) -> int:
-        """Pivot Reversal V2.2 (Transformer) uses 120 bars."""
+        """Pivot Reversal V2.5 (Transformer) uses 120 bars."""
         return 120
 
     # =========================================================
-    # V2.2 FEATURE ENGINEERING (REPLACED)
+    # V2.5 FEATURE ENGINEERING (ENHANCED)
     # =========================================================
     
     def add_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        UPDATED: Calculate Pivot Reversal V2.2 features (16 total) with bug fix.
+        UPDATED: Calculate Pivot Reversal V2.5 features (19 total).
         """        
-        logging.debug(f"Adding V2.2 features. Input shape: {df.shape}")
+        logging.debug(f"Adding V2.5 features. Input shape: {df.shape}")
         
         df = df.copy()
 
@@ -104,7 +111,7 @@ class PivotReversal3minStrategy(BaseStrategy):
         
         df['dist_to_pivot'] = (df['pivot_val'] - df['close']) / df['atr'] * df['pivot_type'] 
         
-        # ⭐️ OPTIMIZATION 1: CHANGE SINCE CONFIRMATION (CSC) ⭐️
+        # OPTIMIZATION 1: CHANGE SINCE CONFIRMATION (CSC)
         df['change_since_confirm'] = (df['close'] - df['close'].shift(n)) / df['atr']
         
         # === V2.0: RELATIVE VELOCITY & DIVERGENCE FEATURES ===
@@ -117,6 +124,19 @@ class PivotReversal3minStrategy(BaseStrategy):
         df['price_vs_ema200'] = (df['close'] - df['ema200']) / df['atr']
         df['ema50_vs_ema200'] = (df['ema50'] - df['ema200']) / df['atr']
 
+        # === V2.5 ENHANCED RISK/MOMENTUM FEATURES (3 NEW) ===
+    
+        # 1. Price Rate of Change (ROC) Slope / Momentum Decay
+        df['price_roc_slope'] = df['price_vel_10'].diff(10) 
+        
+        # 2. Inverse Volatility Score (IVS) - Proxy for Compression
+        df['vol_channel_width'] = (df['ema9'] - df['ema21']).abs() 
+        df['inverse_volatility_score'] = df['vol_channel_width'] / (df['atr'] + 1e-6)
+    
+        # 3. Volume Velocity (Confirmation)
+        vol_std = df['volume'].rolling(10).std().replace(0, 1e-6)
+        df['volume_velocity'] = df['volume'].diff(1) / vol_std
+
         # === V2.0: CANDLESTICK FEATURES ===
         df['body_size'] = abs(df['close'] - df['open']) / df['atr']
         df['wick_ratio'] = (df['high'] - df['low']) / df['atr'] 
@@ -124,14 +144,12 @@ class PivotReversal3minStrategy(BaseStrategy):
                                     (df['close'] - df['low']) / df['atr'], 
                                     (df['high'] - df['close']) / df['atr']) 
 
-        # ⭐️ OPTIMIZATION 2: 15-MIN MACRO CONTEXT (FIX APPLIED) ⭐️
+        # OPTIMIZATION 2: 15-MIN MACRO CONTEXT
         df_15m = df[['close']].resample('15Min', label='left', closed='left').ohlc().dropna()
         df_15m.columns = df_15m.columns.droplevel(0) 
         
         df_15m['ema40'] = ta.ema(df_15m['close'], length=40)
-        
-        # 💥 FIX: Fill NaNs from EMA lookback with 0 before calculating the slope
-        df_15m['ema40'] = df_15m['ema40'].fillna(0) # <-- THE FIX
+        df_15m['ema40'] = df_15m['ema40'].fillna(0) # FIX
         
         df_15m['ema40_slope'] = df_15m['ema40'].diff(3) 
         df_15m = df_15m[['ema40_slope']]
@@ -152,7 +170,7 @@ class PivotReversal3minStrategy(BaseStrategy):
         df[all_feature_cols] = df[all_feature_cols].fillna(method='ffill') 
         df[all_feature_cols] = df[all_feature_cols].fillna(0) 
 
-        logging.debug(f"V2.2 features added. Shape after features: {df.shape}")
+        logging.debug(f"V2.5 features added. Shape after features: {df.shape}")
         return df
 
     def _find_pivots(self, series: pd.Series, n_left: int, n_right: int) -> pd.Series:
@@ -166,10 +184,8 @@ class PivotReversal3minStrategy(BaseStrategy):
             return pivots
 
         for i in range(n_left, len(series) - n_right):
-            # High Check (Strict Peak)
             is_pivot_h = all(series.iloc[i] > series.iloc[i - k] for k in range(1, n_left + 1)) and \
                          all(series.iloc[i] >= series.iloc[i + k] for k in range(1, n_right + 1))
-            # Low Check (Strict Trough)
             is_pivot_l = all(series.iloc[i] < series.iloc[i - k] for k in range(1, n_left + 1)) and \
                          all(series.iloc[i] <= series.iloc[i + k] for k in range(1, n_right + 1))
 
@@ -178,77 +194,60 @@ class PivotReversal3minStrategy(BaseStrategy):
             elif is_pivot_l:
                 pivots.iloc[i] = series.iloc[i] * -1
                 
-        # ⭐️ CRITICAL NON-REPAINTING FIX ⭐️
         pivots = pivots.shift(n_right)
-
         return pivots
 
     # =========================================================
-    # LIVE EXECUTION FUNCTIONS (Unchanged)
+    # LIVE EXECUTION FUNCTIONS
     # =========================================================
 
     def load_model(self):
-        """Load ONNX model for Pivot Reversal."""
+        # (This function is unchanged, it just loads the V2.5 .onnx file)
         try:
             if not os.path.exists(self.model_path):
                 raise FileNotFoundError(f"Model file not found: {self.model_path}")
-
             self.model = onnxruntime.InferenceSession(self.model_path)
-            logging.info(f"✅ Loaded Pivot Reversal V2 model: {os.path.basename(self.model_path)}")
+            logging.info(f"✅ Loaded Pivot Reversal V2.5 model: {os.path.basename(self.model_path)}")
         except Exception as e:
-            logging.exception(f"❌ Error loading Pivot Reversal V2 model: {e}")
+            logging.exception(f"❌ Error loading Pivot Reversal V2.5 model: {e}")
             raise
 
     def load_scaler(self):
-        """Load scaler for Pivot Reversal."""
+        # (This function is unchanged, it just loads the V2.5 .pkl file)
         try:
             if not os.path.exists(self.scaler_path):
                 raise FileNotFoundError(f"Scaler file not found: {self.scaler_path}")
-
             with open(self.scaler_path, 'rb') as f:
                 scalers = pickle.load(f)
-
-            # V2 scalers are keyed by base symbol (e.g., 'NQ')
             base_symbol = self.contract_symbol.split('.')[0][:2] 
-            
             if base_symbol in scalers:
                 self.scaler = scalers[base_symbol]
-                logging.info(f"✅ Loaded '{base_symbol}' scaler for Pivot Reversal V2")
+                logging.info(f"✅ Loaded '{base_symbol}' scaler for Pivot Reversal V2.5")
             else:
                 available = list(scalers.keys())
-                raise ValueError(
-                    f"'{base_symbol}' scaler not found. "
-                    f"Available: {available}"
-                )
+                raise ValueError(f"'{base_symbol}' scaler not found. Available: {available}")
         except Exception as e:
-            logging.exception(f"❌ Error loading Pivot Reversal V2 scaler: {e}")
+            logging.exception(f"❌ Error loading Pivot Reversal V2.5 scaler: {e}")
             raise
 
     def predict(self, df: pd.DataFrame) -> Tuple[int, float]:
         """
-        Generate prediction using V2 Transformer model.
+        Generate prediction using V2.5 Transformer model.
         """
         try:
-            # preprocess_features is in BaseStrategy
             features = self.preprocess_features(df) 
-
-            seq_len = self.get_sequence_length() # Will get 120
+            seq_len = self.get_sequence_length() # 120
             if len(features) < seq_len:
                 logging.warning(f"⚠️ Not enough data for prediction. Need {seq_len}, have {len(features)}. Returning Hold.")
                 return 0, 0.0
 
-            # Take last sequence
             X = features[-seq_len:].reshape(1, seq_len, -1).astype(np.float32)
 
-            # Run inference
             input_name = self.model.get_inputs()[0].name
             output_name = self.model.get_outputs()[0].name
             logits_sequence = self.model.run([output_name], {input_name: X})[0] # Shape: (1, 120, 3)
-
-            # Get logits from the LAST time step
             last_logits = logits_sequence[0, -1, :] # Shape: (3,)
 
-            # Get prediction and confidence
             probs = self._softmax(last_logits)
             prediction = int(np.argmax(probs))
             confidence = float(probs[prediction])
@@ -256,28 +255,42 @@ class PivotReversal3minStrategy(BaseStrategy):
             return prediction, confidence
 
         except Exception as e:
-            logging.exception(f"❌ Prediction error (Pivot Reversal V2): {e}")
-            return 0, 0.0 # Return Hold on error
+            logging.exception(f"❌ Prediction error (Pivot Reversal V2.5): {e}")
+            return 0, 0.0 
 
     def should_enter_trade(
         self,
         prediction: int,
         confidence: float,
-        bar: Dict,
+        bar: Dict, # Bar must contain features for filtering
         entry_conf: float,
-        adx_thresh: float # PARAMETER RETAINED FOR COMPLIANCE
+        adx_thresh: float # This parameter is ignored in V2.5
     ) -> Tuple[bool, Optional[str]]:
         """
-        Determine if Pivot Reversal V2 entry conditions are met.
+        V2.5 UPDATE: Determine if entry conditions are met.
+        Adds the PROXIMITY filter to match the V2.5 training data.
         """
         
-        # Check confidence threshold
+        # 1. Confidence Filter
         if confidence < entry_conf:
             return False, None
+            
+        # 2. V2.5 PROXIMITY FILTER
+        # The V2.5 model was ONLY trained on signals near the pivot.
+        # We must apply the same filter live to avoid out-of-distribution data.
+        dist_to_pivot_val = bar.get('dist_to_pivot')
         
-        # ADX filter is ignored, as ADX is now a feature *inside* the model.
+        # Handle potential NoneType before comparison
+        if dist_to_pivot_val is None:
+            dist_to_pivot = 99.0 # Assign a high value to fail the check
+        else:
+            dist_to_pivot = float(dist_to_pivot_val)
         
-        # V2 model uses 1=BUY, 2=SELL
+        # We must use the absolute distance for the proximity check
+        if abs(dist_to_pivot) > self.proximity_thresh:
+            return False, None # Not close enough to the pivot
+
+        # 3. Model Prediction Filter
         if prediction == 1:
             return True, 'LONG'
         elif prediction == 2:

@@ -1,5 +1,5 @@
 #python3 algoTrader.py --backtest --backtest_data data/CME_MINI_NQ1_3min.csv --contract CON.F.US.ENQ.Z25 --size 1 --entry_conf 0.8 --stop_atr 1.0 --target_atr 2.0 --model models/model_trendpullback_3min_v2.onnx --scaler models/scalar_trendpullback_3min_v2.pkl --strategy trend_pullback2 --simulation-days 5
 
-#python3 algoTrader.py --backtest --backtest_data data/CME_MINI_NQ1_3min.csv --contract CON.F.US.ENQ.Z25 --size 1 --entry_conf 0.8 --stop_atr 1.0 --target_atr 2.0 --model models/model_pivot_reversal_3min_final.onnx --scaler models/scalar_pivot_reversal_3min_final.pkl --strategy "3min_pivot_reversal" --simulation-days 2
+python3 algoTrader.py --backtest --backtest_data data/CME_MINI_NQ1_3min.csv --contract CON.F.US.ENQ.Z25 --size 1 --entry_conf 0.9 --stop_atr 1.0 --target_atr 2.0 --model models/model_pivot_reversal_3min_v2.5_final.onnx --scaler models/scalar_pivot_reversal_3min_v2.5_final.pkl --strategy "3min_pivot_reversal" --simulation-days 5
 
-python3 algoTrader.py --backtest --backtest_data data/CME_MINI_NQ1_3min.csv --contract CON.F.US.ENQ.Z25 --size 1 --entry_conf 0.8 --stop_atr 1.0 --target_atr 2.0 --model models/model_supertrend_3min_v3.onnx --scaler models/scalar_supertrend_3min_v3.pkl --strategy "supertrend" --simulation-days 2
+#python3 algoTrader.py --backtest --backtest_data data/CME_MINI_NQ1_3min.csv --contract CON.F.US.ENQ.Z25 --size 1 --entry_conf 0.8 --stop_atr 1.0 --target_atr 2.0 --model models/model_supertrend_3min_v3.onnx --scaler models/scalar_supertrend_3min_v3.pkl --strategy "supertrend" --simulation-days 2
