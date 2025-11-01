@@ -8,7 +8,7 @@ Creates strategy instances based on strategy name.
 from strategy_base import BaseStrategy
 from strategy_squeeze import SqueezeV3Strategy
 from strategy_pivot_reversal_5min import PivotReversal5minStrategy
-from strategy_pivot_reversal_3min import PivotReversal3minStrategy
+from strategy_pivot_action import PivotAction3minStrategy
 from strategy_vwap_3min import VWAP3minStrategy
 from strategy_trend_pullback import TrendPullbackStrategy
 from strategy_trend_pullback2 import TrendPullbackStrategy2
@@ -23,7 +23,7 @@ class StrategyFactory:
     STRATEGIES = {
         'squeeze_v3': SqueezeV3Strategy,
         '5min_pivot_reversal': PivotReversal5minStrategy,
-        '3min_pivot_reversal': PivotReversal3minStrategy,
+        'pivot_action': PivotAction3minStrategy,
         'vwap': VWAP3minStrategy,
         'trend_pullback': TrendPullbackStrategy,
         'trend_pullback2': TrendPullbackStrategy2,
