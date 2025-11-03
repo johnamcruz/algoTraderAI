@@ -72,8 +72,9 @@ class PivotAction3minStrategy(BaseStrategy):
     def add_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Calculate Pivot Action V2.8 features (19 total).
+        V2.9 FIX: Corrected macro_trend_slope (non-repainting) AND fixed TypeError.
         """        
-        logging.debug(f"Adding V2.8 features. Input shape: {df.shape}")
+        logging.debug(f"Adding V2.8 (Non-Repainting) features. Input shape: {df.shape}")
         
         df = df.copy()
 
@@ -111,51 +112,51 @@ class PivotAction3minStrategy(BaseStrategy):
         ).cumcount()
         
         df['dist_to_pivot'] = (df['pivot_val'] - df['close']) / df['atr'] * df['pivot_type'] 
-        
-        # OPTIMIZATION 1: CHANGE SINCE CONFIRMATION (CSC)
         df['change_since_confirm'] = (df['close'] - df['close'].shift(n)) / df['atr']
         
-        # === V2.0: RELATIVE VELOCITY & DIVERGENCE FEATURES ===
+        # === VELOCITY & CONTEXT FEATURES ===
         df['price_vel_10'] = df['close'].diff(10) / df['atr']
         df['price_vel_20'] = df['close'].diff(20) / df['atr']
         df['rsi_vel_10'] = df['rsi'].diff(10) 
-
-        # === V2.0: STRUCTURAL CONTEXT FEATURES ===
         df['price_vs_ema50'] = (df['close'] - df['ema50']) / df['atr']
         df['price_vs_ema200'] = (df['close'] - df['ema200']) / df['atr']
         df['ema50_vs_ema200'] = (df['ema50'] - df['ema200']) / df['atr']
 
-        # === V2.5/V2.8 ENHANCED RISK/MOMENTUM FEATURES (3 NEW) ===
-    
-        # 1. Price Rate of Change (ROC) Slope / Momentum Decay
+        # === V2.5/V2.8 ENHANCED RISK/MOMENTUM FEATURES ===
         df['price_roc_slope'] = df['price_vel_10'].diff(10) 
-        
-        # 2. Inverse Volatility Score (IVS) - Proxy for Compression
         df['vol_channel_width'] = (df['ema9'] - df['ema21']).abs() 
         df['inverse_volatility_score'] = df['vol_channel_width'] / (df['atr'] + 1e-6)
-    
-        # 3. Volume Velocity (Confirmation)
         vol_std = df['volume'].rolling(10).std().replace(0, 1e-6)
         df['volume_velocity'] = df['volume'].diff(1) / vol_std
 
-        # === V2.0: CANDLESTICK FEATURES ===
+        # === CANDLESTICK FEATURES ===
         df['body_size'] = abs(df['close'] - df['open']) / df['atr']
         df['wick_ratio'] = (df['high'] - df['low']) / df['atr'] 
         df['rejection_wick'] = np.where(df['close'] > df['open'], 
                                     (df['close'] - df['low']) / df['atr'], 
                                     (df['high'] - df['close']) / df['atr']) 
 
-        # OPTIMIZATION 2: 15-MIN MACRO CONTEXT
-        df_15m = df[['close']].resample('15Min', label='left', closed='left').ohlc().dropna()
-        df_15m.columns = df_15m.columns.droplevel(0) 
+        # === 15-MIN MACRO CONTEXT (NON-REPAINTING FIX) ===
         
+        # 1. Create a separate 15-min DataFrame
+        df_15m = df['close'].resample('15Min', label='left', closed='left').ohlc().dropna()
+        
+        # 2. Calculate indicators on the 15-min DataFrame
         df_15m['ema40'] = ta.ema(df_15m['close'], length=40)
-        df_15m['ema40'] = df_15m['ema40'].fillna(0) # FIX
         
-        df_15m['ema40_slope'] = df_15m['ema40'].diff(3) 
-        df_15m = df_15m[['ema40_slope']]
+        # *** THIS IS THE FIX ***
+        # Fill NaNs *before* calling diff() to prevent the TypeError
+        df_15m['ema40'] = df_15m['ema40'].fillna(0)
         
+        df_15m['ema40_slope'] = df_15m['ema40'].diff(3)
+        
+        # 3. Shift the data by 1 to prevent look-ahead bias
+        df_15m = df_15m[['ema40_slope']].shift(1) 
+        
+        # 4. Merge this stable, non-repainting data back
         df = df.merge(df_15m, left_index=True, right_index=True, how='left')
+        
+        # 5. Forward-fill the slope
         df['ema40_slope'] = df['ema40_slope'].fillna(method='ffill')
         df['ema40_slope'] = df['ema40_slope'].fillna(0) 
         
@@ -171,7 +172,7 @@ class PivotAction3minStrategy(BaseStrategy):
         df[all_feature_cols] = df[all_feature_cols].fillna(method='ffill') 
         df[all_feature_cols] = df[all_feature_cols].fillna(0) 
 
-        logging.debug(f"V2.8 features added. Shape after features: {df.shape}")
+        logging.debug(f"V2.8 (Non-Repainting) features added. Shape: {df.shape}")
         return df
 
     def _find_pivots(self, series: pd.Series, n_left: int, n_right: int) -> pd.Series:

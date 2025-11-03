@@ -255,10 +255,21 @@ class RealTimeBot(TradingBot):
     # TICK PROCESSING
     # =========================================================
     async def process_tick(self, data):
-        """Process incoming tick data."""
-        trades = data[0] if isinstance(data, list) and len(data) > 0 else None
-        if trades:
-            await self.handle_trade(trades)
+        """Process incoming tick data."""        
+        try:
+            # Handle list format: ['CONTRACT', [ {...}, {...} ]]
+            if isinstance(data, list) and len(data) >= 2 and isinstance(data[1], list):
+                trades = data[1]
+            # Handle single dict format: { ... }
+            elif isinstance(data, dict):
+                trades = [data]
+            else:
+                trades = []
+
+            for trade in trades:
+                await self.handle_trade(trade)
+        except Exception as e:
+            logging.exception(f"❌ process_tick error: {e} | Data: {data}")
 
     # =========================================================
     # ORDER MANAGEMENT
