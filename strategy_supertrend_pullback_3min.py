@@ -263,20 +263,8 @@ class SupertrendPullbackStrategy(BaseStrategy):
         st_val = bar.get('st_val') if bar.get('st_val') is not None else 0.0
         atr = bar.get('atr') if bar.get('atr') is not None else 1e-6 # Avoid zero division
         if atr < 1e-6: atr = 1e-6 # Ensure ATR is not zero
-        # ----------------------------------------------------
-        
-        # 2. Chop Filter (Uses the passed adx_thresh)
-        if adx_thresh > 0 and adx < adx_thresh:
-            return False, None # Market is choppy
             
-        # --- NEW V3.8 PULLBACK PROXIMITY FILTER ---
-        # (This matches the backtest_supertrend_sequential logic)
-        dist_to_st = abs(close - st_val) / atr
-        if dist_to_st > proximity_thresh:
-             return False, None # Not a pullback, price is too far from ST
-        # -----------------------------------------
-            
-        # 3. Model Prediction Filter
+        # Model Prediction Filter
         if prediction == 1: # Model wants to BUY
             # 4. Macro-Trend & Alignment Filters
             # Check 1: close > ema200 AND Check 2: st_direction == 1
