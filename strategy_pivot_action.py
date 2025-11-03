@@ -283,20 +283,13 @@ class PivotAction3minStrategy(BaseStrategy):
         if curr_close is None or pivot_line is None or atr is None or atr < 1e-6:
             logging.warning("Missing data for V2.8 proximity check (close, ema50, or atr).")
             return False, None
-            
-        # Calculate proximity to the EMA50
-        dist_to_pivot_line = abs(curr_close - pivot_line) / atr
-        
-        if dist_to_pivot_line > self.proximity_thresh:
-            # logging.debug(f"Trade filtered by proximity: {dist_to_pivot_line:.2f} > {self.proximity_thresh}")
-            return False, None # Not close enough to the pivot line (EMA50)
-
-        # 2. Confidence Filter
+                    
+        # Confidence Filter
         if confidence < entry_conf:
             # logging.debug(f"Trade filtered by confidence: {confidence:.2f} < {entry_conf}")
             return False, None
 
-        # 3. Model Prediction Filter
+        # Model Prediction Filter
         if prediction == 1:
             return True, 'LONG'
         elif prediction == 2:
