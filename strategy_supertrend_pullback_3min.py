@@ -58,7 +58,7 @@ class SupertrendPullbackStrategy(BaseStrategy):
     def get_sequence_length(self) -> int:
         """
         Supertrend Pullback V3.8 (Transformer) uses 120 bars.
-        """ # <--- MODIFIED: Corrected docstring from 80 to 120
+        """
         return 120
 
     # =========================================================
@@ -122,16 +122,24 @@ class SupertrendPullbackStrategy(BaseStrategy):
 
         if 'ema40_slope' not in df.columns: df['ema40_slope'] = np.nan
         df['macro_trend_slope'] = df['ema40_slope'] / df['atr']
+        
+        # --- FIX 1: DATA POISONING ---
+        # Replace inf, -inf with NaN
         df.replace([np.inf, -np.inf], np.nan, inplace=True)
-        df.fillna(method='ffill', inplace=True); df.fillna(method='bfill', inplace=True); df.fillna(0, inplace=True) 
-        all_feature_cols = [
-            'price_vs_st', 'st_direction', 'st_val_slow', 'st_direction_slow', 'price_vs_st_slow',
-            'price_vs_ema40', 'ema15_vs_ema40', 'price_vs_ema200', 'adx', 'adx_slope', 'rsi', 'cmf',
-            'price_vel_10', 'price_vel_20', 'rsi_vel_10', 'body_size', 'wick_ratio', 'atr',
-            'macro_trend_slope', 'price_roc_slope', 'inverse_volatility_score', 'volume_velocity'
-        ]
+        
+        # ffill carries the last known good value forward
+        df.fillna(method='ffill', inplace=True)
+        
+        # dropna() removes any rows that are *still* NaN
+        # (i.e., the initial 200-bar warm-up period)
+        # This ensures the model ONLY sees 100% valid, non-zero data.
+        df.dropna(inplace=True) 
+        # --- END FIX ---
+
+        all_feature_cols = self.get_feature_columns() # Use the class method
         for col in all_feature_cols:
-            if col not in df.columns: df[col] = 0.0
+            if col not in df.columns: 
+                df[col] = 0.0 # This will now only run if df is empty
                     
         logging.debug(f"V3.8 Supertrend features added. Shape after features: {df.shape}")
         return df
@@ -176,18 +184,29 @@ class SupertrendPullbackStrategy(BaseStrategy):
             logging.exception(f"❌ Error loading Supertrend V3.8 scaler: {e}")
             raise
 
+    # --- MODIFIED FUNCTION ---
     def predict(self, df: pd.DataFrame) -> Tuple[int, float]:
         """
         Generate prediction using V3.8 Transformer model.
         (Matches training script by using the LAST time step)
         """
         try:
+            # --- FIX: Check for empty/insufficient data FIRST ---
+            # This catches the empty DataFrame from add_features() during warm-up
+            # when dropna() removes all rows.
+            seq_len = self.get_sequence_length() # 120
+            if df.empty or len(df) < seq_len:
+                logging.warning(f"⚠️ Not enough data for prediction. Need {seq_len}, have {len(df)}. (Warm-up in progress)")
+                return 0, 0.0
+            # --- END FIX ---
+
+            # Now we know df is not empty and has at least seq_len rows.
             # preprocess_features is assumed to be in BaseStrategy
             features = self.preprocess_features(df) 
 
-            seq_len = self.get_sequence_length() # 120
+            # This check is now redundant, but good for safety.
             if len(features) < seq_len:
-                logging.warning(f"⚠️ Not enough data for prediction. Need {seq_len}, have {len(features)}. Returning Hold.")
+                logging.warning(f"⚠️ Data length mismatch after scaling. Need {seq_len}, have {len(features)}. Returning Hold.")
                 return 0, 0.0
 
             X = features[-seq_len:].reshape(1, seq_len, -1).astype(np.float32)
@@ -208,6 +227,7 @@ class SupertrendPullbackStrategy(BaseStrategy):
         except Exception as e:
             logging.exception(f"❌ Prediction error (Supertrend V3.8): {e}")
             return 0, 0.0 # Return Hold on error
+    # --- END MODIFIED FUNCTION ---
     
     def should_enter_trade(
         self,
@@ -223,7 +243,11 @@ class SupertrendPullbackStrategy(BaseStrategy):
         and Proximity (pullback) - matching backtest_supertrend_sequential.
         """
 
-        proximity_thresh = 0.35
+        # --- FIX 2: PARAMETER MISMATCH ---
+        # This value MUST match the 'proximity_thresh' from LABEL_PARAMS
+        # in the training script, which was 1.5.
+        proximity_thresh = 1.5
+        # --- END FIX ---
         
         # 1. Confidence Filter
         if confidence < entry_conf:
