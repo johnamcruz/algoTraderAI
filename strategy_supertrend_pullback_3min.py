@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Supertrend Pullback Strategy Implementation (V3.0 - Transformer)
+Supertrend Pullback Strategy Implementation (V3.8 - Transformer)
 
 This strategy uses a Transformer model to trade Supertrend pullbacks.
-It is based on the V3.0 "Classification-Only, Filtered Labeling" model.
+It is based on the V3.8 "Balanced Quality Signals" model.
 """
 
 import pandas as pd
@@ -24,100 +24,116 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 class SupertrendPullbackStrategy(BaseStrategy):
     """
-    Supertrend Pullback V3.0 (Transformer) trading strategy.
-    Uses ADX and EMA200 filters for high-precision entries.
+    Supertrend Pullback V3.8 (Transformer) trading strategy.
+    Uses ADX, EMA200, and Proximity filters for high-precision entries.
     """
 
     def __init__(self, model_path: str, scaler_path: str, contract_symbol: str):
         """
-        Initialize Supertrend Pullback V3.0 strategy.
+        Initialize Supertrend Pullback V3.8 strategy.
         """
         # pivot_lookback is no longer needed for this strategy
         super().__init__(model_path, scaler_path, contract_symbol)
-        logging.info("Initialized SupertrendPullbackStrategy")
+        logging.info("Initialized SupertrendPullbackStrategy (V3.8)")
 
 
     def get_feature_columns(self) -> List[str]:
         """
-        UPDATED: Returns the 15 feature columns for the V3 Supertrend Transformer.
+        Returns the 22 feature columns for the V3.8 Supertrend Transformer.
+        (Matches SUPERTRND PULLBACK AI - V3.8)
         """
         return [ 
-            'price_vs_st', 'st_direction', 'price_vs_ema40', 'ema15_vs_ema40', 'price_vs_ema200',
-            'adx', 'adx_slope', 'rsi', 'cmf',
-            'price_vel_10', 'price_vel_20', 'rsi_vel_10', 
-            'body_size', 'wick_ratio', 'atr'
+             'price_vs_st', 'st_direction',
+             'st_val_slow', 'st_direction_slow', 'price_vs_st_slow', 
+             'price_vs_ema40', 'ema15_vs_ema40', 'price_vs_ema200',
+             'adx', 'adx_slope', 'rsi', 'cmf',
+             'price_vel_10', 'price_vel_20', 'rsi_vel_10',
+             'body_size', 'wick_ratio', 'atr',
+             'macro_trend_slope',
+             'price_roc_slope',
+             'inverse_volatility_score',
+             'volume_velocity'
         ]
 
     def get_sequence_length(self) -> int:
-        """Supertrend Pullback V3.0 (Transformer) uses 80 bars."""
-        return 80
+        """
+        Supertrend Pullback V3.8 (Transformer) uses 120 bars.
+        """ # <--- MODIFIED: Corrected docstring from 80 to 120
+        return 120
 
     # =========================================================
-    # V3.0 FEATURE ENGINEERING (REPLACED)
+    # V3.8 FEATURE ENGINEERING
+    # (Matches add_supertrend_features_v3_6 from training)
     # =========================================================
     
     def add_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        UPDATED: Calculate Supertrend Pullback V3.0 features.
+        Calculate Supertrend Pullback V3.8 features.
+        (Matches add_supertrend_features_v3_6 from training)
         """        
-        logging.debug(f"Adding V3 Supertrend features. Input shape: {df.shape}")
+        logging.debug(f"Adding V3.8 Supertrend features. Input shape: {df.shape}")
         
         df = df.copy()
-
-        # === CLEAN OHLCV DATA FIRST ===
-        for col in ['open', 'high', 'low', 'close', 'volume']:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-            df[col] = df[col].fillna(method='ffill')
-            df[col] = df[col].fillna(0)             
-
-        # === CORE INDICATORS & VOLATILITY ===
-        df['atr'] = ta.atr(df['high'], df['low'], df['close'], length=14)
-        df['atr'] = df['atr'].replace(0, 1e-6)
-        df['atr'] = df['atr'].fillna(method='ffill')
-        df['atr'] = df['atr'].fillna(1e-6) 
-
-        df['ema15'] = ta.ema(df['close'], length=15)
-        df['ema40'] = ta.ema(df['close'], length=40)
-        df['ema200'] = ta.ema(df['close'], length=200)
-
-        # === SUPERTRND (ST) IDENTIFICATION ===
-        st_df = ta.supertrend(df['high'], df['low'], df['close'], length=10, multiplier=3)
-        df['st_val'] = st_df['SUPERT_10_3']
-        df['st_direction'] = st_df['SUPERTd_10_3'] 
         
-        # === RELATIVE POSITION & CONTEXT ===
-        df['price_vs_st'] = (df['close'] - df['st_val']) / df['atr']
-        df['price_vs_ema40'] = (df['close'] - df['ema40']) / df['atr']
+        df['atr'] = ta.atr(df['high'], df['low'], df['close'], length=14); df['atr'].replace(0, 1e-6, inplace=True)
+        df['ema15'] = ta.ema(df['close'], length=15); df['ema40'] = ta.ema(df['close'], length=40); df['ema200'] = ta.ema(df['close'], length=200)
+        st_df_fast = ta.supertrend(df['high'], df['low'], df['close'], length=10, multiplier=3)
+        df['st_val'] = st_df_fast['SUPERT_10_3']; df['st_direction'] = st_df_fast['SUPERTd_10_3']
+        st_df_slow = ta.supertrend(df['high'], df['low'], df['close'], length=20, multiplier=4)
+        df['st_val_slow'] = st_df_slow['SUPERT_20_4']; df['st_direction_slow'] = st_df_slow['SUPERTd_20_4']
+        df['price_vs_st'] = (df['close'] - df['st_val']) / df['atr'];
+        df['price_vs_st_slow'] = (df['close'] - df['st_val_slow']) / df['atr'];
+        df['price_vs_ema40'] = (df['close'] - df['ema40']) / df['atr'];
         df['ema15_vs_ema40'] = (df['ema15'] - df['ema40']) / df['atr']
-        df['price_vs_ema200'] = (df['close'] - df['ema200']) / df['atr'] # Feature for macro filter
-        
-        # === MOMENTUM & VOLUME ===
+        df['price_vs_ema200'] = (df['close'] - df['ema200']) / df['atr']
         adx_df = ta.adx(df['high'], df['low'], df['close'], length=14)
         df['adx'] = adx_df['ADX_14'] if adx_df is not None and 'ADX_14' in adx_df.columns else 0
-        df['adx_slope'] = df['adx'].diff(5) 
+        df['adx_slope'] = df['adx'].diff(5)
         df['rsi'] = ta.rsi(df['close'], length=14)
         df['cmf'] = ta.cmf(df['high'], df['low'], df['close'], df['volume'], length=20)
-        
-        # === VELOCITY FEATURES (from Pivot V2.0 Success) ===
-        df['price_vel_10'] = df['close'].diff(10) / df['atr']
-        df['price_vel_20'] = df['close'].diff(20) / df['atr']
-        df['rsi_vel_10'] = df['rsi'].diff(10) 
-        
-        # === CANDLESTICK FEATURES ===
-        df['body_size'] = abs(df['close'] - df['open']) / df['atr']
-        df['wick_ratio'] = (df['high'] - df['low']) / df['atr'] 
+        df['price_vel_10'] = df['close'].diff(10) / df['atr']; df['price_vel_20'] = df['close'].diff(20) / df['atr']; df['rsi_vel_10'] = df['rsi'].diff(10)
+        df['body_size'] = abs(df['close'] - df['open']) / df['atr']; df['wick_ratio'] = (df['high'] - df['low']) / df['atr']
+        df['price_roc_slope'] = df['price_vel_10'].diff(10)
+        df['vol_channel_width'] = (df['ema15'] - df['ema40']).abs()
+        df['inverse_volatility_score'] = df['vol_channel_width'] / (df['atr'] + 1e-6)
+        vol_std = df['volume'].rolling(10).std().replace(0, 1e-6)
+        df['volume_velocity'] = df['volume'].diff(1) / vol_std
+        df_15m = df['close'].resample('15Min', label='left', closed='left').ohlc().dropna()
 
-        # === FINAL CLEANUP ===
-        all_feature_cols = self.get_feature_columns()
-        for col in all_feature_cols:
-            if col not in df.columns:
-                df[col] = 0.0
+        if not df_15m.empty:
+            # 1. Calculate the EMA
+            ema_15m_series = ta.ema(df_15m['close'], length=40)
+            
+            # 2. Check if the result is None (which happens on small datasets)
+            if ema_15m_series is not None:
+                df_15m['ema40'] = ema_15m_series.fillna(0)
+                df_15m['ema40_slope'] = df_15m['ema40'].diff(3)
+            else:
+                # EMA calculation failed (not enough data), so fill with defaults
+                df_15m['ema40'] = 0.0
+                df_15m['ema40_slope'] = np.nan
                 
-        df[all_feature_cols] = df[all_feature_cols].replace([np.inf, -np.inf], np.nan)
-        df[all_feature_cols] = df[all_feature_cols].fillna(method='ffill') # Fill gaps
-        df[all_feature_cols] = df[all_feature_cols].fillna(0) # Fill leading NaNs
+            # 3. Continue with the merge
+            df_15m = df_15m[['ema40_slope']].shift(1)
+            df = df.merge(df_15m, left_index=True, right_index=True, how='left')
+        else:
+            # df_15m is empty, so we can't merge. Just create the column directly.
+            df['ema40_slope'] = np.nan        
 
-        logging.debug(f"V3 Supertrend features added. Shape after features: {df.shape}")
+        if 'ema40_slope' not in df.columns: df['ema40_slope'] = np.nan
+        df['macro_trend_slope'] = df['ema40_slope'] / df['atr']
+        df.replace([np.inf, -np.inf], np.nan, inplace=True)
+        df.fillna(method='ffill', inplace=True); df.fillna(method='bfill', inplace=True); df.fillna(0, inplace=True) 
+        all_feature_cols = [
+            'price_vs_st', 'st_direction', 'st_val_slow', 'st_direction_slow', 'price_vs_st_slow',
+            'price_vs_ema40', 'ema15_vs_ema40', 'price_vs_ema200', 'adx', 'adx_slope', 'rsi', 'cmf',
+            'price_vel_10', 'price_vel_20', 'rsi_vel_10', 'body_size', 'wick_ratio', 'atr',
+            'macro_trend_slope', 'price_roc_slope', 'inverse_volatility_score', 'volume_velocity'
+        ]
+        for col in all_feature_cols:
+            if col not in df.columns: df[col] = 0.0
+                    
+        logging.debug(f"V3.8 Supertrend features added. Shape after features: {df.shape}")
         return df
 
     # =========================================================
@@ -131,9 +147,9 @@ class SupertrendPullbackStrategy(BaseStrategy):
                 raise FileNotFoundError(f"Model file not found: {self.model_path}")
 
             self.model = onnxruntime.InferenceSession(self.model_path)
-            logging.info(f"✅ Loaded Supertrend Pullback V3 model: {os.path.basename(self.model_path)}")
+            logging.info(f"✅ Loaded Supertrend Pullback V3.8 model: {os.path.basename(self.model_path)}")
         except Exception as e:
-            logging.exception(f"❌ Error loading Supertrend Pullback V3 model: {e}")
+            logging.exception(f"❌ Error loading Supertrend Pullback V3.8 model: {e}")
             raise
 
     def load_scaler(self):
@@ -149,7 +165,7 @@ class SupertrendPullbackStrategy(BaseStrategy):
             
             if base_symbol in scalers:
                 self.scaler = scalers[base_symbol]
-                logging.info(f"✅ Loaded '{base_symbol}' scaler for Supertrend V3")
+                logging.info(f"✅ Loaded '{base_symbol}' scaler for Supertrend V3.8")
             else:
                 available = list(scalers.keys())
                 raise ValueError(
@@ -157,18 +173,19 @@ class SupertrendPullbackStrategy(BaseStrategy):
                     f"Available: {available}"
                 )
         except Exception as e:
-            logging.exception(f"❌ Error loading Supertrend V3 scaler: {e}")
+            logging.exception(f"❌ Error loading Supertrend V3.8 scaler: {e}")
             raise
 
     def predict(self, df: pd.DataFrame) -> Tuple[int, float]:
         """
-        Generate prediction using V3 Transformer model (Classification-Only).
+        Generate prediction using V3.8 Transformer model.
+        (Matches training script by using the LAST time step)
         """
         try:
             # preprocess_features is assumed to be in BaseStrategy
             features = self.preprocess_features(df) 
 
-            seq_len = self.get_sequence_length() # 80
+            seq_len = self.get_sequence_length() # 120
             if len(features) < seq_len:
                 logging.warning(f"⚠️ Not enough data for prediction. Need {seq_len}, have {len(features)}. Returning Hold.")
                 return 0, 0.0
@@ -177,9 +194,9 @@ class SupertrendPullbackStrategy(BaseStrategy):
 
             input_name = self.model.get_inputs()[0].name
             output_name = self.model.get_outputs()[0].name
-            logits_sequence = self.model.run([output_name], {input_name: X})[0] # Shape: (1, 80, 3)
+            logits_sequence = self.model.run([output_name], {input_name: X})[0] # Shape: (1, 120, 3)
 
-            # Get logits from the LAST time step
+            # Get logits from the LAST time step (matches training script)
             last_logits = logits_sequence[0, -1, :] # Shape: (3,)
 
             probs = self._softmax(last_logits)
@@ -189,54 +206,68 @@ class SupertrendPullbackStrategy(BaseStrategy):
             return prediction, confidence
 
         except Exception as e:
-            logging.exception(f"❌ Prediction error (Supertrend V3): {e}")
+            logging.exception(f"❌ Prediction error (Supertrend V3.8): {e}")
             return 0, 0.0 # Return Hold on error
-
+    
     def should_enter_trade(
         self,
         prediction: int,
         confidence: float,
         bar: Dict, 
         entry_conf: float,
-        adx_thresh: float
+        adx_thresh: float,        
     ) -> Tuple[bool, Optional[str]]:
         """
-        Determine if Supertrend V3 entry conditions are met.
-        Applies hard filters for ADX (chop) and EMA (macro-trend).
+        Determine if Supertrend V3.8 entry conditions are met.
+        Applies hard filters for ADX (chop), EMA (macro-trend),
+        and Proximity (pullback) - matching backtest_supertrend_sequential.
         """
+
+        proximity_thresh = 0.35
         
         # 1. Confidence Filter
         if confidence < entry_conf:
             return False, None
         
-        # Use .get() and ensure the value is not None before proceeding with comparison
-        # Using 0.0 as a safe numeric fallback for all keys in comparison
-
         # Get values with safe fallback if key is missing or value is None
         close = bar.get('close') if bar.get('close') is not None else 0.0
         ema200 = bar.get('ema200') if bar.get('ema200') is not None else 0.0
         st_direction = bar.get('st_direction') if bar.get('st_direction') is not None else 0.0
         adx = bar.get('adx') if bar.get('adx') is not None else 0.0
         
+        # --- NEW VALUES REQUIRED FOR V3.8 PROXIMITY FILTER ---
+        st_val = bar.get('st_val') if bar.get('st_val') is not None else 0.0
+        atr = bar.get('atr') if bar.get('atr') is not None else 1e-6 # Avoid zero division
+        if atr < 1e-6: atr = 1e-6 # Ensure ATR is not zero
+        # ----------------------------------------------------
+        
         # 2. Chop Filter (Uses the passed adx_thresh)
         if adx_thresh > 0 and adx < adx_thresh:
             return False, None # Market is choppy
+            
+        # --- NEW V3.8 PULLBACK PROXIMITY FILTER ---
+        # (This matches the backtest_supertrend_sequential logic)
+        dist_to_st = abs(close - st_val) / atr
+        if dist_to_st > proximity_thresh:
+             return False, None # Not a pullback, price is too far from ST
+        # -----------------------------------------
             
         # 3. Model Prediction Filter
         if prediction == 1: # Model wants to BUY
             # 4. Macro-Trend & Alignment Filters
             # Check 1: close > ema200 AND Check 2: st_direction == 1
-            if close > ema200 and st_direction == 1: # No more comparison with NoneType
+            if close > ema200 and st_direction == 1:
                 return True, 'LONG'
                 
         elif prediction == 2: # Model wants to SELL
             # 4. Macro-Trend & Alignment Filters
             # Check 1: close < ema200 AND Check 2: st_direction == -1
-            if close < ema200 and st_direction == -1: # No more comparison with NoneType
+            if close < ema200 and st_direction == -1:
                 return True, 'SHORT'
 
         # Prediction is 0 (Hold) or filters failed
         return False, None
+    # <--- END OF MODIFIED FUNCTION ---
 
     @staticmethod
     def _softmax(x):
