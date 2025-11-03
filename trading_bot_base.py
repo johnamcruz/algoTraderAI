@@ -66,8 +66,12 @@ class TradingBot(ABC):
         
         # Historical bars (strategy determines how many needed)
         seq_len = self.strategy.get_sequence_length()
-        self.num_historical_candles_needed = seq_len
-        self.historical_bars = deque(maxlen=seq_len)
+        # --- MODIFICATION: Need more history for warm-up than just seq_len ---
+        # We need at least 200 bars for ema200 + seq_len for the model.
+        # Let's set a safe buffer. 500 should be enough for most indicators.
+        self.num_historical_candles_needed = 500 
+        self.historical_bars = deque(maxlen=self.num_historical_candles_needed)
+        # --- END MODIFICATION ---
         
         # Trading parameters
         self.entry_conf = entry_conf
@@ -192,6 +196,13 @@ class TradingBot(ABC):
             
             # Add strategy-specific features
             df = self.strategy.add_features(df)
+            
+            # --- FIX: CATCH EMPTY DATAFRAME ---
+            # This happens if add_features() drops all rows during warm-up
+            if df.empty:
+                logging.warning("⚠️ Strategy is warming up (not enough data). Skipping prediction.")
+                return
+            # --- END FIX ---
             
             logging.debug(f"🔍 After add_features, columns: {list(df.columns)}")
             
