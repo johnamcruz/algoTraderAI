@@ -38,8 +38,9 @@ class SupertrendPullbackStrategy(BaseStrategy):
 
     def get_feature_columns(self) -> List[str]:
         """
-        Returns the 25 feature columns for the V3.10 Supertrend Transformer.
+        Returns the 28 feature columns for the final, enriched V3.10 Supertrend Transformer.
         """
+        # --- 28 FEATURE LIST ---
         return [ 
              'price_vs_st', 'st_direction',
              'st_val_slow', 'st_direction_slow', 'price_vs_st_slow', 
@@ -47,13 +48,16 @@ class SupertrendPullbackStrategy(BaseStrategy):
              'adx', 'adx_slope', 'rsi', 'cmf',
              'price_vel_10', 'price_vel_20', 'rsi_vel_10',
              'body_size', 'wick_ratio', 'atr',
-             'macro_trend_slope', # This is the MTF feature
+             'macro_trend_slope', 
              'price_roc_slope',
              'inverse_volatility_score',
              'volume_velocity',
              'st_slope_long',
              'dist_to_ema200',
-             'adx_acceleration_5'
+             'adx_acceleration_5',             
+             'hour_sin',
+             'hour_cos',
+             'day_of_week_encoded'
         ]
 
     def get_sequence_length(self) -> int:
@@ -103,6 +107,19 @@ class SupertrendPullbackStrategy(BaseStrategy):
         df['vol_channel_width'] = (df['ema15'] - df['ema40']).abs()
         df['inverse_volatility_score'] = df['vol_channel_width'] / (df['atr'] + 1e-6)
         vol_std = df['volume'].rolling(10).std().replace(0, 1e-6); df['volume_velocity'] = df['volume'].diff(1) / vol_std
+
+        # 1. Hour of Day (Cyclical Encoding)
+        df['hour'] = df.index.hour
+        hours_in_day = 24
+        df['hour_sin'] = np.sin(2 * np.pi * df['hour'] / hours_in_day)
+        df['hour_cos'] = np.cos(2 * np.pi * df['hour'] / hours_in_day)
+        
+        # 2. Day of Week (0=Mon, 6=Sun)
+        df['day_of_week'] = df.index.dayofweek
+        df['day_of_week_encoded'] = df['day_of_week'] / 6.0 
+        
+        # Clean up intermediate columns used only for calculation
+        df.drop(columns=['hour', 'day_of_week'], inplace=True, errors='ignore')
         
         # --- 3. MTF Feature (Self-Generation - HONEST) ---
         
