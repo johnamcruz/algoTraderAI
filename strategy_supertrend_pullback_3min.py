@@ -2,7 +2,7 @@
 """
 Supertrend Pullback Strategy Implementation (V3.10 - Transformer)
 This strategy is based on the final, honest training configuration.
-(Ultimate Edge: Includes Time, Volume, and Momentum features)
+(Ultimate Edge: 26 features - Time, Volume, and Momentum)
 """
 
 import pandas as pd
@@ -32,22 +32,23 @@ class SupertrendPullbackStrategy(BaseStrategy):
         Initialize SupertrendPullbackStrategy (V3.10 - Ultimate Edge)
         """
         super().__init__(model_path, scaler_path, contract_symbol)
-        logging.info("Initialized SupertrendPullbackStrategy (V3.10 - Ultimate Edge)")
+        logging.info("Initialized SupertrendPullbackStrategy (V3.10 - Ultimate Edge - 26 Features)")
         # Store long-term MTF history (critical for causal processing)
         self.mtf_history: Dict[str, pd.DataFrame] = {}
 
 
     def get_feature_columns(self) -> List[str]:
         """
-        Returns the 28 feature columns for the final, enriched V3.10 Supertrend Transformer.
+        Returns the 26 feature columns for the final, enriched V3.10 Supertrend Transformer.
         (Features swapped for Volume/Momentum)
         """
-        # --- 28 FEATURE LIST ---
+        # --- 26 FEATURE LIST ---
         return [ 
              'price_vs_st', 'st_direction',
              'st_val_slow', 'st_direction_slow', 'price_vs_st_slow', 
              'price_vs_ema40', 'ema15_vs_ema40', 'price_vs_ema200',
-             'adx', 'rsi', 'cmf', 'price_vel_20',              
+             'adx',              
+             'price_vel_20',              
              'body_size', 'wick_ratio', 'atr',
              'macro_trend_slope', 
              'price_roc_slope',
@@ -106,10 +107,7 @@ class SupertrendPullbackStrategy(BaseStrategy):
         df['st_slope_long'] = df['st_val_slow'].diff(50) / (df['atr'] * 50)                
         df['dist_to_ema200'] = abs(df['close'] - df['ema200']) / df['atr']        
         df['adx_acceleration_5'] = df['adx_slope_calc'].diff(5)
-        
-        df['rsi'] = ta.rsi(df['close'], length=14)
-        df['cmf'] = ta.cmf(df['high'], df['low'], df['close'], df['volume'], length=20)
-        
+                
         # Intermediate calculation (NOT in final features)
         df['price_vel_10_calc'] = df['close'].diff(10) / df['atr'] 
         
