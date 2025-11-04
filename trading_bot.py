@@ -36,8 +36,8 @@ class RealTimeBot(TradingBot):
         strategy: BaseStrategy,
         entry_conf, 
         adx_thresh, 
-        stop_atr, 
-        target_atr,
+        stop_pts,
+        target_pts,
         enable_trailing_stop=False
     ):
         """
@@ -66,8 +66,8 @@ class RealTimeBot(TradingBot):
             strategy=strategy,
             entry_conf=entry_conf,
             adx_thresh=adx_thresh,
-            stop_atr=stop_atr,
-            target_atr=target_atr,
+            stop_pts=stop_pts,
+            target_pts=target_pts,
             enable_trailing_stop=enable_trailing_stop
         )
         
@@ -86,7 +86,7 @@ class RealTimeBot(TradingBot):
         
         print(f"🤖 Bot initialized for {self.contract} on {self.timeframe_minutes}-min timeframe.")
         print(f"📈 Trade Params: Entry={self.entry_conf}, ADX={self.adx_thresh}, "
-              f"Stop={self.stop_atr_mult} ATR, Target={self.target_atr_mult} ATR")
+              f"Stop={self.stop_pts} pts Target={self.target_pts} pts")
         print(f"📊 Strategy: {self.strategy.__class__.__name__}")
         
         # Register handlers

@@ -108,10 +108,10 @@ Example Usage (Backtesting):
                         help='Min AI confidence to enter (default: 0.60)')
     parser.add_argument('--adx_thresh', type=int, default=20,
                         help='Min ADX value to enter (default: 20)')
-    parser.add_argument('--stop_atr', type=float, default=1.5,
-                        help='Stop loss multiplier (x ATR) (default: 1.5)')
-    parser.add_argument('--target_atr', type=float, default=2.0,
-                        help='Profit target multiplier (x ATR) (default: 2.0)')
+    parser.add_argument('--stop_pts', type=float, default=8.0,
+                        help='Stop loss in points (default: 8.0)')
+    parser.add_argument('--target_pts', type=float, default=2.0,
+                        help='Profit target in points (default: 16.0)')
     parser.add_argument('--enable_trailing_stop', action='store_true',
                         help='Enable trailing stop vs stop order')
     
@@ -199,8 +199,8 @@ def run_backtesting(config):
             strategy=strategy,
             entry_conf=config["entry_conf"],
             adx_thresh=config["adx_thresh"],
-            stop_atr=config["stop_atr"],
-            target_atr=config["target_atr"],
+            stop_pts=config["stop_pts"],
+            target_pts=config["target_pts"],
             tick_size=config.get("tick_size", 0.01),
             profit_target=config.get("profit_target", 6000),
             max_loss_limit=config.get("max_loss", 3000),
@@ -259,8 +259,8 @@ def run_live_trading(config):
             strategy=strategy,
             entry_conf=config["entry_conf"],
             adx_thresh=config["adx_thresh"],
-            stop_atr=config["stop_atr"],
-            target_atr=config["target_atr"],
+            stop_pts=config["stop_pts"],
+            target_pts=config["target_pts"],
             enable_trailing_stop=config.get("enable_trailing_stop", False)
         )
         
