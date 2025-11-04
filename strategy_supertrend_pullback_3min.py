@@ -2,6 +2,7 @@
 """
 Supertrend Pullback Strategy Implementation (V3.10 - Transformer)
 This strategy is based on the final, honest training configuration.
+(Ultimate Edge: Includes Time, Volume, and Momentum features)
 """
 
 import pandas as pd
@@ -28,10 +29,10 @@ class SupertrendPullbackStrategy(BaseStrategy):
 
     def __init__(self, model_path: str, scaler_path: str, contract_symbol: str):
         """
-        Initialize SupertrendPullbackStrategy (V3.10)
+        Initialize SupertrendPullbackStrategy (V3.10 - Ultimate Edge)
         """
         super().__init__(model_path, scaler_path, contract_symbol)
-        logging.info("Initialized SupertrendPullbackStrategy (V3.10 - Pure AI)")
+        logging.info("Initialized SupertrendPullbackStrategy (V3.10 - Ultimate Edge)")
         # Store long-term MTF history (critical for causal processing)
         self.mtf_history: Dict[str, pd.DataFrame] = {}
 
@@ -39,14 +40,14 @@ class SupertrendPullbackStrategy(BaseStrategy):
     def get_feature_columns(self) -> List[str]:
         """
         Returns the 28 feature columns for the final, enriched V3.10 Supertrend Transformer.
+        (Features swapped for Volume/Momentum)
         """
         # --- 28 FEATURE LIST ---
         return [ 
              'price_vs_st', 'st_direction',
              'st_val_slow', 'st_direction_slow', 'price_vs_st_slow', 
              'price_vs_ema40', 'ema15_vs_ema40', 'price_vs_ema200',
-             'adx', 'adx_slope', 'rsi', 'cmf',
-             'price_vel_10', 'price_vel_20', 'rsi_vel_10',
+             'adx', 'rsi', 'cmf', 'price_vel_20',              
              'body_size', 'wick_ratio', 'atr',
              'macro_trend_slope', 
              'price_roc_slope',
@@ -54,10 +55,13 @@ class SupertrendPullbackStrategy(BaseStrategy):
              'volume_velocity',
              'st_slope_long',
              'dist_to_ema200',
-             'adx_acceleration_5',             
+             'adx_acceleration_5',                          
              'hour_sin',
              'hour_cos',
-             'day_of_week_encoded'
+             'day_of_week_encoded',                         
+             'mfi',
+             'volume_roc',
+             'stoch_rsi'
         ]
 
     def get_sequence_length(self) -> int:
@@ -73,7 +77,7 @@ class SupertrendPullbackStrategy(BaseStrategy):
     def add_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Calculate Supertrend Pullback V3.10 features.
-        NOTE: This now generates the 15-min feature causally using df's history.
+        (Ultimate Edge: Includes Time, Volume, and Momentum features)
         """        
         logging.debug(f"Adding V3.10 Supertrend features. Input shape: {df.shape}")
         
@@ -95,47 +99,60 @@ class SupertrendPullbackStrategy(BaseStrategy):
         df['price_vs_ema200'] = (df['close'] - df['ema200']) / df['atr']
         adx_df = ta.adx(df['high'], df['low'], df['close'], length=14)
         df['adx'] = adx_df['ADX_14'] if adx_df is not None and 'ADX_14' in adx_df.columns else 0
-        df['adx_slope'] = df['adx'].diff(5)
+        
+        # Intermediate calculation (NOT in final features)
+        df['adx_slope_calc'] = df['adx'].diff(5) 
+        
         df['st_slope_long'] = df['st_val_slow'].diff(50) / (df['atr'] * 50)                
         df['dist_to_ema200'] = abs(df['close'] - df['ema200']) / df['atr']        
-        df['adx_acceleration_5'] = df['adx_slope'].diff(5)
+        df['adx_acceleration_5'] = df['adx_slope_calc'].diff(5)
+        
         df['rsi'] = ta.rsi(df['close'], length=14)
         df['cmf'] = ta.cmf(df['high'], df['low'], df['close'], df['volume'], length=20)
-        df['price_vel_10'] = df['close'].diff(10) / df['atr']; df['price_vel_20'] = df['close'].diff(20) / df['atr']; df['rsi_vel_10'] = df['rsi'].diff(10)
+        
+        # Intermediate calculation (NOT in final features)
+        df['price_vel_10_calc'] = df['close'].diff(10) / df['atr'] 
+        
+        df['price_vel_20'] = df['close'].diff(20) / df['atr'];         
+        
         df['body_size'] = abs(df['close'] - df['open']) / df['atr']; df['wick_ratio'] = (df['high'] - df['low']) / df['atr']
-        df['price_roc_slope'] = df['price_vel_10'].diff(10)
+        df['price_roc_slope'] = df['price_vel_10_calc'].diff(10)
+        
         df['vol_channel_width'] = (df['ema15'] - df['ema40']).abs()
         df['inverse_volatility_score'] = df['vol_channel_width'] / (df['atr'] + 1e-6)
         vol_std = df['volume'].rolling(10).std().replace(0, 1e-6); df['volume_velocity'] = df['volume'].diff(1) / vol_std
-
-        # 1. Hour of Day (Cyclical Encoding)
+                
+        # 1. New Volume/Liquidity Features
+        mfi_df = ta.mfi(df['high'], df['low'], df['close'], df['volume'], length=14)
+        df['mfi'] = mfi_df.fillna(50) 
+        df['volume_roc'] = ta.roc(df['volume'], length=5).fillna(0)
+        
+        # 2. New Momentum Feature
+        stochrsi_df = ta.stochrsi(df['close'], length=14)
+        df['stoch_rsi'] = stochrsi_df['STOCHRSIk_14_14_3_3'].fillna(0)
+        
+        # 3. Time-Based Contextual Features (Cyclical)
         df['hour'] = df.index.hour
         hours_in_day = 24
         df['hour_sin'] = np.sin(2 * np.pi * df['hour'] / hours_in_day)
         df['hour_cos'] = np.cos(2 * np.pi * df['hour'] / hours_in_day)
         
-        # 2. Day of Week (0=Mon, 6=Sun)
         df['day_of_week'] = df.index.dayofweek
         df['day_of_week_encoded'] = df['day_of_week'] / 6.0 
         
         # Clean up intermediate columns used only for calculation
-        df.drop(columns=['hour', 'day_of_week'], inplace=True, errors='ignore')
+        df.drop(columns=['hour', 'day_of_week', 'adx_slope_calc', 'price_vel_10_calc'], inplace=True, errors='ignore')                
         
-        # --- 3. MTF Feature (Self-Generation - HONEST) ---
-        
-        # Use the entire current history (df) for causal resampling
+        # --- 3. MTF Feature (Self-Generation) ---        
         df_15m = df['close'].resample('15Min', label='left', closed='left').ohlc().dropna()
 
-        # Calculate MTF indicators on the 15-min frame
         if not df_15m.empty and 'close' in df_15m.columns:
             ema_15m_series = ta.ema(df_15m['close'], length=40)
             df_15m_features = pd.DataFrame(index=df_15m.index)
             df_15m_features['ema40_slope'] = ema_15m_series.diff(3)
             
-            # CRITICAL: Shift by 1 period (15min) to ensure honesty
             df_15m_features = df_15m_features.shift(1) 
 
-            # Causal Merge: Merge the 15-min feature onto the 3-min DataFrame
             df = df.merge(df_15m_features, left_index=True, right_index=True, how='left')
         else:
             df['ema40_slope'] = 0.0
