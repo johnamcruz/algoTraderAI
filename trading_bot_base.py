@@ -29,8 +29,8 @@ class TradingBot(ABC):
         strategy: BaseStrategy,
         entry_conf,
         adx_thresh,
-        stop_atr,
-        target_atr,
+        stop_pts,
+        target_pts,
         enable_trailing_stop=False
     ):
         """
@@ -43,8 +43,8 @@ class TradingBot(ABC):
             strategy: Strategy instance (implements BaseStrategy)
             entry_conf: Minimum confidence for entry
             adx_thresh: Minimum ADX for entry
-            stop_atr: Stop loss ATR multiplier
-            target_atr: Profit target ATR multiplier
+            stop_atr: Stop loss in points
+            target_atr: Profit target in points
             enable_trailing_stop: Enable trailing stops
         """
         self.contract = contract
@@ -76,12 +76,12 @@ class TradingBot(ABC):
         # Trading parameters
         self.entry_conf = entry_conf
         self.adx_thresh = adx_thresh
-        self.stop_atr_mult = stop_atr
-        self.target_atr_mult = target_atr
+        self.stop_pts = stop_pts 
+        self.target_pts = target_pts
         
         logging.info(f"📊 Strategy: {self.strategy.__class__.__name__}")
         logging.info(f"📈 Trade Params: Entry={self.entry_conf}, ADX={self.adx_thresh}, "
-                    f"Stop={self.stop_atr_mult} ATR, Target={self.target_atr_mult} ATR")
+                    f"Stop={self.stop_pts} pts, Target={self.target_pts} pts")
 
     def _check_exit_conditions(self, current_price):
         """
@@ -250,8 +250,9 @@ class TradingBot(ABC):
                     self.in_position = True
                     self.position_type = 'LONG'
                     self.entry_price = close_price
-                    self.stop_loss = self.entry_price - (atr * self.stop_atr_mult)
-                    self.profit_target = self.entry_price + (atr * self.target_atr_mult)
+                    # LONG SL/PT: Use fixed point distance
+                    self.stop_loss = self.entry_price - self.stop_pts
+                    self.profit_target = self.entry_price + self.target_pts
                     
                     print("="*40)
                     print(f"🔥🔥🔥 ENTERING LONG @ {self.entry_price:.2f} 🔥🔥🔥")
@@ -259,9 +260,9 @@ class TradingBot(ABC):
                     print("="*40)
                     logging.info(f"LONG @ {self.entry_price:.2f} SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}")
                     
-                    # Calculate ticks                    
-                    stop_loss_ticks = int((self.stop_loss - self.entry_price) / tick_size)
-                    take_profit_ticks = int((self.profit_target - self.entry_price) / tick_size)
+                    # Calculate ticks: Use point distance directly
+                    stop_loss_ticks = int(self.stop_pts / tick_size)
+                    take_profit_ticks = int(self.target_pts / tick_size)
                     
                     # Place order
                     await self._place_order(0, stop_ticks=stop_loss_ticks, take_profit_ticks=take_profit_ticks)
@@ -270,8 +271,9 @@ class TradingBot(ABC):
                     self.in_position = True
                     self.position_type = 'SHORT'
                     self.entry_price = close_price
-                    self.stop_loss = self.entry_price + (atr * self.stop_atr_mult)
-                    self.profit_target = self.entry_price - (atr * self.target_atr_mult)
+                    # SHORT SL/PT: Use fixed point distance
+                    self.stop_loss = self.entry_price + self.stop_pts
+                    self.profit_target = self.entry_price - self.target_pts
                     
                     print("="*40)
                     print(f"🥶🥶🥶 ENTERING SHORT @ {self.entry_price:.2f} 🥶🥶🥶")
@@ -279,9 +281,9 @@ class TradingBot(ABC):
                     print("="*40)
                     logging.info(f"SHORT @ {self.entry_price:.2f} SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}")
                     
-                    # Calculate ticks
-                    stop_loss_ticks = int((self.stop_loss - self.entry_price) / tick_size)
-                    take_profit_ticks = int((self.profit_target - self.entry_price) / tick_size)
+                    # Calculate ticks: Use point distance directly
+                    stop_loss_ticks = int(self.stop_pts / tick_size)
+                    take_profit_ticks = int(self.target_pts / tick_size)
                     
                     # Place order
                     await self._place_order(1, stop_ticks=stop_loss_ticks, take_profit_ticks=take_profit_ticks)
