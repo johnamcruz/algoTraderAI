@@ -315,32 +315,59 @@ class RealTimeBot(TradingBot):
     async def bar_closer_watcher(self):
         """Background task to watch the clock and force-close bars."""
         logging.info("⏳ Bar closer watcher started...")
+        
+        # Wait for the first bar to be created by a tick
+        while not self.current_bar_time:
+            await asyncio.sleep(0.1)
+            
         while True:
             try:
-                if not self.current_bar_time:
-                    await asyncio.sleep(0.1)
-                    continue
+                # Store the time of the bar we are currently watching
+                bar_we_are_watching = self.current_bar_time
                 
-                next_bar_time = self.current_bar_time + timedelta(
+                # Calculate when this bar should close (which is when the *next* bar starts)
+                next_bar_start_time = bar_we_are_watching + timedelta(
                     minutes=self.timeframe_minutes
                 )
+                
+                now_utc = datetime.now(timezone.utc)
                 sleep_duration = (
-                    next_bar_time - datetime.now(timezone.utc)
+                    next_bar_start_time - now_utc
                 ).total_seconds()
                 
                 if sleep_duration > 0:
-                    await asyncio.sleep(sleep_duration + 0.05)
+                    # Sleep until 50ms *after* the bar should have closed
+                    await asyncio.sleep(sleep_duration + 0.05) 
                 
+                # Now that we've slept, check if the bar needs closing
                 async with self.bar_lock:
-                    if self.current_bar and self.current_bar_time < next_bar_time:
+                    # CRITICAL CHECK:
+                    # Is the bar we were watching (bar_we_are_watching)
+                    # STILL the self.current_bar_time?
+                    if self.current_bar and self.current_bar_time == bar_we_are_watching:
+                        # YES. This means no ticks came in to close it.
+                        # The watcher must close it.
+                        logging.info(f"⏰ Watcher closing bar for {bar_we_are_watching}")
+                        
+                        # Close the bar (which prints and resets self.current_bar={})
                         await self._close_and_print_bar()
+                        
+                        # CRITICAL FIX: Manually advance the clock
+                        # Set the time to the *next* bar interval, 
+                        # so the loop can continue watching for the *next* close.
+                        self.current_bar_time = next_bar_start_time 
+                    
+                    # ELSE:
+                    # handle_trade() already received a tick for the next bar
+                    # and self.current_bar_time has been updated.
+                    # The watcher does nothing and loops to watch the new bar.
                         
             except asyncio.CancelledError:
                 logging.info("Bar closer watcher stopping.")
                 break
             except Exception as e:
                 logging.exception(f"Error in bar_closer_watcher: {e}")
-                await asyncio.sleep(1)
+                await asyncio.sleep(1) # Wait 1s on error
 
     # =========================================================
     # TRADE HANDLING
