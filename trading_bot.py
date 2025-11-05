@@ -224,7 +224,7 @@ class RealTimeBot(TradingBot):
         
         bar_time_str = datetime.fromisoformat(
             self.current_bar["timestamp"]
-        ).strftime("%Y-%m-%d %H:%M")
+        ).astimezone(None).strftime("%Y-%m-%d %H:%M")
         
         print(f"📊 Bar: {bar_time_str} | "
               f"O:{self.current_bar['open']:.2f} "
