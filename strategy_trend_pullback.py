@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Trend Pullback Implementation (V7.0)
+Trend Pullback Implementation (V8.0 - Sequence Tagging)
 
-This strategy uses a Transformer model to find high-probability trend
-continuations (pullbacks) based on a 15/40 EMA system.
+This strategy uses a Transformer model trained via Sequence Tagging to find high-precision
+trend continuations (pullbacks) based on a 15/40 EMA system.
 """
 
 import pandas as pd
@@ -20,24 +20,21 @@ from strategy_base import BaseStrategy
 
 class TrendPullbackStrategy(BaseStrategy):
     """
-    Trend Pullback (V7.0) strategy based on EMA 15 / 40 pullbacks.
+    Trend Pullback (V8.0) strategy based on EMA 15 / 40 pullbacks.
+    The prediction logic is updated for Sequence Tagging output (B, T, C).
     """
 
     def __init__(self, model_path: str, scaler_path: str, contract_symbol: str):
         """
         Initialize Trend Pullback strategy.
-
-        Args:
-            model_path: Path to the V7.0 ONNX model (trained with seq_len=40)
-            scaler_path: Path to the V7.0 scaler
-            contract_symbol: Trading symbol
         """
         super().__init__(model_path, scaler_path, contract_symbol)
-        logging.info("Initialized TrendPullbackStrategy (V7.0)")
+        # Renamed internal logging for V8.0 clarity
+        logging.info("Initialized TrendPullbackStrategy (V8.0 Sequence Tagging)")
 
 
     def get_feature_columns(self) -> List[str]:
-        """Returns the 11 feature columns for the Trend Pullback (V7.0) model."""
+        """Returns the 11 feature columns for the Trend Pullback (V8.0) model."""
         return [
             # --- Price Position Context (3 features) ---
             'price_vs_fast_ema', 'fast_vs_slow_ema', 'pullback_depth',
@@ -50,19 +47,17 @@ class TrendPullbackStrategy(BaseStrategy):
         ]
 
     def get_sequence_length(self)-> int:
-        """Trend Pullback (V7.0) uses 40 bars."""
+        """Trend Pullback (V8.0) uses 40 bars."""
         return 40
 
     def add_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Calculate all 11 Trend Pullback (V7.0) features.
-        Also calculates the 'is_long_pullback' and 'is_short_pullback'
-        trigger columns needed for the entry logic.
+        Calculate all 11 Trend Pullback (V8.0) features.
+        (Feature generation logic remains identical to V7.0)
         """
         # === EMA Parameters ===
         fast_ema = 15
         slow_ema = 40
-        trend_ema = 150 # Not used in V7.0 features, but was in the training code
 
         # === FIX: CLEAN OHLCV DATA FIRST ===
         for col in ['open', 'high', 'low', 'close', 'volume']:
@@ -72,14 +67,14 @@ class TrendPullbackStrategy(BaseStrategy):
 
         # === Volatility & Base EMAs ===
         df['atr'] = ta.atr(df['high'], df['low'], df['close'], length=14)
-        df['atr'] = df['atr'].replace(0, 1e-6) # Avoid zero division
+        df['atr'] = df['atr'].replace(0, 1e-6)
         df['atr'] = df['atr'].fillna(method='ffill')
         df['atr'] = df['atr'].fillna(1e-6)
 
         df[f'ema{fast_ema}'] = ta.ema(df['close'], length=fast_ema)
         df[f'ema{slow_ema}'] = ta.ema(df['close'], length=slow_ema)
 
-        # === V7.0 Core Context Features (Normalized) ===
+        # === V8.0 Core Context Features (Normalized) ===
         df['rsi'] = ta.rsi(df['close'], length=14)
         adx_df = ta.adx(df['high'], df['low'], df['close'], length=14)
         df['adx'] = adx_df['ADX_14'] if adx_df is not None and 'ADX_14' in adx_df.columns else 0
@@ -102,7 +97,7 @@ class TrendPullbackStrategy(BaseStrategy):
         df['price_vs_fast_ema'] = (df['close'] - df[f'ema{fast_ema}']) / df['atr']
         df['fast_vs_slow_ema'] = (df[f'ema{fast_ema}'] - df[f'ema{slow_ema}']) / df['atr']
 
-        # === V7.0 NEW "GENESIS" FEATURES ===
+        # === V8.0 NEW "GENESIS" FEATURES ===
         
         # 1. Pullback Depth
         df['pullback_depth'] = (df['close'] - df[f'ema{slow_ema}']) / df['atr']
@@ -118,17 +113,14 @@ class TrendPullbackStrategy(BaseStrategy):
         df['trend_duration_raw'] = trend_groups.groupby(trend_groups).cumcount() + 1
         df['trend_duration'] = (df['trend_duration_raw'].clip(upper=100) / 100) * trend_direction
 
-        # === V7.0 TRIGGER COLUMNS (Not features, but needed for entry) ===
-        pullback_range = 0.5 * df['atr'] # Price must be within 0.5 ATR of the Fast EMA
+        # === TRIGGER COLUMNS (Needed for should_enter_trade logic) ===
+        pullback_range = 0.5 * df['atr'] 
 
-        # Long Pullback Check: Close is near the fast EMA AND fast > slow
         df['is_long_pullback'] = (
             (df['close'] >= df[f'ema{fast_ema}'] - pullback_range) &
             (df['close'] <= df[f'ema{fast_ema}'] + pullback_range) &
             (df[f'ema{fast_ema}'] > df[f'ema{slow_ema}'])
         ).astype(float)
-
-        # Short Pullback Check: Close is near the fast EMA AND fast < slow
         df['is_short_pullback'] = (
             (df['close'] >= df[f'ema{fast_ema}'] - pullback_range) &
             (df['close'] <= df[f'ema{fast_ema}'] + pullback_range) &
@@ -137,25 +129,25 @@ class TrendPullbackStrategy(BaseStrategy):
 
         # --- Final Clean up ---
         df = df.replace([np.inf, -np.inf], np.nan)
-        df = df.fillna(method='ffill') # Fill gaps
-        df = df.fillna(0) # Fill leading NaNs
+        df = df.fillna(method='ffill')
+        df = df.fillna(0)
 
         return df
 
     def load_model(self):
-        """Load ONNX model for Trend Pullback (V7.0)."""
+        """Load ONNX model for Trend Pullback (V8.0)."""
         try:
             if not os.path.exists(self.model_path):
                 raise FileNotFoundError(f"Model file not found: {self.model_path}")
 
             self.model = onnxruntime.InferenceSession(self.model_path)
-            logging.info(f"✅ Loaded Trend Pullback (V7.0) model: {os.path.basename(self.model_path)}")
+            logging.info(f"✅ Loaded Trend Pullback (V8.0 Sequence Tagging) model: {os.path.basename(self.model_path)}")
         except Exception as e:
-            logging.exception(f"❌ Error loading Trend Pullback (V7.0) model: {e}")
+            logging.exception(f"❌ Error loading Trend Pullback (V8.0) model: {e}")
             raise
 
     def load_scaler(self):
-        """Load scaler for Trend Pullback (V7.0)."""
+        """Load scaler for Trend Pullback (V8.0)."""
         try:
             if not os.path.exists(self.scaler_path):
                 raise FileNotFoundError(f"Scaler file not found: {self.scaler_path}")
@@ -165,13 +157,12 @@ class TrendPullbackStrategy(BaseStrategy):
 
             if self.contract_symbol in scalers:
                 self.scaler = scalers[self.contract_symbol]
-                logging.info(f"✅ Loaded '{self.contract_symbol}' scaler for Trend Pullback (V7.0)")
+                logging.info(f"✅ Loaded '{self.contract_symbol}' scaler for Trend Pullback (V8.0)")
             else:
-                # Fallback to base ticker (e.g., 'NQ' from 'NQ.F')
                 base_ticker = self.contract_symbol.split('.')[0]
                 if base_ticker in scalers:
                     self.scaler = scalers[base_ticker]
-                    logging.info(f"✅ Loaded base '{base_ticker}' scaler for Trend Pullback (V7.0)")
+                    logging.info(f"✅ Loaded base '{base_ticker}' scaler for Trend Pullback (V8.0)")
                 else:
                     available = list(scalers.keys())
                     raise ValueError(
@@ -179,31 +170,46 @@ class TrendPullbackStrategy(BaseStrategy):
                         f"Available: {available}"
                     )
         except Exception as e:
-            logging.exception(f"❌ Error loading Trend Pullback (V7.0) scaler: {e}")
+            logging.exception(f"❌ Error loading Trend Pullback (V8.0) scaler: {e}")
             raise
 
     def predict(self, df: pd.DataFrame) -> Tuple[int, float]:
-        """Generate prediction using Trend Pullback (V7.0) model."""
+        """
+        MODIFIED for V8.0 Sequence Tagging. 
+        Generates prediction using the output of the final (last) bar in the sequence.
+        """
         try:
-            # Preprocess features
-            features = self.preprocess_features(df) # Assumes this exists in BaseStrategy
+            # Preprocess features (assumes this exists in BaseStrategy)
+            features = self.preprocess_features(df) 
 
             # Prepare input for ONNX
-            seq_len = self.get_sequence_length() # Will get 40
+            seq_len = self.get_sequence_length() # 40
             if len(features) < seq_len:
                 logging.warning(f"⚠️ Not enough data for prediction. Need {seq_len}, have {len(features)}. Returning Hold.")
                 return 0, 0.0 # Return Hold (0) with 0 confidence
 
-            # Take last sequence
+            # Take last sequence (Input shape: 1, 40, Num_Features)
             X = features[-seq_len:].reshape(1, seq_len, -1).astype(np.float32)
 
             # Run inference
             input_name = self.model.get_inputs()[0].name
             output_name = self.model.get_outputs()[0].name
-            logits = self.model.run([output_name], {input_name: X})[0]
+            
+            # Logits output shape is (1, 40, 3) for the V8.0 Tagging Model
+            logits = self.model.run([output_name], {input_name: X})[0] 
+
+            # --- V8.0 FIX: EXTRACT LOGITS FOR THE LAST BAR ONLY ---
+            # We explicitly take the last position of the time dimension (index -1)
+            if logits.ndim != 3:
+                 # This check handles the error you had previously
+                 logging.error(f"Model output shape is incorrect: {logits.shape}. Expected (1, 40, 3).")
+                 return 0, 0.0 
+
+            # last_logits shape is (3,)
+            last_logits = logits[0][-1] 
 
             # Get prediction and confidence
-            probs = self._softmax(logits[0])
+            probs = self._softmax(last_logits) # Probs is now size 3 (0, 1, 2)
             prediction = int(np.argmax(probs))
             confidence = float(probs[prediction])
 
@@ -211,7 +217,8 @@ class TrendPullbackStrategy(BaseStrategy):
             return prediction, confidence
 
         except Exception as e:
-            logging.exception(f"❌ Prediction error (Trend Pullback): {e}")
+            # Log the detailed exception for debugging
+            logging.exception(f"❌ Prediction error (Trend Pullback V8.0): {e}")
             return 0, 0.0 # Return Hold on error
 
     def should_enter_trade(
@@ -220,10 +227,10 @@ class TrendPullbackStrategy(BaseStrategy):
         confidence: float,
         bar: Dict,
         entry_conf: float,
-        adx_thresh: float
+        adx_thresh: float # Still unused in this V8.0 logic, but remains in signature for compatibility
     ) -> Tuple[bool, Optional[str]]:
         """
-        Determine if Trend Pullback (V7.0) entry conditions are met.
+        Determine if Trend Pullback (V8.0) entry conditions are met.
         This requires BOTH the model signal and the feature trigger.
         """
         
@@ -231,22 +238,20 @@ class TrendPullbackStrategy(BaseStrategy):
         if confidence < entry_conf:
             return False, None
         
-        # 2. Check Feature-Based Trigger
-        # These values *must* be present in the 'bar' dict from add_features
+        # 2. Check Feature-Based Trigger (Is price in the pullback zone?)
         is_long_pullback = bar.get('is_long_pullback', 0.0) == 1.0
         is_short_pullback = bar.get('is_short_pullback', 0.0) == 1.0
 
         # 3. Check for matching Model Prediction AND Feature Trigger
         
-        # V7.0 Mapping: 2 = LONG
+        # V8.0 Mapping: 2 = LONG
         if prediction == 2 and is_long_pullback:
             return True, 'LONG'
         
-        # V7.0 Mapping: 1 = SHORT
+        # V8.0 Mapping: 1 = SHORT
         elif prediction == 1 and is_short_pullback:
             return True, 'SHORT'
 
-        # All other cases (e.g., pred=0, or pred=2 but bar is not a long pullback)
         return False, None
 
     @staticmethod
@@ -254,5 +259,5 @@ class TrendPullbackStrategy(BaseStrategy):
         """Compute softmax values for array x."""
         if x is None or len(x) == 0:
             return np.array([])
-        exp_x = np.exp(x - np.max(x)) # Subtract max for numerical stability
+        exp_x = np.exp(x - np.max(x))
         return exp_x / exp_x.sum()
