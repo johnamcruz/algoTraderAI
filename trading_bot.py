@@ -54,8 +54,8 @@ class RealTimeBot(TradingBot):
             strategy: Strategy instance (implements BaseStrategy)
             entry_conf: Minimum confidence for entry
             adx_thresh: Minimum ADX for entry
-            stop_atr: Stop loss ATR multiplier
-            target_atr: Profit target ATR multiplier
+            stop_pts: Stop loss in fixed points
+            target_pts: Profit target in fixed points
             enable_trailing_stop: Enable trailing stops
         """
         # Initialize base class
@@ -424,5 +424,12 @@ class RealTimeBot(TradingBot):
         self.strategy.load_scaler()
 
         print("🚀 Starting bot connection...")
+        # ⭐️ CRITICAL FIX: Create the watcher task so it runs on the loop
         self.closer_task = asyncio.create_task(self.bar_closer_watcher())
+        
+        # Now, await the main blocking client loop
         await self.client.run()
+        
+        # If the client.run() ever exits (e.g., disconnect), cancel the watcher
+        if self.closer_task:
+            self.closer_task.cancel()
