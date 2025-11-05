@@ -95,22 +95,22 @@ Example Usage (Backtesting):
                         help='ProjectX Base URL (not required for backtesting)')
     
     # Strategy Selection
-    parser.add_argument('--strategy', type=str, default="3min_pivot_reversal",
+    parser.add_argument('--strategy', type=str, default="supertrend",
                         choices=StrategyFactory.list_strategies(),
                         help='Strategy to use')
-    parser.add_argument('--model', type=str, default="models/model_3min_pivot_reversal_v2_final.onnx",
+    parser.add_argument('--model', type=str, default="models/model_supertrend_pullback_v3.10.onnx",
                         help='Path to the ONNX model file (.onnx)')
-    parser.add_argument('--scaler', type=str, default="models/scalers_3min_pivot_reversal_v2_final.pkl",
+    parser.add_argument('--scaler', type=str, default="models/scaler_supertrend_pullback_v3.10.pkl",
                         help='Path to the pickled scaler file (.pkl)')
     
     # Trading Parameters
-    parser.add_argument('--entry_conf', type=float, default=0.60,
-                        help='Min AI confidence to enter (default: 0.60)')
-    parser.add_argument('--adx_thresh', type=int, default=20,
-                        help='Min ADX value to enter (default: 20)')
+    parser.add_argument('--entry_conf', type=float, default=0.9,
+                        help='Min AI confidence to enter (default: 0.9)')
+    parser.add_argument('--adx_thresh', type=int, default=0,
+                        help='Min ADX value to enter (default: 0)')
     parser.add_argument('--stop_pts', type=float, default=8.0,
                         help='Stop loss in points (default: 8.0)')
-    parser.add_argument('--target_pts', type=float, default=2.0,
+    parser.add_argument('--target_pts', type=float, default=16.0,
                         help='Profit target in points (default: 16.0)')
     parser.add_argument('--enable_trailing_stop', action='store_true',
                         help='Enable trailing stop vs stop order')
