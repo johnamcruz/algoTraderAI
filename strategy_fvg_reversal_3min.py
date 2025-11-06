@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """
-FVG Reversal Strategy Implementation (V1 - Transformer)
+FVG Reversal Strategy Implementation (V4 - HTF-Aware Transformer)
 
-This strategy uses a Transformer model trained on Fair Value Gap (FVG)
-events to predict high-probability reversals.
+This strategy uses the final FVG model, which is "aware" of
+macro-trend (1H), structure (BoS), and risk (V D) to predict high-probability entries.
+
+VERSION: FINAL-SYNCED - This version is self-sufficient and calculates
+all 28 features, including 15-min and 1-hour HTF context,
+from the 3-minute data history, perfectly matching the training script.
 """
 
 import pandas as pd
@@ -20,75 +24,68 @@ from strategy_base import BaseStrategy
 
 # Setup basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+pd.options.mode.chained_assignment = None
 
 
 class FVGReversal3minStrategy(BaseStrategy):
     """
-    FVG Reversal V1.0 (Transformer) trading strategy.
-    Optimized for low-drawdown, fixed-point R:R execution.
+    FVG Reversal V4.0 (Transformer) trading strategy.
+    Trained on 2:1 R:R BoS-Filtered data with 1-hour HTF context.
     """
 
     def __init__(self, model_path: str, scaler_path: str, contract_symbol: str):
         """
-        Initialize FVG Reversal V1.0 strategy.
-        Note: The strategy no longer uses a lookback parameter.
+        Initialize FVG Reversal V4.0 strategy.
         """
         super().__init__(model_path, scaler_path, contract_symbol)
+        self.BOS_LOOKBACK = 100 
+        self.N_PIVOT = 5
+        self.EQ_LOOKBACK = 100
+        self.EQ_THRESHOLD = 1.0
         
     def get_feature_columns(self) -> List[str]:
         """
-        UPDATED: Returns the feature columns for the FVG V1 Transformer model.
-        (Matches the Feature List used in Script 1 and 2)
+        Returns the 28 feature columns for the FVG V4 Transformer model.
         """
         return [
             # 1. Technical (Signal)
-            'fvg_signal',           # -1 (Bear FVG), 0 (None), 1 (Bull FVG)
-            'fvg_age',              # How many bars old is the FVG?
-            'dist_to_fvg_mid',      # Distance to 50% "consequent encroachment"
-            'is_in_discount',       # Price is below 50% of recent range
-            'is_in_premium',        # Price is above 50% of recent range
-            'market_structure',     # -1 (Down), 1 (Up) based on EMA 200
-
+            'fvg_signal', 'fvg_age', 'dist_to_fvg_mid', 'close_vs_fvg_mid',
+            'is_in_discount', 'is_in_premium', 'market_structure', 
+            'is_near_EQH', 'is_near_EQL', 
+            'bars_since_BoS', 
+            
             # 2. Technical (Context)
-            'price_vs_ema200',      # Distance from 200 EMA (Trend)
-            'adx',                  # Trend Strength
-            'price_vel_20',         # Price Velocity / Momentum
-            'body_size',            # Candle body size
-            'wick_ratio',           # Candle wick ratio
-            'atr',                  # Volatility
-            'macro_trend_slope',    # 15-min macro trend
-
+            'price_vs_ema200', 'adx', 'price_vel_20', 'body_size', 'wick_ratio', 'atr', 'macro_trend_slope',    
+            
             # 3. Contextual (Time)
-            'hour_sin',             # Time of day (cyclical)
-            'hour_cos',             # Time of day (cyclical)
-            'day_of_week_encoded',  # Day of week
-
+            'hour_sin', 'hour_cos', 'day_of_week_encoded',  
+            
             # 4. Confirmation (Volume/Momentum)
-            'mfi',                  # Money Flow Index
-            'volume_roc',           # Volume Rate-of-Change
-            'stoch_rsi',            # StochRSI
+            'mfi', 'volume_roc', 'stoch_rsi',
+            
+            # 5. V3 Features
+            'normalized_bb_width',
+            'rejection_wick_ratio',
+            
+            # 6. ⭐️ V4: HTF (1-Hour) CONTEXT ⭐️
+            '1H_market_structure',
+            '1H_price_vs_ema',
+            '1H_rsi',
         ]
 
-    # Sequence length is kept at 120 (a typical value in successful Transformer training)
     def get_sequence_length(self) -> int:
-        """FVG V1.0 (Transformer) uses 120 bars."""
+        """FVG V4 (Transformer) uses 120 bars."""
         return 120
 
     # =========================================================
-    # FVG FEATURE ENGINEERING (REPLACED PIVOT LOGIC)
+    # FVG V4 FEATURE ENGINEERING (LIVE BOT LOGIC)
     # =========================================================
     
     def _find_fvgs(self, high: np.ndarray, low: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Vectorized function to find FVG zones (copied from Script 1)."""
         high_m2 = np.roll(high, 2); low_m2 = np.roll(low, 2)
-
-        # Bullish FVG: low[-2] > high[0] (Gap Down)
-        bull_fvg = low_m2 > high
-        bull_top = low_m2; bull_bottom = high
-
-        # Bearish FVG: high[-2] < low[0] (Gap Up)
-        bear_fvg = high_m2 < low
-        bear_top = low; bear_bottom = high_m2
+        bull_fvg = low_m2 > high; bull_top = low_m2; bull_bottom = high
+        bear_fvg = high_m2 < low; bear_top = low; bear_bottom = high_m2
 
         fvg_signal = np.zeros_like(high, dtype=np.int8); fvg_signal[bull_fvg] = 1; fvg_signal[bear_fvg] = -1
         fvg_top = np.where(bull_fvg, bull_top, np.where(bear_fvg, bear_top, np.nan))
@@ -101,98 +98,168 @@ class FVGReversal3minStrategy(BaseStrategy):
 
     def add_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        UPDATED: Calculate FVG V1.0 features.
+        Calculates all 28 features based on raw data input.
+        This function is now self-sufficient and generates HTF context
+        from the 3-minute data.
         """        
-        logging.debug(f"Adding FVG V1 features. Input shape: {df.shape}")
+        logging.debug(f"Adding FVG V4 features. Input shape: {df.shape}")
         
+        # Ensure the DataFrame has a DatetimeIndex for resampling
+        if not isinstance(df.index, pd.DatetimeIndex):
+            raise ValueError("DataFrame index is not a DatetimeIndex. Cannot perform time-based operations.")
+
         df = df.copy()
 
         # === 0. CLEAN OHLCV DATA ===
         for col in ['open', 'high', 'low', 'close', 'volume']:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(method='ffill').fillna(0)             
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(method='ffill').fillna(0)
+            else:
+                logging.warning(f"Column {col} not found in input DataFrame. Filling with 0.")
+                df[col] = 0.0
 
-        # === 1. BASE INDICATORS ===
+        # === 1. BASE INDICATORS (3-min) ===
         df['atr'] = ta.atr(df['high'], df['low'], df['close'], length=14).replace(0, 1e-6).fillna(method='ffill').fillna(1e-6)
-        df['ema200'] = ta.ema(df['close'], length=200).fillna(method='ffill').fillna(0)
+        df['ema200'] = ta.ema(df['close'], length=200)
+        df['price_vs_ema200'] = (df['close'] - df['ema200']) / df['atr']
+        df['market_structure'] = np.where(df['close'] > df['ema200'], 1, -1)
+        
+        adx_df = ta.adx(df['high'], df['low'], df['close'], length=14); df['adx'] = adx_df['ADX_14'].fillna(0) if adx_df is not None else 0
+        df['price_vel_20'] = df['close'].diff(20) / df['atr']
+        df['body_size'] = abs(df['close'] - df['open']) / df['atr']
+        df['wick_ratio'] = (df['high'] - df['low']) / df['atr']
+        
+        # Volatility Regime (BBW)
+        bbands = ta.bbands(df['close'], length=20, std=2)
+        if bbands is not None and all(col in bbands.columns for col in ['BBU_20_2.0_2.0', 'BBL_20_2.0_2.0', 'BBM_20_2.0_2.0']):
+            df['normalized_bb_width'] = (bbands['BBU_20_2.0_2.0'] - bbands['BBL_20_2.0_2.0']) / (bbands['BBM_20_2.0_2.0'] + 1e-6)
+        else:
+            df['normalized_bb_width'] = 0.0
+            logging.warning("Bollinger Band calculation failed. Filling 'normalized_bb_width' with 0.")
+        
+        # Rejection Wick
+        df['rejection_wick_ratio'] = np.where(df['close'] > df['open'],
+                                            (df['close'] - df['low']) / df['atr'],
+                                            (df['high'] - df['close']) / df['atr'])
 
-        adx_df = ta.adx(df['high'], df['low'], df['close'], length=14)
-        df['adx'] = adx_df['ADX_14'] if adx_df is not None and 'ADX_14' in adx_df.columns else 0
-        df['adx'] = df['adx'].fillna(method='ffill').fillna(0)
-
-        # === 2. FVG SIGNAL FEATURES ===
-        fvg_signal, fvg_top, fvg_mid, fvg_bottom = self._find_fvgs(
-            df['high'].values, df['low'].values
-        )
-        df['fvg_signal_raw'] = fvg_signal
-        df['fvg_top_raw'] = fvg_top
-        df['fvg_mid_raw'] = fvg_mid
-        df['fvg_bottom_raw'] = fvg_bottom
-
-        # Forward fill FVG zones to find the *nearest unmitigated FVG* (limit 100 bars)
-        df_fvg = df[['fvg_signal_raw', 'fvg_top_raw', 'fvg_mid_raw', 'fvg_bottom_raw']].replace(0, np.nan)
-        df_fvg = df_fvg.ffill(limit=100).fillna(0)
+        # --- 2. FVG SIGNAL FEATURES ---
+        fvg_signal, fvg_top, fvg_mid, fvg_bottom = self._find_fvgs(df['high'].values, df['low'].values)
+        
+        df['fvg_signal_raw'] = fvg_signal # Store raw signal for age calculation
+        
+        df_fvg = pd.DataFrame({'fvg_signal_raw': fvg_signal, 'fvg_top': fvg_top, 'fvg_mid': fvg_mid, 'fvg_bottom': fvg_bottom}, index=df.index).replace(0, np.nan).ffill(limit=self.BOS_LOOKBACK).fillna(0)
         
         df['fvg_signal'] = df_fvg['fvg_signal_raw']
-        df['fvg_top'] = df_fvg['fvg_top_raw']
-        df['fvg_mid'] = df_fvg['fvg_mid_raw']
+        df['fvg_mid'] = df_fvg['fvg_mid']
         
-        # Calculate FVG age 
-        df['fvg_age'] = df.groupby(
-            (df['fvg_signal_raw'] != 0).cumsum()
-        ).cumcount()
+        df['fvg_age'] = df.groupby((df['fvg_signal_raw'] != 0).cumsum()).cumcount()
         
-        # Calculate distance to FVG mid-point (consequent encroachment)
-        df['dist_to_fvg_mid'] = (df['fvg_mid'] - df['close']) / df['atr'] # Reversed sign for consistency
+        df['dist_to_fvg_mid'] = (df['fvg_mid'] - df['close']) / df['atr']
         df.loc[df['fvg_signal'] == 0, 'dist_to_fvg_mid'] = 0
+        df['close_vs_fvg_mid'] = (df['close'] - df['fvg_mid']) / df['atr']
+        df.loc[df['fvg_signal'] == 0, 'close_vs_fvg_mid'] = 0
 
-        # Calculate Premium/Discount (using 50-bar swing range)
-        swing_range_high = df['high'].rolling(50).max()
-        swing_range_low = df['low'].rolling(50).min()
+        # Premium/Discount
+        swing_range_high = df['high'].rolling(50).max(); swing_range_low = df['low'].rolling(50).min()
         swing_range_mid = (swing_range_high + swing_range_low) / 2.0
-        
         df['is_in_discount'] = np.where(df['close'] < swing_range_mid, 1, 0)
         df['is_in_premium'] = np.where(df['close'] > swing_range_mid, 1, 0)
-        df['market_structure'] = np.where(df['close'] > df['ema200'], 1, -1)
-
-
-        # === 3. CONTEXT & CONFIRMATION FEATURES ===
-        df['price_vs_ema200'] = (df['close'] - df['ema200']) / df['atr']
-        df['price_vel_20'] = df['close'].diff(20) / df['atr']
         
-        # Candlestick
-        df['body_size'] = abs(df['close'] - df['open']) / df['atr']
-        df['wick_ratio'] = (df['high'] - df['low']) / df['atr'] 
+        # BoS Age (BoS_long/short and bars_since_BoS must be calculated)
+        is_sh = (df['high'] == df['high'].rolling(self.N_PIVOT * 2 + 1, center=True).max()).shift(self.N_PIVOT).fillna(False)
+        is_sl = (df['low'] == df['low'].rolling(self.N_PIVOT * 2 + 1, center=True).min()).shift(self.N_PIVOT).fillna(False)
 
-        # Volume/Momentum
-        mfi_df = ta.mfi(df['high'], df['low'], df['close'], df['volume'], length=14)
-        df['mfi'] = mfi_df.fillna(50)
-        df['volume_roc'] = ta.roc(df['volume'], length=5).fillna(0)
-        stochrsi_df = ta.stochrsi(df['close'], length=14)
-        df['stoch_rsi'] = stochrsi_df['STOCHRSIk_14_14_3_3'].fillna(0)
+        sh_val = df['high'].where(is_sh).ffill(); sl_val = df['low'].where(is_sl).ffill()
+        
+        df['BoS_long_raw'] = (df['high'] > sh_val.shift(1)).astype(int) 
+        df['BoS_short_raw'] = (df['low'] < sl_val.shift(1)).astype(int)
+        
+        last_bos_long_idx = df.index.to_series().where(df['BoS_long_raw'] == 1).ffill()
+        last_bos_short_idx = df.index.to_series().where(df['BoS_short_raw'] == 1).ffill()
 
-        # Time Context
-        hours_in_day = 24
-        df['hour_sin'] = np.sin(2 * np.pi * df.index.hour / hours_in_day)
-        df['hour_cos'] = np.cos(2 * np.pi * df.index.hour / hours_in_day)
-        df['day_of_week_encoded'] = df.index.dayofweek / 6.0
+        df['bars_since_BoS_long'] = df.index.get_indexer(df.index) - df.index.get_indexer(last_bos_long_idx)
+        df['bars_since_BoS_short'] = df.index.get_indexer(df.index) - df.index.get_indexer(last_bos_short_idx)
 
-        # Macro Trend (Placeholder calculation, assumes 15min data is handled externally or derived)
-        # For simplicity and compliance, we will mimic the macro trend feature calculation using EMA slope
-        df['macro_trend_slope'] = df['ema200'].diff(100) / (df['atr'] * 100) # Proxy for 15m trend from 3m data
+        df['bars_since_BoS_long'].fillna(self.BOS_LOOKBACK + 1, inplace=True)
+        df['bars_since_BoS_short'].fillna(self.BOS_LOOKBACK + 1, inplace=True)
+        
+        # Select the correct BoS age based on local market structure
+        df['bars_since_BoS'] = np.where(df['market_structure'] == 1, 
+                                     df['bars_since_BoS_long'], 
+                                     df['bars_since_BoS_short'])
 
+        # EQH/EQL
+        df['is_near_EQH'] = (df['high'].rolling(self.EQ_LOOKBACK).max().shift(1) - df['high']).abs() < self.EQ_THRESHOLD
+        df['is_near_EQL'] = (df['low'] - df['low'].rolling(self.EQ_LOOKBACK).min().shift(1)).abs() < self.EQ_THRESHOLD
+        df['is_near_EQH'] = df['is_near_EQH'].astype(int)
+        df['is_near_EQL'] = df['is_near_EQL'].astype(int)
+        
+        # --- 3. Confirmation and Context ---
+        mfi_df = ta.mfi(df['high'], df['low'], df['close'], df['volume'], length=14); df['mfi'] = mfi_df.fillna(50)
+        df['volume_roc'] = ta.roc(df['volume'], length=5).fillna(0); stochrsi_df = ta.stochrsi(df['close'], length=14); df['stoch_rsi'] = stochrsi_df['STOCHRSIk_14_14_3_3'].fillna(0)
 
-        # === FINAL CLEANUP ===
+        hours_in_day = 24; df['hour_sin'] = np.sin(2 * np.pi * df.index.hour / hours_in_day); df['hour_cos'] = np.cos(2 * np.pi * df.index.hour / hours_in_day); df['day_of_week_encoded'] = df.index.dayofweek / 6.0
+        
+        # --- 4. ⭐️ HTF CONTEXT (Resampled from 3-min) ⭐️ ---
+        
+        # 15-min Macro Slope
+        df_15min = df[['open', 'high', 'low', 'close', 'volume']].resample('15Min', label='left', closed='left').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last'}).dropna()
+        if not df_15min.empty:
+            ema_15m_series = ta.ema(df_15min['close'], length=40)
+            df_15m_features = pd.DataFrame(index=df_15min.index)
+            df_15m_features['ema40_slope'] = ema_15m_series.diff(3)
+            df_15m_features = df_15m_features.shift(1) # Prevent lookahead
+            df = pd.merge_asof(df, df_15m_features, left_index=True, right_index=True, direction='backward')
+            df['macro_trend_slope'] = df['ema40_slope'] / df['atr'] # Normalized
+        else:
+            df['macro_trend_slope'] = 0.0
+
+        # 1-Hour HTF Context
+        agg_dict = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}
+        df_1hour = df[['open', 'high', 'low', 'close', 'volume']].resample('1H', label='left', closed='left').agg(agg_dict).dropna()
+        
+        if not df_1hour.empty:
+            df_1h_features = pd.DataFrame(index=df_1hour.index)
+            df_1h_features['1H_atr'] = ta.atr(df_1hour['high'], df_1hour['low'], df_1hour['close'], length=14).replace(0, 1e-6)
+            df_1h_features['1H_ema20'] = ta.ema(df_1hour['close'], length=20)
+            df_1h_features['1H_ema50'] = ta.ema(df_1hour['close'], length=50)
+            df_1h_features['1H_ema200'] = ta.ema(df_1hour['close'], length=200)
+            df_1h_features['1H_rsi'] = ta.rsi(df_1hour['close'], length=14).fillna(50)
+            
+            df_1h_features['1H_market_structure'] = (df_1h_features['1H_ema50'] - df_1h_features['1H_ema200']) / df_1h_features['1H_atr']
+            df_1h_features['1H_price_vs_ema'] = (df_1hour['close'] - df_1h_features['1H_ema20']) / df_1h_features['1H_atr']
+            
+            df_1h_features = df_1h_features.shift(1) # Prevent lookahead
+            
+            df = pd.merge_asof(df, df_1h_features[['1H_market_structure', '1H_price_vs_ema', '1H_rsi']], 
+                                  left_index=True, right_index=True, direction='backward')
+        else:
+            df['1H_market_structure'] = 0.0
+            df['1H_price_vs_ema'] = 0.0
+            df['1H_rsi'] = 50.0
+        
+        # === FINAL CLEANUP AND FEATURE RETURN ===
         all_feature_cols = self.get_feature_columns()
+        
+        # Fill any missing HTF/BoS/Macro columns with zeros if the backtest runner didn't merge them.
         for col in all_feature_cols:
-            if col not in df.columns: df[col] = 0.0
+            if col not in df.columns: 
+                logging.warning(f"Feature {col} missing in execution DF. Filling with zeros.")
+                df[col] = 0.0
                 
+        # Fill NaNs created during calculations
         df[all_feature_cols] = df[all_feature_cols].replace([np.inf, -np.inf], np.nan).fillna(method='ffill').fillna(0)
 
-        logging.debug(f"FVG features added. Shape after features: {df.shape}")
-        return df    
+        logging.debug(f"FVG V4 features added. Shape after features: {df.shape}")
+        
+        # ⭐️⭐️⭐️ CRITICAL FIX: Return the *entire* DataFrame ⭐️⭐️⭐️
+        # The base bot needs the OHLCV columns for execution.
+        # The preprocess_features function will handle selecting the 28 feature columns.
+        return df
+
 
     # =========================================================
-    # LIVE EXECUTION FUNCTIONS
+    # LIVE EXECUTION FUNCTIONS (Unchanged)
     # =========================================================
 
     def load_model(self):
@@ -201,11 +268,10 @@ class FVGReversal3minStrategy(BaseStrategy):
             if not os.path.exists(self.model_path):
                 raise FileNotFoundError(f"Model file not found: {self.model_path}")
 
-            # FVG model uses ONNX on CPU
             self.model = onnxruntime.InferenceSession(self.model_path, providers=['CPUExecutionProvider'])
-            logging.info(f"✅ Loaded FVG Reversal V1 model: {os.path.basename(self.model_path)}")
+            logging.info(f"✅ Loaded FVG Reversal V4 model: {os.path.basename(self.model_path)}")
         except Exception as e:
-            logging.exception(f"❌ Error loading FVG Reversal V1 model: {e}")
+            logging.exception(f"❌ Error loading FVG Reversal V4 model: {e}")
             raise
 
     def load_scaler(self):
@@ -217,12 +283,11 @@ class FVGReversal3minStrategy(BaseStrategy):
             with open(self.scaler_path, 'rb') as f:
                 scalers = pickle.load(f)
 
-            # FVG V1 scalers are keyed by base symbol (e.g., 'NQ')
             base_symbol = self.contract_symbol.split('.')[0][:2] 
             
             if base_symbol in scalers:
                 self.scaler = scalers[base_symbol]
-                logging.info(f"✅ Loaded '{base_symbol}' scaler for FVG Reversal V1")
+                logging.info(f"✅ Loaded '{base_symbol}' scaler for FVG Reversal V4")
             else:
                 available = list(scalers.keys())
                 raise ValueError(
@@ -230,31 +295,32 @@ class FVGReversal3minStrategy(BaseStrategy):
                     f"Available: {available}"
                 )
         except Exception as e:
-            logging.exception(f"❌ Error loading FVG Reversal V1 scaler: {e}")
+            logging.exception(f"❌ Error loading FVG Reversal V4 scaler: {e}")
             raise
 
     def predict(self, df: pd.DataFrame) -> Tuple[int, float]:
         """
-        Generate prediction using FVG V1 Transformer model.
+        Generate prediction using FVG V4 Transformer model.
         """
         try:
-            features = self.preprocess_features(df) 
+            # preprocess_features is defined in the BaseStrategy.
+            # It calls add_features(), then scales, then returns a NumPy array.
+            features_array = self.preprocess_features(df) 
 
-            seq_len = self.get_sequence_length() # 120
-            if len(features) < seq_len:
-                logging.warning(f"⚠️ Not enough data for prediction. Need {seq_len}, have {len(features)}. Returning Hold.")
+            seq_len = self.get_sequence_length() 
+            if len(features_array) < seq_len:
+                logging.warning(f"⚠️ Not enough data for prediction. Need {seq_len}, have {len(features_array)}. Returning Hold.")
                 return 0, 0.0
 
-            X = features[-seq_len:].reshape(1, seq_len, -1).astype(np.float32)
+            # ⭐️ FIX: features_array is already a NumPy array, do not call .values again.
+            X = features_array[-seq_len:].reshape(1, seq_len, -1).astype(np.float32)
 
             input_name = self.model.get_inputs()[0].name
             output_name = self.model.get_outputs()[0].name
-            logits_sequence = self.model.run([output_name], {input_name: X})[0] # Shape: (1, 120, 3)
+            logits_sequence = self.model.run([output_name], {input_name: X})[0] 
 
-            # Get logits from the LAST time step
-            last_logits = logits_sequence[0, -1, :] # Shape: (3,)
+            last_logits = logits_sequence[0, -1, :] 
 
-            # Get prediction and confidence
             probs = self._softmax(last_logits)
             prediction = int(np.argmax(probs))
             confidence = float(probs[prediction])
@@ -262,8 +328,8 @@ class FVGReversal3minStrategy(BaseStrategy):
             return prediction, confidence
 
         except Exception as e:
-            logging.exception(f"❌ Prediction error (FVG Reversal V1): {e}")
-            return 0, 0.0 # Return Hold on error
+            logging.exception(f"❌ Prediction error (FVG Reversal V4): {e}")
+            return 0, 0.0 
 
     def should_enter_trade(
         self,
@@ -271,18 +337,16 @@ class FVGReversal3minStrategy(BaseStrategy):
         confidence: float,
         bar: Dict,
         entry_conf: float,
-        adx_thresh: float # PARAMETER RETAINED FOR COMPLIANCE
+        adx_thresh: float 
     ) -> Tuple[bool, Optional[str]]:
         """
-        Determine if FVG Reversal V1 entry conditions are met.
-        NOTE: adx_thresh is ignored as the FVG model has learned this context internally.
+        Determine if FVG Reversal V4 entry conditions are met.
         """
         
-        # Check confidence threshold (Model is trained with high confidence in mind)
         if confidence < entry_conf:
             return False, None
         
-        # FVG V1 model uses: 1=BUY (Long), 2=SELL (Short)
+        # FVG V4 model uses: 1=BUY (Long), 2=SELL (Short)
         if prediction == 1:
             return True, 'LONG'
         elif prediction == 2:

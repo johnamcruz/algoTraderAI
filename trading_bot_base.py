@@ -261,7 +261,7 @@ class TradingBot(ABC):
                     logging.info(f"LONG @ {self.entry_price:.2f} SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}")
                     
                     # Calculate ticks: Use point distance directly
-                    stop_loss_ticks = int(self.stop_pts / tick_size)
+                    stop_loss_ticks = -int(self.stop_pts / tick_size)
                     take_profit_ticks = int(self.target_pts / tick_size)
                     
                     # Place order
@@ -283,7 +283,7 @@ class TradingBot(ABC):
                     
                     # Calculate ticks: Use point distance directly
                     stop_loss_ticks = int(self.stop_pts / tick_size)
-                    take_profit_ticks = int(self.target_pts / tick_size)
+                    take_profit_ticks = -int(self.target_pts / tick_size)
                     
                     # Place order
                     await self._place_order(1, stop_ticks=stop_loss_ticks, take_profit_ticks=take_profit_ticks)

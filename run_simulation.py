@@ -4,6 +4,6 @@
 
 #python3 algoTrader.py --backtest --backtest_data data/CME_MINI_ES1_3min.csv --contract CON.F.US.EP.Z25 --size 1 --entry_conf 0.9 --stop_pts 8.0 --target_pts 12.0 --model models/model_supertrend_pullback_v3.10.onnx --scaler models/scaler_supertrend_pullback_v3.10.pkl --strategy "supertrend" --simulation-days 5
 
-#python3 algoTrader.py --backtest --backtest_data data/CME_MINI_NQ1_3min.csv --contract CON.F.US.ENQ.Z25 --size 1 --entry_conf 0.9 --stop_pts 8.0 --target_pts 16.0 --model models/model_supertrend_pullback_v3.10.onnx --scaler models/scaler_supertrend_pullback_v3.10.pkl --strategy "supertrend" --simulation-days 30
+#python3 algoTrader.py --backtest --backtest_data data/CME_MINI_NQ1_3min.csv --contract CON.F.US.ENQ.Z25 --size 1 --entry_conf 0.9 --stop_pts 8.0 --target_pts 16.0 --model models/model_supertrend_pullback_v3.10.onnx --scaler models/scaler_supertrend_pullback_v3.10.pkl --strategy "supertrend" --simulation-days 3
 
-python3 algoTrader.py --backtest --backtest_data data/CME_MINI_NQ1_3min.csv --contract CON.F.US.ENQ.Z25 --size 1 --entry_conf 0.95 --stop_pts 8.0 --target_pts 16.0 --model models/fvg_v1_model.onnx --scaler models/fvg_v1_scaler.pkl --strategy "fvg_reversal" --simulation-days 30
+python3 algoTrader.py --backtest --backtest_data data/CME_MINI_NQ1_3min.csv --contract CON.F.US.ENQ.Z25 --size 1 --entry_conf 0.98 --stop_pts 8.0 --target_pts 12.0 --model models/fvg_v5.1_model.onnx --scaler models/fvg_v5.1_scaler.pkl --strategy "fvg_reversal" --simulation-days 30
