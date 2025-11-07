@@ -8,7 +8,7 @@ Creates strategy instances based on strategy name.
 from strategy_base import BaseStrategy
 from strategy_squeeze import SqueezeV3Strategy
 from strategy_pivot_reversal_5min import PivotReversal5minStrategy
-from strategy_fvg_reversal_3min import FVGReversal3minStrategy
+from strategy_supertrend_pullback2 import SupertrendPullbackStrategy2
 from strategy_vwap_3min import VWAP3minStrategy
 from strategy_trend_pullback import TrendPullbackStrategy
 from strategy_supertrend_pullback_3min import SupertrendPullbackStrategy
@@ -21,11 +21,11 @@ class StrategyFactory:
     # Registry of available strategies
     STRATEGIES = {
         'squeeze_v3': SqueezeV3Strategy,
-        '5min_pivot_reversal': PivotReversal5minStrategy,
-        'fvg_reversal': FVGReversal3minStrategy,
+        '5min_pivot_reversal': PivotReversal5minStrategy,        
         'vwap': VWAP3minStrategy,
         'trend_pullback': TrendPullbackStrategy,        
         'supertrend': SupertrendPullbackStrategy,
+        'supertrend2': SupertrendPullbackStrategy2,
     }
     
     @classmethod
