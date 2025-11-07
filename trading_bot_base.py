@@ -69,7 +69,7 @@ class TradingBot(ABC):
         # --- MODIFICATION: Need more history for warm-up than just seq_len ---
         # We need at least 200 bars for ema200 + seq_len for the model.
         # Let's set a safe buffer. 500 should be enough for most indicators.
-        self.num_historical_candles_needed = 500 
+        self.num_historical_candles_needed = 900 
         self.historical_bars = deque(maxlen=self.num_historical_candles_needed)
         # --- END MODIFICATION ---
         
