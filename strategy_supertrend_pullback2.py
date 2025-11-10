@@ -411,20 +411,13 @@ class SupertrendPullbackStrategy2(BaseStrategy):
         # 1. Confidence Filter (Primary Filter)
         if confidence < entry_conf:
             return False, None
-        
-        # 2. Get fundamental regime state
-        st_direction = bar.get('st_direction', 0.0)
-            
-        # 3. Model Prediction + Regime Filter
-        if prediction == 1: # Model wants to BUY
-            # Check 1: Is the Supertrend regime currently LONG?
-            if st_direction == 1:
-                return True, 'LONG'
+                    
+        #Model Prediction
+        if prediction == 1: # Model wants to BUY            
+            return True, 'LONG'
                 
-        elif prediction == 2: # Model wants to SELL
-            # Check 1: Is the Supertrend regime currently SHORT?
-            if st_direction == -1:
-                return True, 'SHORT'
+        elif prediction == 2: # Model wants to SELL            
+            return True, 'SHORT'
 
         # Prediction is 0 (Hold) or alignment filter failed
         return False, None
