@@ -70,6 +70,57 @@ class EmaPullbackStrategy(BaseStrategy):
     # =========================================================
     # V1.0 FEATURE ENGINEERING (30 FEATURES) - HARDENED
     # =========================================================
+    def _calculate_setup_quality_tiers(self, df: pd.DataFrame, labels_length: int) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Calculate multi-tier quality scores WITHOUT filtering.
+        Returns quality tier (0=worst, 4=best) for each bar.
+        
+        NOTE: This is a helper for add_features. We use .values[1:] to align
+        with the labeling script's logic, but in live trading, we only care about the last value.
+        The [1:labels_length+1] slicing is kept for consistency with the training data calc.
+        For live trading, a simpler version might be needed if labels_length is not available,
+        but this will work for backtesting/prediction runs.
+        
+        Let's simplify for live prediction. We only need the *most recent* values.
+        """
+        
+        # Simplified version for live prediction (operates on the whole dataframe)
+        
+        # Extract relevant arrays
+        adx = df['adx'].values
+        mtf_alignment = df['mtf_alignment_score'].values
+        volume_thrust = df['volume_thrust'].values
+        fresh_structure = df['fresh_structure'].values
+        pullback_orderly = df['pullback_orderly'].values
+        volatility_regime = df['volatility_regime'].values
+
+        # Tier scoring (each condition = 1 point)
+        quality_score = np.zeros(len(df), dtype=np.float32)
+
+        # Tier 1: Trend Strength (0-2 points)
+        quality_score += (adx > 20).astype(float)
+        quality_score += (adx > 30).astype(float)  # Extra point for strong trend
+
+        # Tier 2: Multi-timeframe (0-2 points)
+        quality_score += (np.abs(mtf_alignment) >= 2).astype(float)  # 2 of 3 aligned
+        quality_score += (np.abs(mtf_alignment) == 3).astype(float)  # All aligned
+
+        # Tier 3: Volume & Structure (0-2 points)
+        quality_score += (volume_thrust > 1.2).astype(float)
+        quality_score += (fresh_structure == 1).astype(float)
+
+        # Tier 4: Regime Quality (0-2 points)
+        quality_score += (pullback_orderly == 1).astype(float)
+        quality_score += ((volatility_regime > 0.8) & (volatility_regime < 1.3)).astype(float)
+
+        # Convert to tiers (0-4)
+        tiers = np.zeros(len(df), dtype=np.int8)
+        tiers[quality_score >= 2] = 1
+        tiers[quality_score >= 4] = 2
+        tiers[quality_score >= 6] = 3
+        tiers[quality_score == 8] = 4
+
+        return tiers, quality_score
     
     def _calculate_mtf_slope_hardened(self, df_base: pd.DataFrame, timeframe: str) -> pd.DataFrame:
         """Robustly resamples price data and calculates 40 EMA slope."""
@@ -148,11 +199,7 @@ class EmaPullbackStrategy(BaseStrategy):
         df['price_vs_ema200'] = (df['close'] - df['ema200']) / df['atr']
         
         adx_df = ta.adx(df['high'], df['low'], df['close'], length=14)
-        df['adx'] = adx_df['ADX_14'].fillna(0)
-        
-        # --- REMOVED --- 'adx_acceleration_5' and dependency
-        # df['_calc_adx_slope'] = df['adx'].diff(5) 
-        # df['adx_acceleration_5'] = df['_calc_adx_slope'].diff(5)
+        df['adx'] = adx_df['ADX_14'].fillna(0)                
                 
         df['_calc_price_vel_20'] = df['close'].diff(20) / df['atr'];
         df['price_roc_slope'] = df['_calc_price_vel_20'].diff(10) # Price ROC slope from 20-bar velocity
@@ -174,9 +221,7 @@ class EmaPullbackStrategy(BaseStrategy):
         
         # Volume features
         df['_calc_volume_ma20'] = df['volume'].rolling(20).mean()
-        df['volume_thrust'] = df['volume'] / (df['_calc_volume_ma20'] + 1e-6)
-        # --- REMOVED --- 'volume_declining' is laggy/redundant
-        # df['volume_declining'] = (df['volume'].rolling(3).mean() < df['volume'].rolling(10).mean()).astype(int)
+        df['volume_thrust'] = df['volume'] / (df['_calc_volume_ma20'] + 1e-6)        
 
         # Time-Based Contextual Features (Cyclical)
         df['_calc_hour'] = df.index.hour
@@ -194,9 +239,7 @@ class EmaPullbackStrategy(BaseStrategy):
         df['ema_separation'] = (df['ema15'] - df['ema40']).abs() / df['atr']
 
         df['_calc_atr_ma20'] = df['atr'].rolling(20).mean()
-        df['volatility_regime'] = df['atr'] / (df['_calc_atr_ma20'] + 1e-6)
-        # --- REMOVED --- 'volatility_spike' is redundant
-        # df['volatility_spike'] = (df['volatility_regime'] > 1.25).astype(int)
+        df['volatility_regime'] = df['atr'] / (df['_calc_atr_ma20'] + 1e-6)        
 
         # Pullback Quality
         df['pullback_orderly'] = (df['body_size'].rolling(3).std() < df['body_size'].rolling(20).mean() * 0.5).astype(int)
@@ -273,28 +316,25 @@ class EmaPullbackStrategy(BaseStrategy):
             df['macro_trend_direction_60m']
         )
         
-        # --- 5. Composite Quality Scores (V1.0) ---
+        # --- 5. Composite Quality Scores (V1.0) ---        
+        # We must fillna *before* calling the quality tier function
+        df.fillna(method='ffill', limit=200, inplace=True) 
+        df.fillna(0, inplace=True) # Fill zeros *before* quality calc
+        
+        tiers, scores = self._calculate_setup_quality_tiers(df, len(df))
+        df['setup_quality_tier'] = tiers
+        df['setup_quality_score'] = scores
         
         wick_rejection = (df['_calc_rejection_wick_long'] | df['_calc_rejection_wick_short']).astype(int)
         
         # ⭐️ UPDATED: 'volume_declining' removed from calculation
         df['setup_quality_score'] = (
             df['tradeable_trend'] * 0.25 +
-            df['pullback_orderly'] * 0.20 +
-            # df['volume_declining'] * 0.15 + # <-- REMOVED
+            df['pullback_orderly'] * 0.20 +            
             wick_rejection * 0.20 +
             df['fresh_structure'] * 0.20
         )
-
-        # --- REMOVED --- 'filter_strength' block
-        # df['filter_strength'] = (
-        #     (np.abs(df['close'] - df['st_val']) / df['atr'] < 2.0).astype(float) +
-        #     (df['adx'] > 20).astype(float) +
-        #     (df['setup_quality_score'] > 0.5).astype(float) +
-        #     (df['volume_declining'] == 1).astype(float)
-        # ) / 4.0
-        
-
+                
         # --- 6. Drop Intermediate Columns ---
         
         # Drop all prefixed intermediate columns and other temporary indicators
