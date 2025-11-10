@@ -163,12 +163,13 @@ class EmaPullbackStrategy(BaseStrategy):
 
     def add_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Calculate V1.0 features with robust error handling and cleanup,
-        ensuring OHLCV data is used for calculation but dropped before return.
+        Calculate V1.0 features with robust error handling and cleanup.
+        This version ensures OHLCV and intermediate columns are NOT dropped,
+        allowing the base class to function correctly.
         """
         logging.debug(f"Adding V1.0 EMA Pullback features. Input shape: {df.shape}")
 
-        # ⭐️ CRITICAL: Operate on a copy to ensure input OHLCV is preserved for calculation
+        # ⭐️ CRITICAL: Operate on a copy
         df = df.copy()
 
         # --- 1. Core Indicators (3-min TF) ---
@@ -239,7 +240,6 @@ class EmaPullbackStrategy(BaseStrategy):
         df['_calc_st_consistency_20'] = df['st_direction'].rolling(20).sum() / 20
         df['tradeable_trend'] = (df['_calc_st_consistency_20'].abs() >= 0.7).astype(int)
         
-        # ⭐️ FIXED: This calculation must happen *before* ema15 and ema40 are dropped
         df['ema_separation'] = (df['ema15'] - df['ema40']).abs() / df['atr']
 
         df['_calc_atr_ma20'] = df['atr'].rolling(20).mean()
@@ -253,7 +253,7 @@ class EmaPullbackStrategy(BaseStrategy):
         df['_calc_swing_high'] = ((df['high'] > df['high'].shift(1)) &
                              (df['high'] > df['high'].shift(-1))).astype(int)
         df['_calc_swing_low'] = ((df['low'] < df['low'].shift(1)) &
-                            (df['low'] < df['low'].shift(-1))).astype(int)
+                            (df['low']< df['low'].shift(-1))).astype(int)
         swing_marker = (df['_calc_swing_high'] | df['_calc_swing_low']).astype(bool)
         df['_calc_bars_since_swing'] = df.groupby(swing_marker.cumsum()).cumcount()
         df['fresh_structure'] = (df['_calc_bars_since_swing'] <= 10).astype(int)
@@ -280,14 +280,14 @@ class EmaPullbackStrategy(BaseStrategy):
             df_15m_direction.rename(columns={'ema40_direction': '_calc_ema40_direction_15m'}, inplace=True)
             df = pd.merge_asof(df, df_15m_direction, left_index=True, right_index=True, direction='forward')
             df['ema40_direction'] = df['_calc_ema40_direction_15m'].fillna(0.0)
-            df.drop(columns=['_calc_ema40_direction_15m'], inplace=True, errors='ignore')
+            # df.drop(columns=['_calc_ema40_direction_15m'], inplace=True, errors='ignore') # Keep for cleanup later
 
         _15m_slope_col = f'_calc_ema40_slope_15m'
         if _15m_slope_col in df_15m_features.columns:
             df_15m_slope = df_15m_features[[_15m_slope_col]].copy()
             df = pd.merge_asof(df, df_15m_slope, left_index=True, right_index=True, direction='forward')
             df['macro_trend_slope'] = df[_15m_slope_col] / df['atr']
-            df.drop(columns=[_15m_slope_col], inplace=True, errors='ignore')
+            # df.drop(columns=[_15m_slope_col], inplace=True, errors='ignore') # Keep for cleanup later
         else:
             df['macro_trend_slope'] = 0.0
 
@@ -299,11 +299,7 @@ class EmaPullbackStrategy(BaseStrategy):
             df_60m_direction.rename(columns={'macro_trend_direction_60m': '_calc_macro_direction_60m'}, inplace=True)
             df = pd.merge_asof(df, df_60m_direction, left_index=True, right_index=True, direction='forward')
             df['macro_trend_direction_60m'] = df['_calc_macro_direction_60m'].fillna(0.0)
-            df.drop(columns=['_calc_macro_direction_60m'], inplace=True, errors='ignore')
-
-            _60m_slope_col = f'_calc_ema40_slope_60m'
-            if _60m_slope_col in df_60m_features.columns:
-                 df.drop(columns=[_60m_slope_col], inplace=True, errors='ignore')
+            # df.drop(columns=['_calc_macro_direction_60m'], inplace=True, errors='ignore') # Keep for cleanup later
 
         # MTF Alignment Score
         df['mtf_alignment_score'] = (
@@ -320,46 +316,18 @@ class EmaPullbackStrategy(BaseStrategy):
         tiers, scores = self._calculate_setup_quality_tiers(df, len(df))
         df['setup_quality_tier'] = tiers
         df['setup_quality_score'] = scores # This is the primary score from the helper
-
-        wick_rejection = (df['_calc_rejection_wick_long'] | df['_calc_rejection_wick_short']).astype(int)
-
-        # ⭐️ This calculates a *second* score. We will drop it in Section 6.
-        df['setup_quality_score_composite'] = (
-            df['tradeable_trend'] * 0.25 +
-            df['pullback_orderly'] * 0.20 +
-            # df['volume_declining'] * 0.15 + # <-- REMOVED
-            wick_rejection * 0.20 +
-            df['fresh_structure'] * 0.20
-        )        
-        # --- 6. Drop Intermediate Columns ---
-
-        # ⭐️ FIXED: This list *only* contains prefixed _calc_ columns
-        intermediate_cols_to_drop = [
-            col for col in df.columns if col.startswith('_calc_')
-        ]
         
-        # Add the old composite score to the drop list
-        intermediate_cols_to_drop.append('setup_quality_score_composite')
-        
-        df.drop(columns=intermediate_cols_to_drop, inplace=True, errors='ignore')
-
+        # --- 6. Final Robust Cleanup ---
         # Robust NaN/Inf Handling
         df.replace([np.inf, -np.inf], np.nan, inplace=True)
+        # Final fillna pass
         df.fillna(method='ffill', limit=200, inplace=True)
         df.fillna(method='bfill', limit=200, inplace=True)
         df.fillna(0, inplace=True)
 
-        # --- 7. EXPLICITLY DROP OHLCV & Other Non-Features ---
+        # --- 7. Final Feature Verification ---
+        # (Ensures columns exist, but does NOT drop OHLCV)
         final_feature_cols = self.get_feature_columns()
-        
-        # ⭐️ FIXED: Now we drop the non-feature EMAs, ST values, etc., *after* all calculations
-        cols_to_keep = set(final_feature_cols)
-        cols_to_drop = [col for col in df.columns if col not in cols_to_keep]
-
-        df.drop(columns=cols_to_drop, inplace=True, errors='ignore')
-
-
-        # --- 8. Final Verification of ALL 30 Features ---
         missing_cols = []
         for col in final_feature_cols:
             if col not in df.columns:
@@ -370,9 +338,6 @@ class EmaPullbackStrategy(BaseStrategy):
             logging.warning(f"⚠️ Added missing V1.0 features as zeros (likely due to insufficient history): {', '.join(missing_cols)}")
 
         logging.debug(f"V1.0 EMA Pullback features added. Shape after features: {df.shape}")
-
-        # Ensure the final DataFrame order matches the required feature order
-        df = df[final_feature_cols]
 
         return df
 
