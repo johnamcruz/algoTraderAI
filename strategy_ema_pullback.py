@@ -165,46 +165,47 @@ class EmaPullbackStrategy(BaseStrategy):
         """
         Calculate V1.0 features with robust error handling and cleanup,
         ensuring OHLCV data is used for calculation but dropped before return.
-        """        
+        """
         logging.debug(f"Adding V1.0 EMA Pullback features. Input shape: {df.shape}")
-        
+
         # ⭐️ CRITICAL: Operate on a copy to ensure input OHLCV is preserved for calculation
-        df = df.copy() 
-        
+        df = df.copy()
+
         # --- 1. Core Indicators (3-min TF) ---
         df['atr'] = ta.atr(df['high'], df['low'], df['close'], length=14).replace(0, 1e-6)
-        
+
         # ⭐️ ADDED EMA(9) and EMA(20) ⭐️
         df['ema9'] = ta.ema(df['close'], length=9)
         df['ema20'] = ta.ema(df['close'], length=20)
-        
+
         df['ema15'] = ta.ema(df['close'], length=15); df['ema40'] = ta.ema(df['close'], length=40); df['ema200'] = ta.ema(df['close'], length=200)
-        
+
         st_df_fast = ta.supertrend(df['high'], df['low'], df['close'], length=10, multiplier=3)
         df['st_val'] = st_df_fast['SUPERT_10_3']; df['st_direction'] = st_df_fast['SUPERTd_10_3']
         st_df_slow = ta.supertrend(df['high'], df['low'], df['close'], length=20, multiplier=4)
         df['st_val_slow'] = st_df_slow['SUPERT_20_4']; df['st_direction_slow'] = st_df_slow['SUPERTd_20_4']
-        
+
         # --- 2. Normalized Price/Momentum Features (3-min TF) ---
         df['price_vs_st'] = (df['close'] - df['st_val']) / df['atr'];
         df['price_vs_st_slow'] = (df['close'] - df['st_val_slow']) / df['atr'];
-        
+
         # ⭐️ NEW EMA NORMALIZED FEATURES ⭐️
         df['price_vs_ema20'] = (df['close'] - df['ema20']) / df['atr']
         df['ema9_vs_ema20'] = (df['ema9'] - df['ema20']) / df['atr']
-        
+
         df['price_vs_ema40'] = (df['close'] - df['ema40']) / df['atr'];
         # --- REMOVED --- 'ema15_vs_ema40' is redundant
-        # df['ema15_vs_ema40'] = (df['ema15'] - df['ema40']) / df['atr']
         df['price_vs_ema200'] = (df['close'] - df['ema200']) / df['atr']
-        
+
         adx_df = ta.adx(df['high'], df['low'], df['close'], length=14)
-        df['adx'] = adx_df['ADX_14'].fillna(0)                
-                
+        df['adx'] = adx_df['ADX_14'].fillna(0)
+
+        # --- REMOVED --- 'adx_acceleration_5'
+
         df['_calc_price_vel_20'] = df['close'].diff(20) / df['atr'];
         df['price_roc_slope'] = df['_calc_price_vel_20'].diff(10) # Price ROC slope from 20-bar velocity
-                 
-        df['body_size'] = abs(df['close'] - df['open']) / df['atr']; 
+
+        df['body_size'] = abs(df['close'] - df['open']) / df['atr'];
         df['wick_ratio'] = (df['high'] - df['low']) / df['atr']
 
         # Volatility & Volume Features
@@ -213,15 +214,16 @@ class EmaPullbackStrategy(BaseStrategy):
         df['normalized_bb_width'] = df['normalized_bb_width'].fillna(0.0)
 
         mfi_df = ta.mfi(df['high'], df['low'], df['close'], df['volume'], length=14)
-        df['mfi'] = mfi_df.fillna(50) 
+        df['mfi'] = mfi_df.fillna(50)
         df['volume_roc'] = ta.roc(df['volume'], length=5).fillna(0)
-        
+
         stochrsi_df = ta.stochrsi(df['close'], length=14)
         df['stoch_rsi'] = stochrsi_df['STOCHRSIk_14_14_3_3'].fillna(0)
-        
+
         # Volume features
         df['_calc_volume_ma20'] = df['volume'].rolling(20).mean()
-        df['volume_thrust'] = df['volume'] / (df['_calc_volume_ma20'] + 1e-6)        
+        df['volume_thrust'] = df['volume'] / (df['_calc_volume_ma20'] + 1e-6)
+        # --- REMOVED --- 'volume_declining'
 
         # Time-Based Contextual Features (Cyclical)
         df['_calc_hour'] = df.index.hour
@@ -229,21 +231,24 @@ class EmaPullbackStrategy(BaseStrategy):
         df['hour_sin'] = np.sin(2 * np.pi * df['_calc_hour'] / hours_in_day)
         df['hour_cos'] = np.cos(2 * np.pi * df['_calc_hour'] / hours_in_day)
         df['_calc_day_of_week'] = df.index.dayofweek
-        df['day_of_week_encoded'] = df['_calc_day_of_week'] / 6.0 
+        df['day_of_week_encoded'] = df['_calc_day_of_week'] / 6.0
 
         # --- 3. V1.0 Pullback & Regime Quality Features ---
-        
+
         # Regime/Trend
         df['_calc_st_consistency_20'] = df['st_direction'].rolling(20).sum() / 20
         df['tradeable_trend'] = (df['_calc_st_consistency_20'].abs() >= 0.7).astype(int)
+        
+        # ⭐️ FIXED: This calculation must happen *before* ema15 and ema40 are dropped
         df['ema_separation'] = (df['ema15'] - df['ema40']).abs() / df['atr']
 
         df['_calc_atr_ma20'] = df['atr'].rolling(20).mean()
-        df['volatility_regime'] = df['atr'] / (df['_calc_atr_ma20'] + 1e-6)        
+        df['volatility_regime'] = df['atr'] / (df['_calc_atr_ma20'] + 1e-6)
+        # --- REMOVED --- 'volatility_spike'
 
         # Pullback Quality
         df['pullback_orderly'] = (df['body_size'].rolling(3).std() < df['body_size'].rolling(20).mean() * 0.5).astype(int)
-        
+
         # Structure
         df['_calc_swing_high'] = ((df['high'] > df['high'].shift(1)) &
                              (df['high'] > df['high'].shift(-1))).astype(int)
@@ -258,53 +263,44 @@ class EmaPullbackStrategy(BaseStrategy):
         df['_calc_lower_wick'] = df[['open', 'close']].min(axis=1) - df['low']
         df['_calc_rejection_wick_long'] = (df['_calc_lower_wick'] / (df['atr'] + 1e-6) > 0.5).astype(int)
         df['_calc_rejection_wick_short'] = (df['_calc_upper_wick'] / (df['atr'] + 1e-6) > 0.5).astype(int)
-        
+
         # --- 4. MTF Feature Calculation and Merge (15M and 60M) ---
-        
+
         # Initialize default values for MTF-related features
         df['ema40_direction'] = 0.0 # 15m direction
         df['macro_trend_direction_60m'] = 0.0 # 60m direction
         df['macro_trend_slope'] = 0.0 # 15m slope normalized
-        
+
         # 4a. 15M Trend
         df_15m_features = self._calculate_mtf_slope_hardened(df, '15Min')
-        
+
         # Merge only the EMA Direction feature
         if 'ema40_direction' in df_15m_features.columns:
-            # Temporarily rename for merge and drop if necessary
             df_15m_direction = df_15m_features[['ema40_direction']].copy()
             df_15m_direction.rename(columns={'ema40_direction': '_calc_ema40_direction_15m'}, inplace=True)
             df = pd.merge_asof(df, df_15m_direction, left_index=True, right_index=True, direction='forward')
-            
-            # Update the official feature column and clean up the temporary one
             df['ema40_direction'] = df['_calc_ema40_direction_15m'].fillna(0.0)
             df.drop(columns=['_calc_ema40_direction_15m'], inplace=True, errors='ignore')
 
-        # Calculate macro_trend_slope (requires the slope from the helper output)
         _15m_slope_col = f'_calc_ema40_slope_15m'
         if _15m_slope_col in df_15m_features.columns:
-             # Merge the slope separately, as it's only needed for calculation
             df_15m_slope = df_15m_features[[_15m_slope_col]].copy()
             df = pd.merge_asof(df, df_15m_slope, left_index=True, right_index=True, direction='forward')
             df['macro_trend_slope'] = df[_15m_slope_col] / df['atr']
-            df.drop(columns=[_15m_slope_col], inplace=True, errors='ignore') # Drop the merged slope column
+            df.drop(columns=[_15m_slope_col], inplace=True, errors='ignore')
         else:
             df['macro_trend_slope'] = 0.0
-            
+
         # 4b. 60M Strategic Trend
         df_60m_features = self._calculate_mtf_slope_hardened(df, '60Min')
-        
+
         if 'macro_trend_direction_60m' in df_60m_features.columns:
-            # Merge the 60m direction feature
             df_60m_direction = df_60m_features[['macro_trend_direction_60m']].copy()
             df_60m_direction.rename(columns={'macro_trend_direction_60m': '_calc_macro_direction_60m'}, inplace=True)
             df = pd.merge_asof(df, df_60m_direction, left_index=True, right_index=True, direction='forward')
-
-            # Update the official feature column and clean up the temporary one
             df['macro_trend_direction_60m'] = df['_calc_macro_direction_60m'].fillna(0.0)
             df.drop(columns=['_calc_macro_direction_60m'], inplace=True, errors='ignore')
-            
-            # Also drop the merged slope column if it exists in the 60m features
+
             _60m_slope_col = f'_calc_ema40_slope_60m'
             if _60m_slope_col in df_60m_features.columns:
                  df.drop(columns=[_60m_slope_col], inplace=True, errors='ignore')
@@ -315,47 +311,48 @@ class EmaPullbackStrategy(BaseStrategy):
             df['ema40_direction'] +
             df['macro_trend_direction_60m']
         )
-        
-        # --- 5. Composite Quality Scores (V1.0) ---        
+
+        # --- 5. Composite Quality Scores (V1.0) ---
         # We must fillna *before* calling the quality tier function
-        df.fillna(method='ffill', limit=200, inplace=True) 
+        df.fillna(method='ffill', limit=200, inplace=True)
         df.fillna(0, inplace=True) # Fill zeros *before* quality calc
-        
+
         tiers, scores = self._calculate_setup_quality_tiers(df, len(df))
         df['setup_quality_tier'] = tiers
-        df['setup_quality_score'] = scores
-        
+        df['setup_quality_score'] = scores # This is the primary score from the helper
+
         wick_rejection = (df['_calc_rejection_wick_long'] | df['_calc_rejection_wick_short']).astype(int)
-        
-        # ⭐️ UPDATED: 'volume_declining' removed from calculation
-        df['setup_quality_score'] = (
+
+        # ⭐️ This calculates a *second* score. We will drop it in Section 6.
+        df['setup_quality_score_composite'] = (
             df['tradeable_trend'] * 0.25 +
-            df['pullback_orderly'] * 0.20 +            
+            df['pullback_orderly'] * 0.20 +
+            # df['volume_declining'] * 0.15 + # <-- REMOVED
             wick_rejection * 0.20 +
             df['fresh_structure'] * 0.20
-        )
-                
+        )        
         # --- 6. Drop Intermediate Columns ---
-        
-        # Drop all prefixed intermediate columns and other temporary indicators
+
+        # ⭐️ FIXED: This list *only* contains prefixed _calc_ columns
         intermediate_cols_to_drop = [
-            col for col in df.columns if col.startswith('_calc_') or col in [
-                'st_val', 'st_val_slow', 'ema9', 'ema15', 'ema20', 'ema40', 'ema200', # Non-feature indicators
-            ]
+            col for col in df.columns if col.startswith('_calc_')
         ]
         
-        df.drop(columns=intermediate_cols_to_drop, inplace=True, errors='ignore')                
+        # Add the old composite score to the drop list
+        intermediate_cols_to_drop.append('setup_quality_score_composite')
         
+        df.drop(columns=intermediate_cols_to_drop, inplace=True, errors='ignore')
+
         # Robust NaN/Inf Handling
         df.replace([np.inf, -np.inf], np.nan, inplace=True)
-        df.fillna(method='ffill', limit=200, inplace=True) 
-        df.fillna(method='bfill', limit=200, inplace=True) 
+        df.fillna(method='ffill', limit=200, inplace=True)
+        df.fillna(method='bfill', limit=200, inplace=True)
         df.fillna(0, inplace=True)
 
         # --- 7. EXPLICITLY DROP OHLCV & Other Non-Features ---
         final_feature_cols = self.get_feature_columns()
         
-        # The list of non-feature columns that MUST NOT go to the model
+        # ⭐️ FIXED: Now we drop the non-feature EMAs, ST values, etc., *after* all calculations
         cols_to_keep = set(final_feature_cols)
         cols_to_drop = [col for col in df.columns if col not in cols_to_keep]
 
@@ -365,18 +362,18 @@ class EmaPullbackStrategy(BaseStrategy):
         # --- 8. Final Verification of ALL 30 Features ---
         missing_cols = []
         for col in final_feature_cols:
-            if col not in df.columns: 
+            if col not in df.columns:
                 df[col] = 0.0 # Add the missing column back as zeros
                 missing_cols.append(col)
 
         if missing_cols:
             logging.warning(f"⚠️ Added missing V1.0 features as zeros (likely due to insufficient history): {', '.join(missing_cols)}")
-                    
+
         logging.debug(f"V1.0 EMA Pullback features added. Shape after features: {df.shape}")
-        
+
         # Ensure the final DataFrame order matches the required feature order
-        df = df[final_feature_cols] 
-        
+        df = df[final_feature_cols]
+
         return df
 
     # =========================================================
@@ -477,14 +474,11 @@ class EmaPullbackStrategy(BaseStrategy):
         if confidence < entry_conf:
             return False, None
                     
-        #Model Prediction
-        if prediction == 1: # Model wants to BUY            
+        # Check prediction
+        if prediction == 1:  # Buy signal
             return True, 'LONG'
-                
-        elif prediction == 2: # Model wants to SELL
-            # ⭐️ SELL SIGNALS DISABLED BY USER ⭐️
-            logging.info(f"[{self.contract_symbol}] Model predicted SELL, but signal is disabled. Ignoring.")
-            return False, None
+        elif prediction == 2:  # Sell signal
+            return True, 'SHORT'
 
         # Prediction is 0 (Hold)
         return False, None
