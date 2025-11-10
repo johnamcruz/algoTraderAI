@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Supertrend Pullback Strategy Implementation (V4.8 - Transformer)
-This strategy is based on the final, outcome-weighted V4.8 configuration (32 Features)
-Hardened version to prevent feature dropping during calculation and ensures only 32
+EMA Pullback Strategy Implementation (V1.0 - Transformer)
+This strategy is based on the final, outcome-weighted V1.0 configuration (30 Features)
+Hardened version to prevent feature dropping during calculation and ensures only 30
 features are returned for prediction (OHLCV is explicitly dropped).
 """
 
@@ -22,49 +22,53 @@ from strategy_base import BaseStrategy
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
-class SupertrendPullbackStrategy2(BaseStrategy):
+class EmaPullbackStrategy(BaseStrategy):
     """
-    Supertrend Pullback V4.8 (Transformer) trading strategy.
+    EMA Pullback V1.0 (Transformer) trading strategy.
     Hardened feature engineering for production stability.
     """
 
     def __init__(self, model_path: str, scaler_path: str, contract_symbol: str):
         super().__init__(model_path, scaler_path, contract_symbol)
-        logging.info("Initialized SupertrendPullbackStrategy (V4.8 - 32 Features - Hardened)")
+        logging.info("Initialized EmaPullbackStrategy (V1.0 - 30 Features - Hardened)")
         self.mtf_history: Dict[str, pd.DataFrame] = {}
 
 
     def get_feature_columns(self) -> List[str]:
         """
-        Returns the 32 feature columns for the final V4.8 Supertrend Transformer.
+        Returns the 30 feature columns for the final V1.0 EMA Pullback Transformer.
         """
-        # ⭐️ V4.8 FEATURE COLS: 32 FEATURES ⭐️
+        # ⭐️ V1.0 FEATURE COLS: 30 FEATURES ⭐️
         return [
-            # TIER 1: CORE TREND & MTF (12)
+            # TIER 1: CORE TREND & MTF (11)
             'st_direction', 'st_direction_slow', 'price_vs_st', 'price_vs_st_slow',
-            'adx', 'price_vs_ema40', 'ema15_vs_ema40', 'price_vs_ema200',
+            'adx', 'price_vs_ema40', 'price_vs_ema200',
             'mtf_alignment_score', 'macro_trend_slope', 'macro_trend_direction_60m', 'ema40_direction',
 
-            # TIER 2: PULLBACK & REGIME QUALITY (6)
+            # TIER 2: PULLBACK & REGIME QUALITY (5)
             'tradeable_trend', 'pullback_orderly', 'fresh_structure',
-            'ema_separation', 'volatility_regime', 'volatility_spike',
+            'ema_separation', 'volatility_regime',
 
-            # TIER 3: MOMENTUM & VOLUME (6)
-            'price_roc_slope', 'volume_thrust', 'volume_declining',
-            'stoch_rsi', 'mfi', 'adx_acceleration_5',
+            # TIER 3: MOMENTUM & VOLUME (4)
+            'price_roc_slope', 'volume_thrust',
+            'stoch_rsi', 'mfi',
 
             # TIER 4: CANDLE & RISK (5)
             'atr', 'body_size', 'normalized_bb_width', 'hour_sin', 'hour_cos',
 
             # TIER 5: CONTEXT & RISK (3)
-            'day_of_week_encoded', 'setup_quality_score', 'filter_strength'
+            'day_of_week_encoded', 'setup_quality_tier', 'setup_quality_score',
+
+            # ⭐️ NEW EMA FEATURES (ADDED) (2) ⭐️
+            'ema9_vs_ema20',
+            'price_vs_ema20',
         ]
 
     def get_sequence_length(self) -> int:
         return 120
 
     # =========================================================
-    # V4.8 FEATURE ENGINEERING (32 FEATURES) - HARDENED
+    # V1.0 FEATURE ENGINEERING (30 FEATURES) - HARDENED
     # =========================================================
     
     def _calculate_mtf_slope_hardened(self, df_base: pd.DataFrame, timeframe: str) -> pd.DataFrame:
@@ -108,16 +112,21 @@ class SupertrendPullbackStrategy2(BaseStrategy):
 
     def add_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Calculate V4.8 features with robust error handling and cleanup,
+        Calculate V1.0 features with robust error handling and cleanup,
         ensuring OHLCV data is used for calculation but dropped before return.
         """        
-        logging.debug(f"Adding V4.8 Supertrend features. Input shape: {df.shape}")
+        logging.debug(f"Adding V1.0 EMA Pullback features. Input shape: {df.shape}")
         
         # ⭐️ CRITICAL: Operate on a copy to ensure input OHLCV is preserved for calculation
         df = df.copy() 
         
         # --- 1. Core Indicators (3-min TF) ---
         df['atr'] = ta.atr(df['high'], df['low'], df['close'], length=14).replace(0, 1e-6)
+        
+        # ⭐️ ADDED EMA(9) and EMA(20) ⭐️
+        df['ema9'] = ta.ema(df['close'], length=9)
+        df['ema20'] = ta.ema(df['close'], length=20)
+        
         df['ema15'] = ta.ema(df['close'], length=15); df['ema40'] = ta.ema(df['close'], length=40); df['ema200'] = ta.ema(df['close'], length=200)
         
         st_df_fast = ta.supertrend(df['high'], df['low'], df['close'], length=10, multiplier=3)
@@ -128,16 +137,22 @@ class SupertrendPullbackStrategy2(BaseStrategy):
         # --- 2. Normalized Price/Momentum Features (3-min TF) ---
         df['price_vs_st'] = (df['close'] - df['st_val']) / df['atr'];
         df['price_vs_st_slow'] = (df['close'] - df['st_val_slow']) / df['atr'];
+        
+        # ⭐️ NEW EMA NORMALIZED FEATURES ⭐️
+        df['price_vs_ema20'] = (df['close'] - df['ema20']) / df['atr']
+        df['ema9_vs_ema20'] = (df['ema9'] - df['ema20']) / df['atr']
+        
         df['price_vs_ema40'] = (df['close'] - df['ema40']) / df['atr'];
-        df['ema15_vs_ema40'] = (df['ema15'] - df['ema40']) / df['atr']
+        # --- REMOVED --- 'ema15_vs_ema40' is redundant
+        # df['ema15_vs_ema40'] = (df['ema15'] - df['ema40']) / df['atr']
         df['price_vs_ema200'] = (df['close'] - df['ema200']) / df['atr']
         
         adx_df = ta.adx(df['high'], df['low'], df['close'], length=14)
         df['adx'] = adx_df['ADX_14'].fillna(0)
         
-        # Intermediate calculations (prefixed for later cleanup)
-        df['_calc_adx_slope'] = df['adx'].diff(5) 
-        df['adx_acceleration_5'] = df['_calc_adx_slope'].diff(5)
+        # --- REMOVED --- 'adx_acceleration_5' and dependency
+        # df['_calc_adx_slope'] = df['adx'].diff(5) 
+        # df['adx_acceleration_5'] = df['_calc_adx_slope'].diff(5)
                 
         df['_calc_price_vel_20'] = df['close'].diff(20) / df['atr'];
         df['price_roc_slope'] = df['_calc_price_vel_20'].diff(10) # Price ROC slope from 20-bar velocity
@@ -157,10 +172,11 @@ class SupertrendPullbackStrategy2(BaseStrategy):
         stochrsi_df = ta.stochrsi(df['close'], length=14)
         df['stoch_rsi'] = stochrsi_df['STOCHRSIk_14_14_3_3'].fillna(0)
         
-        # Volume features for V4.8
+        # Volume features
         df['_calc_volume_ma20'] = df['volume'].rolling(20).mean()
         df['volume_thrust'] = df['volume'] / (df['_calc_volume_ma20'] + 1e-6)
-        df['volume_declining'] = (df['volume'].rolling(3).mean() < df['volume'].rolling(10).mean()).astype(int)
+        # --- REMOVED --- 'volume_declining' is laggy/redundant
+        # df['volume_declining'] = (df['volume'].rolling(3).mean() < df['volume'].rolling(10).mean()).astype(int)
 
         # Time-Based Contextual Features (Cyclical)
         df['_calc_hour'] = df.index.hour
@@ -170,7 +186,7 @@ class SupertrendPullbackStrategy2(BaseStrategy):
         df['_calc_day_of_week'] = df.index.dayofweek
         df['day_of_week_encoded'] = df['_calc_day_of_week'] / 6.0 
 
-        # --- 3. V4.8 Pullback & Regime Quality Features ---
+        # --- 3. V1.0 Pullback & Regime Quality Features ---
         
         # Regime/Trend
         df['_calc_st_consistency_20'] = df['st_direction'].rolling(20).sum() / 20
@@ -179,7 +195,8 @@ class SupertrendPullbackStrategy2(BaseStrategy):
 
         df['_calc_atr_ma20'] = df['atr'].rolling(20).mean()
         df['volatility_regime'] = df['atr'] / (df['_calc_atr_ma20'] + 1e-6)
-        df['volatility_spike'] = (df['volatility_regime'] > 1.25).astype(int)
+        # --- REMOVED --- 'volatility_spike' is redundant
+        # df['volatility_spike'] = (df['volatility_regime'] > 1.25).astype(int)
 
         # Pullback Quality
         df['pullback_orderly'] = (df['body_size'].rolling(3).std() < df['body_size'].rolling(20).mean() * 0.5).astype(int)
@@ -249,31 +266,33 @@ class SupertrendPullbackStrategy2(BaseStrategy):
             if _60m_slope_col in df_60m_features.columns:
                  df.drop(columns=[_60m_slope_col], inplace=True, errors='ignore')
 
-        # MTF Alignment Score (V4.8)
+        # MTF Alignment Score
         df['mtf_alignment_score'] = (
             df['st_direction'] +
             df['ema40_direction'] +
             df['macro_trend_direction_60m']
         )
         
-        # --- 5. Composite Quality Scores (V4.8) ---
+        # --- 5. Composite Quality Scores (V1.0) ---
         
         wick_rejection = (df['_calc_rejection_wick_long'] | df['_calc_rejection_wick_short']).astype(int)
         
+        # ⭐️ UPDATED: 'volume_declining' removed from calculation
         df['setup_quality_score'] = (
             df['tradeable_trend'] * 0.25 +
             df['pullback_orderly'] * 0.20 +
-            df['volume_declining'] * 0.15 +
+            # df['volume_declining'] * 0.15 + # <-- REMOVED
             wick_rejection * 0.20 +
             df['fresh_structure'] * 0.20
         )
 
-        df['filter_strength'] = (
-            (np.abs(df['close'] - df['st_val']) / df['atr'] < 2.0).astype(float) +
-            (df['adx'] > 20).astype(float) +
-            (df['setup_quality_score'] > 0.5).astype(float) +
-            (df['volume_declining'] == 1).astype(float)
-        ) / 4.0
+        # --- REMOVED --- 'filter_strength' block
+        # df['filter_strength'] = (
+        #     (np.abs(df['close'] - df['st_val']) / df['atr'] < 2.0).astype(float) +
+        #     (df['adx'] > 20).astype(float) +
+        #     (df['setup_quality_score'] > 0.5).astype(float) +
+        #     (df['volume_declining'] == 1).astype(float)
+        # ) / 4.0
         
 
         # --- 6. Drop Intermediate Columns ---
@@ -281,7 +300,7 @@ class SupertrendPullbackStrategy2(BaseStrategy):
         # Drop all prefixed intermediate columns and other temporary indicators
         intermediate_cols_to_drop = [
             col for col in df.columns if col.startswith('_calc_') or col in [
-                'st_val', 'st_val_slow', 'ema15', 'ema40', 'ema200', # Non-feature indicators
+                'st_val', 'st_val_slow', 'ema9', 'ema15', 'ema20', 'ema40', 'ema200', # Non-feature indicators
             ]
         ]
         
@@ -303,7 +322,7 @@ class SupertrendPullbackStrategy2(BaseStrategy):
         df.drop(columns=cols_to_drop, inplace=True, errors='ignore')
 
 
-        # --- 8. Final Verification of ALL 32 Features ---
+        # --- 8. Final Verification of ALL 30 Features ---
         missing_cols = []
         for col in final_feature_cols:
             if col not in df.columns: 
@@ -311,9 +330,9 @@ class SupertrendPullbackStrategy2(BaseStrategy):
                 missing_cols.append(col)
 
         if missing_cols:
-            logging.warning(f"⚠️ Added missing V4.8 features as zeros (likely due to insufficient history): {', '.join(missing_cols)}")
+            logging.warning(f"⚠️ Added missing V1.0 features as zeros (likely due to insufficient history): {', '.join(missing_cols)}")
                     
-        logging.debug(f"V4.8 Supertrend features added. Shape after features: {df.shape}")
+        logging.debug(f"V1.0 EMA Pullback features added. Shape after features: {df.shape}")
         
         # Ensure the final DataFrame order matches the required feature order
         df = df[final_feature_cols] 
@@ -321,23 +340,23 @@ class SupertrendPullbackStrategy2(BaseStrategy):
         return df
 
     # =========================================================
-    # LIVE EXECUTION FUNCTIONS (ONNX) - No Change Needed
+    # LIVE EXECUTION FUNCTIONS (ONNX)
     # =========================================================
 
     def load_model(self):
-        """Load ONNX model for Supertrend Pullback (V4.8)."""
+        """Load ONNX model for EMA Pullback (V1.0)."""
         try:
             if not os.path.exists(self.model_path):
                 raise FileNotFoundError(f"Model file not found: {self.model_path}")
 
             self.model = onnxruntime.InferenceSession(self.model_path)
-            logging.info(f"✅ Loaded Supertrend Pullback V4.8 ONNX model: {os.path.basename(self.model_path)}")
+            logging.info(f"✅ Loaded EMA Pullback V1.0 ONNX model: {os.path.basename(self.model_path)}")
         except Exception as e:
-            logging.exception(f"❌ Error loading Supertrend Pullback V4.8 model: {e}")
+            logging.exception(f"❌ Error loading EMA Pullback V1.0 model: {e}")
             raise
 
     def load_scaler(self):
-        """Load scaler for Supertrend Pullback (V4.8)."""
+        """Load scaler for EMA Pullback (V1.0)."""
         try:
             if not os.path.exists(self.scaler_path):
                 raise FileNotFoundError(f"Scaler file not found: {self.scaler_path}")
@@ -349,7 +368,7 @@ class SupertrendPullbackStrategy2(BaseStrategy):
             
             if base_symbol in scalers:
                 self.scaler = scalers[base_symbol]
-                logging.info(f"✅ Loaded '{base_symbol}' scaler for Supertrend V4.8")
+                logging.info(f"✅ Loaded '{base_symbol}' scaler for V1.0")
             else:
                 available = list(scalers.keys())
                 raise ValueError(
@@ -357,13 +376,13 @@ class SupertrendPullbackStrategy2(BaseStrategy):
                     f"Available: {available}"
                 )
         except Exception as e:
-            logging.exception(f"❌ Error loading Supertrend V4.8 scaler: {e}")
+            logging.exception(f"❌ Error loading V1.0 scaler: {e}")
             raise
 
     # --- (predict and should_enter_trade are correct for pure AI mode) ---
     def predict(self, df: pd.DataFrame) -> Tuple[int, float]:
         """
-        Generate prediction using V4.8 Transformer model (ONNX).
+        Generate prediction using V1.0 Transformer model (ONNX).
         """
         try:
             seq_len = self.get_sequence_length() # 120
@@ -377,6 +396,11 @@ class SupertrendPullbackStrategy2(BaseStrategy):
                 logging.warning(f"⚠️ Data length mismatch after scaling. Need {seq_len}, have {len(features)}. Returning Hold.")
                 return 0, 0.0
 
+            # ⭐️ Ensure correct feature count (30)
+            if features.shape[1] != len(self.get_feature_columns()):
+                 logging.error(f"❌ Feature dimension mismatch! Model expects {len(self.get_feature_columns())}, but got {features.shape[1]}")
+                 return 0, 0.0
+                 
             X = features[-seq_len:].reshape(1, seq_len, -1).astype(np.float32)
 
             input_name = self.model.get_inputs()[0].name
@@ -392,7 +416,7 @@ class SupertrendPullbackStrategy2(BaseStrategy):
             return prediction, confidence
 
         except Exception as e:
-            logging.exception(f"❌ Prediction error (Supertrend V4.8): {e}")
+            logging.exception(f"❌ Prediction error (EMA Pullback V1.0): {e}")
             return 0, 0.0 # Return Hold on error
     
         
@@ -405,7 +429,8 @@ class SupertrendPullbackStrategy2(BaseStrategy):
         adx_thresh: float, # Argument is ignored in Pure AI Mode       
     ) -> Tuple[bool, Optional[str]]:
         """
-        Determine if V4.8 "Pure AI Mode" entry conditions are met.
+        Determine if V1.0 "Pure AI Mode" entry conditions are met.
+        ⭐️ SELL SIGNALS ARE DISABLED ⭐️
         """
         
         # 1. Confidence Filter (Primary Filter)
@@ -416,10 +441,12 @@ class SupertrendPullbackStrategy2(BaseStrategy):
         if prediction == 1: # Model wants to BUY            
             return True, 'LONG'
                 
-        elif prediction == 2: # Model wants to SELL            
-            return True, 'SHORT'
+        elif prediction == 2: # Model wants to SELL
+            # ⭐️ SELL SIGNALS DISABLED BY USER ⭐️
+            logging.info(f"[{self.contract_symbol}] Model predicted SELL, but signal is disabled. Ignoring.")
+            return False, None
 
-        # Prediction is 0 (Hold) or alignment filter failed
+        # Prediction is 0 (Hold)
         return False, None
 
     @staticmethod
