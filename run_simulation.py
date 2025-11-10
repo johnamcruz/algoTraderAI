@@ -6,4 +6,6 @@
 
 #python3 algoTrader.py --backtest --backtest_data data/CME_MINI_NQ1_3min.csv --contract CON.F.US.ENQ.Z25 --size 1 --entry_conf 0.9 --stop_pts 8.0 --target_pts 16.0 --model models/model_supertrend_pullback_v3.10.onnx --scaler models/scaler_supertrend_pullback_v3.10.pkl --strategy "supertrend" --simulation-days 30
 
-python3 algoTrader.py --backtest --backtest_data data/CME_MINI_NQ1_3min.csv --contract CON.F.US.ENQ.Z25 --size 1 --entry_conf 0.7 --stop_pts 8.0 --target_pts 16.0 --model models/supertrend_pullback_v4.0.onnx --scaler models/supertrend_pullback_v4.0_scaler.pkl --strategy "supertrend2" --simulation-days 30
+#python3 algoTrader.py --backtest --backtest_data data/CME_MINI_NQ1_3min.csv --contract CON.F.US.ENQ.Z25 --size 1 --entry_conf 0.9 --stop_pts 8.0 --target_pts 32.0 --model models/supertrend_pullback_v4.0.onnx --scaler models/supertrend_pullback_v4.0_scaler.pkl --strategy "supertrend2" --simulation-days 30
+
+python3 algoTrader.py --backtest --backtest_data data/CME_MINI_ES1_3min.csv --contract CON.F.US.EP.Z25 --size 1 --entry_conf 0.95 --stop_pts 8.0 --target_pts 32.0 --model models/supertrend_pullback_v4.8.onnx --scaler models/supertrend_pullback_v4.8_scaler.pkl --strategy "supertrend2" --simulation-days 30
