@@ -419,13 +419,11 @@ class SupertrendPullback2Strategy(BaseStrategy):
         st_direction = bar.get('st_direction', 0.0)
         
         # 3. Alignment check
-        if prediction == 1:  # BUY
-            if st_direction == 1:  # SuperTrend is bullish
-                return True, 'LONG'
+        if prediction == 1:  # BUY            
+            return True, 'LONG'
                 
-        elif prediction == 2:  # SELL
-            if st_direction == -1:  # SuperTrend is bearish
-                return True, 'SHORT'
+        elif prediction == 2:  # SELL            
+            return True, 'SHORT'
 
         return False, None
 
