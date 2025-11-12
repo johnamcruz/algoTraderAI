@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """
 Supertrend Pullback Strategy Implementation (V4.8 - 30 Features)
@@ -71,12 +72,51 @@ class SupertrendPullback2Strategy(BaseStrategy):
         """V4.8 uses 120 bars"""
         return 120
 
+    def debug_features(self, df: pd.DataFrame) -> Dict:
+        """
+        Debug helper to check feature values and identify issues.
+        Call this if not getting signals.
+        """
+        last_bar = df.iloc[-1]
+        feature_cols = self.get_feature_columns()
+        
+        debug_info = {
+            'timestamp': df.index[-1],
+            'close': last_bar['close'],
+            'missing_features': [],
+            'nan_features': [],
+            'inf_features': [],
+            'feature_values': {}
+        }
+        
+        for col in feature_cols:
+            if col not in df.columns:
+                debug_info['missing_features'].append(col)
+            else:
+                val = last_bar[col]
+                if pd.isna(val):
+                    debug_info['nan_features'].append(col)
+                elif np.isinf(val):
+                    debug_info['inf_features'].append(col)
+                debug_info['feature_values'][col] = val
+        
+        # Check critical values
+        debug_info['st_direction'] = last_bar.get('st_direction', 'MISSING')
+        debug_info['price_vs_st'] = last_bar.get('price_vs_st', 'MISSING')
+        debug_info['adx'] = last_bar.get('adx', 'MISSING')
+        debug_info['mtf_alignment'] = last_bar.get('mtf_alignment_score', 'MISSING')
+        
+        return debug_info
+
     def add_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Calculate V4.8 Supertrend features - optimized for real-time execution.
         Matches cache generation logic exactly.
         """
         logging.debug(f"Adding V4.8 features. Input shape: {df.shape}")
+        
+        if len(df) < 200:
+            logging.warning(f"⚠️ Insufficient data for feature calculation. Need 200+, have {len(df)}")
         
         df = df.copy()
         
@@ -194,11 +234,17 @@ class SupertrendPullback2Strategy(BaseStrategy):
         df = self._calculate_setup_quality(df)
         
         # --- 11. CLEANUP ---
-        # Drop intermediate columns
+        # Drop intermediate columns (but keep what we need!)
         drop_cols = ['hour', 'day_of_week', 'atr_ma20', 'volume_ma20', 
-                     'upper_wick', 'lower_wick', 'swing_high', 'swing_low',
-                     'bars_since_swing', 'st_consistency_20']
-        df.drop(columns=drop_cols, inplace=True, errors='ignore')
+                     'swing_high', 'swing_low', 'st_consistency_20',
+                     'rejection_wick_long', 'rejection_wick_short',
+                     'recent_whipsaw']
+        
+        # Only drop if they exist and are NOT in feature list
+        feature_set = set(self.get_feature_columns())
+        drop_cols = [c for c in drop_cols if c in df.columns and c not in feature_set]
+        if drop_cols:
+            df.drop(columns=drop_cols, inplace=True, errors='ignore')
         
         # Handle NaN/Inf
         df.replace([np.inf, -np.inf], np.nan, inplace=True)
@@ -219,34 +265,56 @@ class SupertrendPullback2Strategy(BaseStrategy):
         Add MTF features with intelligent caching to avoid recalculation.
         Only recalculates when entering a new 15m/60m bar.
         """
+        if len(df) < 40:
+            # Not enough data for MTF, use defaults
+            df['ema40_slope'] = 0.0
+            df['ema40_direction'] = 0
+            df['ema40_slope_60m'] = 0.0
+            df['macro_trend_direction_60m'] = 0
+            df['macro_trend_slope'] = 0.0
+            df['mtf_alignment_score'] = df['st_direction']  # Just use 3m trend
+            return df
+        
         current_15m_bar = df.index[-1].floor('15Min')
         current_60m_bar = df.index[-1].floor('60Min')
         
         # --- 15-MINUTE MTF ---
         if self._last_15m_timestamp != current_15m_bar or self._cached_15m_slope == 0.0:
-            df_15m = df['close'].resample('15Min', label='left', closed='left').ohlc().dropna()
-            
-            if not df_15m.empty and 'close' in df_15m.columns and len(df_15m) >= 40:
-                ema_15m = ta.ema(df_15m['close'], length=40)
-                if ema_15m is not None and len(ema_15m) > 3:
-                    # Shift by 1 to avoid lookahead
-                    ema_15m_shifted = ema_15m.shift(1)
-                    self._cached_15m_slope = ema_15m_shifted.diff(3).iloc[-1] if len(ema_15m_shifted) > 0 else 0.0
-                    self._cached_15m_direction = 1 if self._cached_15m_slope > 0 else -1
-                    self._last_15m_timestamp = current_15m_bar
+            try:
+                df_15m = df['close'].resample('15Min', label='left', closed='left').ohlc().dropna()
+                
+                if not df_15m.empty and 'close' in df_15m.columns and len(df_15m) >= 43:
+                    ema_15m = ta.ema(df_15m['close'], length=40)
+                    if ema_15m is not None and len(ema_15m) > 3:
+                        # Shift by 1 to avoid lookahead
+                        ema_15m_shifted = ema_15m.shift(1).dropna()
+                        if len(ema_15m_shifted) > 0:
+                            slope = ema_15m_shifted.diff(3).iloc[-1]
+                            self._cached_15m_slope = slope if not pd.isna(slope) else 0.0
+                            self._cached_15m_direction = 1 if self._cached_15m_slope > 0 else -1
+                            self._last_15m_timestamp = current_15m_bar
+            except Exception as e:
+                logging.debug(f"15m MTF calculation error: {e}")
+                # Keep previous cached values
         
         # --- 60-MINUTE MTF ---
         if self._last_60m_timestamp != current_60m_bar or self._cached_60m_slope == 0.0:
-            df_60m = df['close'].resample('60Min', label='left', closed='left').ohlc().dropna()
-            
-            if not df_60m.empty and 'close' in df_60m.columns and len(df_60m) >= 40:
-                ema_60m = ta.ema(df_60m['close'], length=40)
-                if ema_60m is not None and len(ema_60m) > 3:
-                    # Shift by 1 to avoid lookahead
-                    ema_60m_shifted = ema_60m.shift(1)
-                    self._cached_60m_slope = ema_60m_shifted.diff(3).iloc[-1] if len(ema_60m_shifted) > 0 else 0.0
-                    self._cached_60m_direction = 1 if self._cached_60m_slope > 0 else -1
-                    self._last_60m_timestamp = current_60m_bar
+            try:
+                df_60m = df['close'].resample('60Min', label='left', closed='left').ohlc().dropna()
+                
+                if not df_60m.empty and 'close' in df_60m.columns and len(df_60m) >= 43:
+                    ema_60m = ta.ema(df_60m['close'], length=40)
+                    if ema_60m is not None and len(ema_60m) > 3:
+                        # Shift by 1 to avoid lookahead
+                        ema_60m_shifted = ema_60m.shift(1).dropna()
+                        if len(ema_60m_shifted) > 0:
+                            slope = ema_60m_shifted.diff(3).iloc[-1]
+                            self._cached_60m_slope = slope if not pd.isna(slope) else 0.0
+                            self._cached_60m_direction = 1 if self._cached_60m_slope > 0 else -1
+                            self._last_60m_timestamp = current_60m_bar
+            except Exception as e:
+                logging.debug(f"60m MTF calculation error: {e}")
+                # Keep previous cached values
         
         # Broadcast cached values to all rows
         df['ema40_slope'] = self._cached_15m_slope
@@ -254,8 +322,9 @@ class SupertrendPullback2Strategy(BaseStrategy):
         df['ema40_slope_60m'] = self._cached_60m_slope
         df['macro_trend_direction_60m'] = self._cached_60m_direction
         
-        # Normalize slopes
-        df['macro_trend_slope'] = df['ema40_slope'] / df['atr']
+        # Normalize slopes (avoid division by zero)
+        atr_safe = df['atr'].replace(0, 1e-6)
+        df['macro_trend_slope'] = df['ema40_slope'] / atr_safe
         
         # MTF alignment score
         df['mtf_alignment_score'] = (
@@ -382,6 +451,17 @@ class SupertrendPullback2Strategy(BaseStrategy):
                 return 0, 0.0
 
             X = features[-seq_len:].reshape(1, seq_len, -1).astype(np.float32)
+            
+            # Check for NaN/Inf in input
+            if np.isnan(X).any():
+                nan_count = np.isnan(X).sum()
+                logging.error(f"❌ NaN values detected in input features: {nan_count} NaNs")
+                return 0, 0.0
+            
+            if np.isinf(X).any():
+                inf_count = np.isinf(X).sum()
+                logging.error(f"❌ Inf values detected in input features: {inf_count} Infs")
+                return 0, 0.0
 
             input_name = self.model.get_inputs()[0].name
             output_name = self.model.get_outputs()[0].name
@@ -392,6 +472,10 @@ class SupertrendPullback2Strategy(BaseStrategy):
             probs = self._softmax(last_logits)
             prediction = int(np.argmax(probs))
             confidence = float(probs[prediction])
+            
+            # Log prediction details
+            logging.debug(f"Prediction: {prediction} ({['HOLD', 'BUY', 'SELL'][prediction]}) with {confidence:.3f} confidence")
+            logging.debug(f"Probabilities: HOLD={probs[0]:.3f}, BUY={probs[1]:.3f}, SELL={probs[2]:.3f}")
 
             return prediction, confidence
 
@@ -414,10 +498,7 @@ class SupertrendPullback2Strategy(BaseStrategy):
         # 1. Confidence filter
         if confidence < entry_conf:
             return False, None
-        
-        # 2. Get SuperTrend direction
-        st_direction = bar.get('st_direction', 0.0)
-        
+                
         # 3. Alignment check
         if prediction == 1:  # BUY            
             return True, 'LONG'
