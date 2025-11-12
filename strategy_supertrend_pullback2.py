@@ -251,6 +251,13 @@ class SupertrendPullback2Strategy(BaseStrategy):
         df.fillna(method='ffill', inplace=True)
         df.fillna(method='bfill', inplace=True)
         df.fillna(0, inplace=True)
+
+        # --- START FIX: Remove 'bfill' to prevent lookahead bias ---
+        # 1. Forward-fill to propagate last valid values (e.g., across gaps)
+        df.fillna(method='ffill', inplace=True) 
+        # 2. Fill any remaining NaNs (which are now only at the start) with 0
+        df.fillna(0, inplace=True)
+        # --- END FIX ---
         
         # Ensure all feature columns exist
         for col in self.get_feature_columns():
@@ -275,6 +282,13 @@ class SupertrendPullback2Strategy(BaseStrategy):
             df['mtf_alignment_score'] = df['st_direction']  # Just use 3m trend
             return df
         
+        # --- START FIX: Ensure index is unique before resampling ---
+        if not df.index.is_unique:
+            logging.warning(f"Duplicate timestamps found in index. Keeping last entry.")
+            # This line removes duplicate index entries, which crash resample()
+            df = df[~df.index.duplicated(keep='last')]
+        # --- END FIX ---
+            
         current_15m_bar = df.index[-1].floor('15Min')
         current_60m_bar = df.index[-1].floor('60Min')
         
@@ -294,7 +308,8 @@ class SupertrendPullback2Strategy(BaseStrategy):
                             self._cached_15m_direction = 1 if self._cached_15m_slope > 0 else -1
                             self._last_15m_timestamp = current_15m_bar
             except Exception as e:
-                logging.debug(f"15m MTF calculation error: {e}")
+                # Log the error more visibly
+                logging.error(f"Error during 15m MTF calculation: {e}")
                 # Keep previous cached values
         
         # --- 60-MINUTE MTF ---
@@ -313,7 +328,8 @@ class SupertrendPullback2Strategy(BaseStrategy):
                             self._cached_60m_direction = 1 if self._cached_60m_slope > 0 else -1
                             self._last_60m_timestamp = current_60m_bar
             except Exception as e:
-                logging.debug(f"60m MTF calculation error: {e}")
+                # Log the error more visibly
+                logging.error(f"Error during 60m MTF calculation: {e}")
                 # Keep previous cached values
         
         # Broadcast cached values to all rows
