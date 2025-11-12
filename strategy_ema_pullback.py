@@ -442,8 +442,8 @@ class EmaPullbackStrategy(BaseStrategy):
         # Check prediction
         if prediction == 1:  # Buy signal
             return True, 'LONG'
-        elif prediction == 2:  # Sell signal
-            return True, 'SHORT'
+        #elif prediction == 2:  # Sell signal
+        #    return True, 'SHORT'
 
         # Prediction is 0 (Hold)
         return False, None
