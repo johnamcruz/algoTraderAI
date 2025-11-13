@@ -13,6 +13,7 @@ from strategy_vwap_3min import VWAP3minStrategy
 from strategy_trend_pullback import TrendPullbackStrategy
 from strategy_supertrend_pullback_3min import SupertrendPullbackStrategy
 from strategy_supertrend_pullback2 import SupertrendPullback2Strategy
+from strategy_supertrend_pullback3 import SupertrendPullback3Strategy
 
 class StrategyFactory:
     """
@@ -27,6 +28,7 @@ class StrategyFactory:
         'trend_pullback': TrendPullbackStrategy,        
         'supertrend': SupertrendPullbackStrategy,
         'supertrend2': SupertrendPullback2Strategy,
+        'supertrend3': SupertrendPullback3Strategy,
         'ema_pullback': EmaPullbackStrategy,
     }
     
