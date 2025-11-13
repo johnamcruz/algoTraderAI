@@ -111,6 +111,7 @@ class SimulationBot(TradingBot):
         """
         try:
             df = pd.read_csv(self.csv_path)
+            df.columns = df.columns.str.lower()
             
             logging.info(f"📊 CSV columns found: {list(df.columns)}")
             
