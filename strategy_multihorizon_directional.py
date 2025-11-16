@@ -154,12 +154,9 @@ class MultiHorizonDirectionalStrategy(BaseStrategy):
             input_name = self.model.get_inputs()[0].name
             output_name = self.model.get_outputs()[0].name
             logits_sequence = self.model.run([output_name], {input_name: X})[0]
-
-            # The model output is ALREADY probabilities, not logits
-            last_probs = logits_sequence[0, -1, :] 
             
-            # Use the probabilities directly
-            probs = last_probs
+            last_logits = logits_sequence[0, -1, :]
+            probs = self._softmax(last_logits)
             prediction = int(np.argmax(probs))
             confidence = float(probs[prediction])
             
