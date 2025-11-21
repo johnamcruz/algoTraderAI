@@ -15,6 +15,7 @@ from strategy_supertrend_pullback_3min import SupertrendPullbackStrategy
 from strategy_supertrend_pullback2 import SupertrendPullback2Strategy
 from strategy_supertrend_pullback3 import SupertrendPullback3Strategy
 from strategy_multihorizon_directional import MultiHorizonDirectionalStrategy
+from strategy_mtf_directional import MultiTFDirectionalStrategy
 
 class StrategyFactory:
     """
@@ -32,6 +33,7 @@ class StrategyFactory:
         'supertrend3': SupertrendPullback3Strategy,
         'ema_pullback': EmaPullbackStrategy,
         'multihorizon': MultiHorizonDirectionalStrategy,
+        'mtf_directional': MultiTFDirectionalStrategy
     }
     
     @classmethod

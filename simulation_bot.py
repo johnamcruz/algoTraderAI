@@ -255,33 +255,71 @@ class SimulationBot(TradingBot):
     async def _process_bar(self, bar_data, bar_index, total_bars):
         """
         Process a single bar from historical data.
-        
-        Args:
-            bar_data: Tuple of (timestamp, Series) from DataFrame.iterrows()
-            bar_index: Index of current bar (1-based)
-            total_bars: Total number of bars
-            
-        Returns:
-            bool: True if simulation should stop, False to continue
+        ✅ FIXED: Proper entry timing (enter at next bar open after signal)
         """
         try:
-            # Unpack the iterrows() tuple: (index, Series)
             timestamp, bar = bar_data
-            
-            # Store current timestamp for logging
             self.current_timestamp = timestamp
             
-            # Extract OHLCV data from the Series
             open_price = bar['open']
             high = bar['high']
             low = bar['low']
             close = bar['close']
             volume = bar['volume']
             
-            # Check exits if in position (using high/low for intrabar checks)
+            # ========================================
+            # STEP 1: Process pending entry from PREVIOUS bar
+            # ========================================
+            if self.pending_entry and not self.in_position:
+                # Signal was generated on bar[i-1] using close price
+                # Now entering at bar[i] OPEN (realistic timing)
+                entry_price = open_price  # ✅ CORRECT - realistic entry
+                
+                direction = self.pending_entry['direction']
+                
+                # Adjust stop/target based on actual entry vs reference
+                # (in case open gapped significantly from yesterday's close)
+                price_diff = entry_price - self.pending_entry['reference_price']
+                
+                if direction == 'LONG':
+                    stop_loss = self.pending_entry['stop_loss'] + price_diff
+                    profit_target = self.pending_entry['profit_target'] + price_diff
+                else:  # SHORT
+                    stop_loss = self.pending_entry['stop_loss'] + price_diff
+                    profit_target = self.pending_entry['profit_target'] + price_diff
+                
+                # Set position state
+                self.in_position = True
+                self.position_type = direction
+                self.entry_price = entry_price
+                self.stop_loss = stop_loss
+                self.profit_target = profit_target
+                self.entry_timestamp = timestamp
+                
+                self._log_entry(direction, entry_price, stop_loss, profit_target)
+                
+                # Place order (for live bot, simulation just logs)
+                side = 0 if direction == 'LONG' else 1
+                await self._place_order(
+                    side,
+                    stop_ticks=self.pending_entry['stop_ticks'],
+                    take_profit_ticks=self.pending_entry['take_profit_ticks']
+                )
+                
+                # Clear pending entry
+                self.pending_entry = None
+            
+            # ========================================
+            # STEP 2: Check exits if in position
+            # ========================================
             if self.in_position:
-                # Check both high and low to simulate intrabar price movement
-                for price in [high, low, close]:
+                # Determine which price was hit first (simple heuristic)
+                if abs(open_price - low) < abs(open_price - high):
+                    prices_to_check = [low, high, close]
+                else:
+                    prices_to_check = [high, low, close]
+                
+                for price in prices_to_check:
                     exit_price, exit_reason = self._check_exit_conditions(price)
                     
                     if exit_reason:
@@ -299,7 +337,8 @@ class SimulationBot(TradingBot):
                         
                         # Log trade
                         trade_info = {
-                            'timestamp': timestamp,
+                            'entry_timestamp': self.entry_timestamp,
+                            'exit_timestamp': timestamp,
                             'type': self.position_type,
                             'entry': self.entry_price,
                             'exit': exit_price,
@@ -311,25 +350,26 @@ class SimulationBot(TradingBot):
                         self.trades_log.append(trade_info)
                         
                         self._log_exit(exit_price, exit_reason, pnl_points)
-                        
                         self._reset_position_state()
                         
-                        # Check if profit target or max loss reached
+                        # Check profit/loss limits
                         if self.profit_target is not None and self.total_pnl_dollars >= self.profit_target:
                             print("\n" + "="*50)
                             print(f"🎉 PROFIT TARGET REACHED: ${self.total_pnl_dollars:,.2f}")
                             print("="*50 + "\n")
-                            return True  # Stop simulation
+                            return True
                         
                         if self.max_loss_limit is not None and self.total_pnl_dollars <= -self.max_loss_limit:
                             print("\n" + "="*50)
                             print(f"⛔ MAX LOSS LIMIT HIT: ${self.total_pnl_dollars:,.2f}")
                             print("="*50 + "\n")
-                            return True  # Stop simulation
+                            return True
                         
-                        break  # Exit processed, don't check other prices
+                        break  # Exit processed
             
-            # Add bar to historical data for strategy
+            # ========================================
+            # STEP 3: Add CURRENT bar to history
+            # ========================================
             bar_dict = {
                 'timestamp': timestamp.isoformat(),
                 'open': open_price,
@@ -340,27 +380,24 @@ class SimulationBot(TradingBot):
             }
             self.historical_bars.append(bar_dict)
             
-            # Check if we have enough bars to run strategy
+            # ========================================
+            # STEP 4: Run strategy (generates signal for NEXT bar)
+            # ========================================
             if len(self.historical_bars) >= self.num_historical_candles_needed:
-                # Run strategy using base class method - use await since we're already async
+                # Prediction using bar[i] close is now available
+                # Entry will happen at bar[i+1] open!
                 await self._run_ai_prediction()
-                
-                # If we just entered a position, show the details
-                if self.in_position and bar_index > 1:  # Check if this is a new entry
-                    # Get the previous bar count to detect new entries
-                    pass  # Entry will be logged by base class
             else:
-                # Log progress of bar collection
+                # Still collecting bars
                 if bar_index % 1000 == 0:
                     logging.info(f"📊 Collecting bars: {len(self.historical_bars)}/{self.num_historical_candles_needed}")
             
-            # Progress indicator (only every 5000 bars to reduce noise)
+            # Progress indicator
             if bar_index % 5000 == 0:
                 progress = (bar_index / total_bars) * 100
                 print(f"📊 Progress: {progress:.1f}% ({bar_index:,}/{total_bars:,} bars) | "
-                      f"Trades: {self.trade_count} | P&L: ${self.total_pnl_dollars:+,.2f}")
-                logging.info(f"📊 Progress: {progress:.1f}% | Bars: {bar_index}/{total_bars} | "
-                           f"Historical: {len(self.historical_bars)} | P&L: ${self.total_pnl_dollars:,.2f}")
+                    f"Trades: {self.trade_count} | P&L: ${self.total_pnl_dollars:+,.2f}")
+                logging.info(f"📊 Progress: {progress:.1f}% | P&L: ${self.total_pnl_dollars:,.2f}")
             
             return False  # Continue simulation
             
