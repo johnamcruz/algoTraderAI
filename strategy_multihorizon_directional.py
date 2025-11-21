@@ -44,6 +44,11 @@ class MultiHorizonDirectionalStrategy(BaseStrategy):
             logging.warning(f"⚠️ Insufficient data. Need 200+, have {len(df)}")
         
         df = df.copy()
+
+        # Ensure the index is unique before running indicators like MACD/ADX
+        if not df.index.is_unique:
+            df = df.loc[~df.index.duplicated(keep='last')]
+            logging.warning("⚠️ Removed duplicate index entries (keeping the last one).")
         
         # 1. ATR (volatility base)
         df['atr'] = ta.atr(df['high'], df['low'], df['close'], length=14).replace(0, 1e-6)

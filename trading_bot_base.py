@@ -1,13 +1,6 @@
 #!/usr/bin/env python3
 """
-Base Trading Bot Class
-
-This abstract base class contains common functionality shared between
-RealTimeBot and SimulationBot. It handles:
-1. Strategy management
-2. Position state tracking
-3. Entry/exit logic
-4. Bar management
+Base Trading Bot Class - FIXED for proper entry timing
 """
 
 import logging
@@ -33,20 +26,7 @@ class TradingBot(ABC):
         target_pts,
         enable_trailing_stop=False
     ):
-        """
-        Initialize the trading bot base.
-        
-        Args:
-            contract: Contract ID
-            size: Position size
-            timeframe_minutes: Bar timeframe
-            strategy: Strategy instance (implements BaseStrategy)
-            entry_conf: Minimum confidence for entry
-            adx_thresh: Minimum ADX for entry
-            stop_atr: Stop loss in points
-            target_atr: Profit target in points
-            enable_trailing_stop: Enable trailing stops
-        """
+        """Initialize the trading bot base."""
         self.contract = contract
         self.size = size
         self.timeframe_minutes = int(timeframe_minutes)
@@ -61,17 +41,17 @@ class TradingBot(ABC):
         self.stop_orderId = None
         self.limit_orderId = None
         
+        # ✅ NEW: Pending entry system
+        self.pending_entry = None  # Stores signal for next bar
+        self.entry_timestamp = None  # Track when position entered
+        
         # Strategy
         self.strategy = strategy
         
-        # Historical bars (strategy determines how many needed)
+        # Historical bars
         seq_len = self.strategy.get_sequence_length()
-        # --- MODIFICATION: Need more history for warm-up than just seq_len ---
-        # We need at least 200 bars for ema200 + seq_len for the model.
-        # Let's set a safe buffer. 500 should be enough for most indicators.
         self.num_historical_candles_needed = 900 
         self.historical_bars = deque(maxlen=self.num_historical_candles_needed)
-        # --- END MODIFICATION ---
         
         # Trading parameters
         self.entry_conf = entry_conf
@@ -84,15 +64,7 @@ class TradingBot(ABC):
                     f"Stop={self.stop_pts} pts, Target={self.target_pts} pts")
 
     def _check_exit_conditions(self, current_price):
-        """
-        Check if exit conditions are met for current position.
-        
-        Args:
-            current_price: Current market price
-            
-        Returns:
-            tuple: (exit_price, exit_reason) or (None, None) if no exit
-        """
+        """Check if exit conditions are met for current position."""
         if not self.in_position:
             return None, None
             
@@ -116,15 +88,7 @@ class TradingBot(ABC):
         return exit_price, exit_reason
 
     def _calculate_pnl(self, exit_price):
-        """
-        Calculate PnL for current position.
-        
-        Args:
-            exit_price: Exit price
-            
-        Returns:
-            float: PnL in points
-        """
+        """Calculate PnL for current position."""
         if self.position_type == 'LONG':
             return exit_price - self.entry_price
         elif self.position_type == 'SHORT':
@@ -140,16 +104,10 @@ class TradingBot(ABC):
         self.profit_target = None
         self.stop_orderId = None
         self.limit_orderId = None
+        self.entry_timestamp = None  # ✅ NEW
 
     def _log_exit(self, exit_price, exit_reason, pnl):
-        """
-        Log exit information.
-        
-        Args:
-            exit_price: Exit price
-            exit_reason: Reason for exit
-            pnl: Profit/loss in points
-        """
+        """Log exit information."""
         print("="*40)
         print(f"🛑 EXIT {self.position_type} @ {exit_price:.2f} ({exit_reason})")
         print(f"  Entry: {self.entry_price:.2f} | PnL Points: {pnl:.2f}")
@@ -158,15 +116,7 @@ class TradingBot(ABC):
                     f"Entry: {self.entry_price:.2f} | PnL Points: {pnl:.2f}")
 
     def _log_entry(self, side, entry_price, stop_loss, profit_target):
-        """
-        Log entry information.
-        
-        Args:
-            side: 'LONG' or 'SHORT'
-            entry_price: Entry price
-            stop_loss: Stop loss price
-            profit_target: Profit target price
-        """
+        """Log entry information."""
         print("="*40)
         print(f"🚀 ENTRY {side} @ {entry_price:.2f}")
         print(f"  Stop: {stop_loss:.2f} | Target: {profit_target:.2f}")
@@ -176,9 +126,9 @@ class TradingBot(ABC):
     async def _run_ai_prediction(self):
         """
         Run AI prediction using the strategy.
-        This is the common method used by both RealTimeBot and SimulationBot.
+        ✅ FIXED: Now sets pending_entry instead of entering immediately
         """
-        if self.in_position:
+        if self.in_position or self.pending_entry:
             return
         
         try:
@@ -191,27 +141,19 @@ class TradingBot(ABC):
                 df.set_index('timestamp', inplace=True)
             
             logging.debug(f"🔍 Running AI prediction with {len(df)} bars")
-            logging.debug(f"🔍 DataFrame columns: {list(df.columns)}")
-            logging.debug(f"🔍 DataFrame index: {df.index.name}")
             
             # Add strategy-specific features
             df = self.strategy.add_features(df)
             
-            # --- FIX: CATCH EMPTY DATAFRAME ---
-            # This happens if add_features() drops all rows during warm-up
+            # Check if warming up
             if df.empty:
                 logging.warning("⚠️ Strategy is warming up (not enough data). Skipping prediction.")
                 return
-            # --- END FIX ---
-            
-            logging.debug(f"🔍 After add_features, columns: {list(df.columns)}")
             
             # Validate features
             if not self.strategy.validate_features(df):
                 logging.error("❌ Feature validation failed")
                 return
-            
-            logging.debug(f"✅ Feature validation passed")
             
             # Get prediction from strategy
             prediction, confidence = self.strategy.predict(df)
@@ -232,86 +174,71 @@ class TradingBot(ABC):
             
             # Display prediction
             pred_labels = {0: "HOLD", 1: "BUY", 2: "SELL"}
-            print(f"🤖 AI: {pred_labels[prediction]} (Conf: {confidence:.2%}) | "
-                  f"ADX: {latest_bar.get('adx', 0):.1f}")
+            print(f"🤖 AI: {pred_labels[prediction]} (Conf: {confidence:.2%})")
             logging.info(f"AI: {pred_labels[prediction]} (Conf: {confidence:.2%}) ADX: {latest_bar.get('adx', 0):.1f}")
             
             if should_enter:
                 close_price = latest_bar['close']
                 atr = latest_bar.get('atr', 0)
-                
-                if atr <= 0:
-                    logging.error("❌ Invalid ATR, skipping entry")
-                    return
-                
+                                                
                 tick_size = self._get_tick_size()
                 
+                # ✅ FIXED: Set pending_entry instead of entering immediately
                 if direction == 'LONG':
-                    self.in_position = True
-                    self.position_type = 'LONG'
-                    self.entry_price = close_price
-                    # LONG SL/PT: Use fixed point distance
-                    self.stop_loss = self.entry_price - self.stop_pts
-                    self.profit_target = self.entry_price + self.target_pts
+                    # Calculate stop/target based on close_price
+                    stop_loss = close_price - self.stop_pts
+                    profit_target = close_price + self.target_pts
+                    
+                    # Store for next bar
+                    self.pending_entry = {
+                        'direction': 'LONG',
+                        'reference_price': close_price,  # For stop/target calculation
+                        'stop_loss': stop_loss,
+                        'profit_target': profit_target,
+                        'stop_ticks': -int(self.stop_pts / tick_size),
+                        'take_profit_ticks': int(self.target_pts / tick_size)
+                    }
                     
                     print("="*40)
-                    print(f"🔥🔥🔥 ENTERING LONG @ {self.entry_price:.2f} 🔥🔥🔥")
-                    print(f"  SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}")
+                    print(f"🔥 SIGNAL: LONG (will enter next bar open)")
+                    print(f"  Reference: {close_price:.2f}")
+                    print(f"  Planned SL: {stop_loss:.2f} | PT: {profit_target:.2f}")
                     print("="*40)
-                    logging.info(f"LONG @ {self.entry_price:.2f} SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}")
-                    
-                    # Calculate ticks: Use point distance directly
-                    stop_loss_ticks = -int(self.stop_pts / tick_size)
-                    take_profit_ticks = int(self.target_pts / tick_size)
-                    
-                    # Place order
-                    await self._place_order(0, stop_ticks=stop_loss_ticks, take_profit_ticks=take_profit_ticks)
+                    logging.info(f"SIGNAL LONG @ {close_price:.2f} (pending next bar)")
                     
                 else:  # SHORT
-                    self.in_position = True
-                    self.position_type = 'SHORT'
-                    self.entry_price = close_price
-                    # SHORT SL/PT: Use fixed point distance
-                    self.stop_loss = self.entry_price + self.stop_pts
-                    self.profit_target = self.entry_price - self.target_pts
+                    # Calculate stop/target based on close_price
+                    stop_loss = close_price + self.stop_pts
+                    profit_target = close_price - self.target_pts
+                    
+                    # Store for next bar
+                    self.pending_entry = {
+                        'direction': 'SHORT',
+                        'reference_price': close_price,
+                        'stop_loss': stop_loss,
+                        'profit_target': profit_target,
+                        'stop_ticks': int(self.stop_pts / tick_size),
+                        'take_profit_ticks': -int(self.target_pts / tick_size)
+                    }
                     
                     print("="*40)
-                    print(f"🥶🥶🥶 ENTERING SHORT @ {self.entry_price:.2f} 🥶🥶🥶")
-                    print(f"  SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}")
+                    print(f"🥶 SIGNAL: SHORT (will enter next bar open)")
+                    print(f"  Reference: {close_price:.2f}")
+                    print(f"  Planned SL: {stop_loss:.2f} | PT: {profit_target:.2f}")
                     print("="*40)
-                    logging.info(f"SHORT @ {self.entry_price:.2f} SL: {self.stop_loss:.2f} | PT: {self.profit_target:.2f}")
-                    
-                    # Calculate ticks: Use point distance directly
-                    stop_loss_ticks = int(self.stop_pts / tick_size)
-                    take_profit_ticks = -int(self.target_pts / tick_size)
-                    
-                    # Place order
-                    await self._place_order(1, stop_ticks=stop_loss_ticks, take_profit_ticks=take_profit_ticks)
+                    logging.info(f"SIGNAL SHORT @ {close_price:.2f} (pending next bar)")
                     
         except Exception as e:
             logging.exception(f"❌ Error during AI prediction: {e}")
 
     @abstractmethod
     def _get_tick_size(self):
-        """
-        Get tick size for the contract. Must be implemented by subclass.
-        
-        Returns:
-            float: Tick size
-        """
+        """Get tick size for the contract. Must be implemented by subclass."""
         pass
 
     @abstractmethod
     async def _place_order(self, side, type=2, stop_ticks=10, take_profit_ticks=20):
-        """
-        Place an order. Must be implemented by subclass.
-        
-        Args:
-            side: 1 for long, 0 for short
-            type: Order type
-            stop_ticks: Stop loss in ticks
-            take_profit_ticks: Profit target in ticks
-        """
+        """Place an order. Must be implemented by subclass."""
         pass
 
     @abstractmethod
