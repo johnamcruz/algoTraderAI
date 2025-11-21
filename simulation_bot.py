@@ -82,6 +82,9 @@ class SimulationBot(TradingBot):
         self.max_loss_limit = max_loss_limit
         self.simulation_days = simulation_days
         
+        # Pending entry system (sim bot only)
+        self.pending_entry = None
+        
         # Performance tracking
         self.total_pnl = 0.0
         self.total_pnl_dollars = 0.0
@@ -196,19 +199,32 @@ class SimulationBot(TradingBot):
             
         return points * multiplier
 
-    async def _place_order(self, side, type=2, stop_ticks=10, take_profit_ticks=20):
+    async def _place_order(self, side, close_price, stop_loss, profit_target, stop_ticks, take_profit_ticks):
         """
-        Simulate order placement (no actual order sent).
+        Store order data in pending_entry for execution on next bar.
         
         Args:
-            side: 0 for buy (long), 1 for sell (short)
-            type: Order type (ignored in simulation)
+            side: 0 for LONG, 1 for SHORT
+            close_price: Reference price (bar close where signal generated)
+            stop_loss: Stop loss price
+            profit_target: Profit target price
             stop_ticks: Stop loss in ticks
             take_profit_ticks: Profit target in ticks
         """
-        # In simulation, we just log the order - actual tracking is done in base class
-        side_str = "BUY (LONG)" if side == 0 else "SELL (SHORT)"
-        logging.debug(f"📝 Simulated order: {side_str}, stop_ticks={stop_ticks}, "
+        direction = 'LONG' if side == 0 else 'SHORT'
+        
+        # Store for next bar entry
+        self.pending_entry = {
+            'direction': direction,
+            'reference_price': close_price,
+            'stop_loss': stop_loss,
+            'profit_target': profit_target,
+            'stop_ticks': stop_ticks,
+            'take_profit_ticks': take_profit_ticks
+        }
+        
+        # Log the pending order
+        logging.debug(f"📝 Pending {direction} order: stop_ticks={stop_ticks}, "
                      f"take_profit_ticks={take_profit_ticks}")
 
     def _get_tick_size(self):

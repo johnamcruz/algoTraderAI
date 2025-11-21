@@ -274,13 +274,23 @@ class RealTimeBot(TradingBot):
     # =========================================================
     # ORDER MANAGEMENT
     # =========================================================
-    async def _place_order(self, side, type=2, stop_ticks=10, take_profit_ticks=20):
-        """Enter long/short position"""
+    async def _place_order(self, side, close_price, stop_loss, profit_target, stop_ticks, take_profit_ticks):
+        """
+        Place order to broker immediately.
+        
+        Args:
+            side: 0 for LONG, 1 for SHORT
+            close_price: Reference price (not used in live bot)
+            stop_loss: Stop loss price (not used - calculated by broker from ticks)
+            profit_target: Profit target price (not used - calculated by broker from ticks)
+            stop_ticks: Stop loss in ticks
+            take_profit_ticks: Profit target in ticks
+        """
         order_url = f"{self.base_url}/Order/place"
         payload = {
             "accountId": self.account,
             "contractId": self.contract,
-            "type": type,
+            "type": 2,  # Market order
             "side": side,
             "size": self.size,
             "stopLossBracket": {
@@ -300,8 +310,9 @@ class RealTimeBot(TradingBot):
             data = response.json()
             logging.debug(data)            
             if data.get('success') and data.get('orderId'):
-                logging.info(f"✅ Order placed successfully: {data.get('orderId')}")
-                return data.get("orderId")
+                order_id = data.get('orderId')
+                logging.info(f"✅ Order placed successfully: {order_id}")
+                return order_id
             else:
                 logging.exception(f"❌ Order failed: {data.get('errorMessage')}")
                 return None
@@ -382,7 +393,7 @@ class RealTimeBot(TradingBot):
             if price is None:
                 return
             
-            # Check exits if in position
+            # Check exits if in position (for sim bot compatibility)
             if self.in_position:
                 exit_price, exit_reason = self._check_exit_conditions(price)
                 
