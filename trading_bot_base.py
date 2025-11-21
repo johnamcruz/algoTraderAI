@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Base Trading Bot Class - FIXED for proper entry timing
+Base Trading Bot Class - Simplified for live trading
 """
 
 import logging
@@ -32,7 +32,7 @@ class TradingBot(ABC):
         self.timeframe_minutes = int(timeframe_minutes)
         self.enable_trailing_stop = enable_trailing_stop
         
-        # State Management
+        # State Management (for sim bot)
         self.in_position = False
         self.position_type = None
         self.entry_price = None
@@ -40,10 +40,7 @@ class TradingBot(ABC):
         self.profit_target = None
         self.stop_orderId = None
         self.limit_orderId = None
-        
-        # ✅ NEW: Pending entry system
-        self.pending_entry = None  # Stores signal for next bar
-        self.entry_timestamp = None  # Track when position entered
+        self.entry_timestamp = None
         
         # Strategy
         self.strategy = strategy
@@ -104,7 +101,7 @@ class TradingBot(ABC):
         self.profit_target = None
         self.stop_orderId = None
         self.limit_orderId = None
-        self.entry_timestamp = None  # ✅ NEW
+        self.entry_timestamp = None
 
     def _log_exit(self, exit_price, exit_reason, pnl):
         """Log exit information."""
@@ -126,11 +123,8 @@ class TradingBot(ABC):
     async def _run_ai_prediction(self):
         """
         Run AI prediction using the strategy.
-        ✅ FIXED: Now sets pending_entry instead of entering immediately
+        Calls _place_order() which has different implementations in live vs sim bots.
         """
-        if self.in_position or self.pending_entry:
-            return
-        
         try:
             # Convert historical bars to DataFrame
             df = pd.DataFrame(list(self.historical_bars))
@@ -179,62 +173,55 @@ class TradingBot(ABC):
             
             if should_enter:
                 close_price = latest_bar['close']
-                atr = latest_bar.get('atr', 0)
-                                                
                 tick_size = self._get_tick_size()
                 
-                # ✅ FIXED: Set pending_entry instead of entering immediately
                 if direction == 'LONG':
-                    # Calculate stop/target based on close_price
+                    # Calculate stop/target
                     stop_loss = close_price - self.stop_pts
                     profit_target = close_price + self.target_pts
                     stop_ticks = -int(self.stop_pts / tick_size)
                     take_profit_ticks = int(self.target_pts / tick_size)
                     
-                    # Store for next bar
-                    self.pending_entry = {
-                        'direction': 'LONG',
-                        'reference_price': close_price,  # For stop/target calculation
-                        'stop_loss': stop_loss,
-                        'profit_target': profit_target,
-                        'stop_ticks': stop_ticks,
-                        'take_profit_ticks': take_profit_ticks
-                    }
-
-                    await self._place_order(0, stop_ticks=stop_ticks, take_profit_ticks=take_profit_ticks)
+                    # Pass data to subclass implementation
+                    await self._place_order(
+                        side=0,
+                        close_price=close_price,
+                        stop_loss=stop_loss,
+                        profit_target=profit_target,
+                        stop_ticks=stop_ticks,
+                        take_profit_ticks=take_profit_ticks
+                    )
                     
                     print("="*40)
-                    print(f"🔥 SIGNAL: LONG (will enter next bar open)")
+                    print(f"🔥 LONG SIGNAL")
                     print(f"  Reference: {close_price:.2f}")
-                    print(f"  Planned SL: {stop_loss:.2f} | PT: {profit_target:.2f}")
+                    print(f"  Stop: {stop_loss:.2f} | Target: {profit_target:.2f}")
                     print("="*40)
-                    logging.info(f"SIGNAL LONG @ {close_price:.2f} (pending next bar)")
+                    logging.info(f"LONG SIGNAL @ {close_price:.2f} Stop: {stop_loss:.2f} Target: {profit_target:.2f}")
                     
                 else:  # SHORT
-                    # Calculate stop/target based on close_price
+                    # Calculate stop/target
                     stop_loss = close_price + self.stop_pts
                     profit_target = close_price - self.target_pts
                     stop_ticks = int(self.stop_pts / tick_size)
                     take_profit_ticks = -int(self.target_pts / tick_size)
                     
-                    # Store for next bar
-                    self.pending_entry = {
-                        'direction': 'SHORT',
-                        'reference_price': close_price,
-                        'stop_loss': stop_loss,
-                        'profit_target': profit_target,
-                        'stop_ticks': stop_ticks,
-                        'take_profit_ticks':take_profit_ticks
-                    }
-
-                    await self._place_order(1, stop_ticks=stop_ticks, take_profit_ticks=take_profit_ticks)
+                    # Pass data to subclass implementation
+                    await self._place_order(
+                        side=1,
+                        close_price=close_price,
+                        stop_loss=stop_loss,
+                        profit_target=profit_target,
+                        stop_ticks=stop_ticks,
+                        take_profit_ticks=take_profit_ticks
+                    )
                     
                     print("="*40)
-                    print(f"🥶 SIGNAL: SHORT (will enter next bar open)")
+                    print(f"🥶 SHORT SIGNAL")
                     print(f"  Reference: {close_price:.2f}")
-                    print(f"  Planned SL: {stop_loss:.2f} | PT: {profit_target:.2f}")
+                    print(f"  Stop: {stop_loss:.2f} | Target: {profit_target:.2f}")
                     print("="*40)
-                    logging.info(f"SIGNAL SHORT @ {close_price:.2f} (pending next bar)")
+                    logging.info(f"SHORT SIGNAL @ {close_price:.2f} Stop: {stop_loss:.2f} Target: {profit_target:.2f}")
                     
         except Exception as e:
             logging.exception(f"❌ Error during AI prediction: {e}")
@@ -245,8 +232,18 @@ class TradingBot(ABC):
         pass
 
     @abstractmethod
-    async def _place_order(self, side, type=2, stop_ticks=10, take_profit_ticks=20):
-        """Place an order. Must be implemented by subclass."""
+    async def _place_order(self, side, close_price, stop_loss, profit_target, stop_ticks, take_profit_ticks):
+        """
+        Place an order. Must be implemented by subclass.
+        
+        Args:
+            side: 0 for LONG, 1 for SHORT
+            close_price: Reference price (bar close)
+            stop_loss: Stop loss price
+            profit_target: Profit target price
+            stop_ticks: Stop loss in ticks
+            take_profit_ticks: Profit target in ticks
+        """
         pass
 
     @abstractmethod
