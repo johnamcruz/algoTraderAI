@@ -188,6 +188,8 @@ class TradingBot(ABC):
                     # Calculate stop/target based on close_price
                     stop_loss = close_price - self.stop_pts
                     profit_target = close_price + self.target_pts
+                    stop_ticks = -int(self.stop_pts / tick_size)
+                    take_profit_ticks = int(self.target_pts / tick_size)
                     
                     # Store for next bar
                     self.pending_entry = {
@@ -195,9 +197,11 @@ class TradingBot(ABC):
                         'reference_price': close_price,  # For stop/target calculation
                         'stop_loss': stop_loss,
                         'profit_target': profit_target,
-                        'stop_ticks': -int(self.stop_pts / tick_size),
-                        'take_profit_ticks': int(self.target_pts / tick_size)
+                        'stop_ticks': stop_ticks,
+                        'take_profit_ticks': take_profit_ticks
                     }
+
+                    await self._place_order(0, stop_ticks=stop_ticks, take_profit_ticks=take_profit_ticks)
                     
                     print("="*40)
                     print(f"🔥 SIGNAL: LONG (will enter next bar open)")
@@ -210,6 +214,8 @@ class TradingBot(ABC):
                     # Calculate stop/target based on close_price
                     stop_loss = close_price + self.stop_pts
                     profit_target = close_price - self.target_pts
+                    stop_ticks = int(self.stop_pts / tick_size)
+                    take_profit_ticks = -int(self.target_pts / tick_size)
                     
                     # Store for next bar
                     self.pending_entry = {
@@ -217,9 +223,11 @@ class TradingBot(ABC):
                         'reference_price': close_price,
                         'stop_loss': stop_loss,
                         'profit_target': profit_target,
-                        'stop_ticks': int(self.stop_pts / tick_size),
-                        'take_profit_ticks': -int(self.target_pts / tick_size)
+                        'stop_ticks': stop_ticks,
+                        'take_profit_ticks':take_profit_ticks
                     }
+
+                    await self._place_order(1, stop_ticks=stop_ticks, take_profit_ticks=take_profit_ticks)
                     
                     print("="*40)
                     print(f"🥶 SIGNAL: SHORT (will enter next bar open)")
