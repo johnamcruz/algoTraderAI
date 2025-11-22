@@ -313,15 +313,7 @@ class SimulationBot(TradingBot):
                 self.entry_timestamp = timestamp
                 
                 self._log_entry(direction, entry_price, stop_loss, profit_target)
-                
-                # Place order (for live bot, simulation just logs)
-                side = 0 if direction == 'LONG' else 1
-                await self._place_order(
-                    side,
-                    stop_ticks=self.pending_entry['stop_ticks'],
-                    take_profit_ticks=self.pending_entry['take_profit_ticks']
-                )
-                
+                                
                 # Clear pending entry
                 self.pending_entry = None
             
