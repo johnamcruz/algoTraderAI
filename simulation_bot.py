@@ -444,11 +444,12 @@ class SimulationBot(TradingBot):
         
         # Print individual trades
         if self.trades_log:
-            print("📝 TRADE LOG:")
+            print("\n📋 TRADE LOG:")
             print("-"*60)
             for i, trade in enumerate(self.trades_log, 1):
                 print(f"\nTrade #{i}:")
-                print(f"  Time: {trade['timestamp']}")
+                print(f"  Entry Time: {trade['entry_timestamp']}")  # ← FIXED
+                print(f"  Exit Time: {trade['exit_timestamp']}")     # ← FIXED
                 print(f"  Type: {trade['type']}")
                 print(f"  Entry: {trade['entry']:.2f}")
                 print(f"  Exit: {trade['exit']:.2f}")
