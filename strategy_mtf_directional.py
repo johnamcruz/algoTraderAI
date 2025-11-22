@@ -82,6 +82,45 @@ class MultiTFDirectionalStrategy(BaseStrategy):
             return "GOOD"
         else:
             return "EXCELLENT"
+    
+    def _calculate_regime_stability(self, alignment_series: pd.Series) -> np.ndarray:
+        """
+        Calculate regime stability looking BACKWARD only.
+        NO LOOKAHEAD BIAS - matches training code exactly.
+        
+        For each bar, counts consecutive bars with same alignment value.
+        Only looks at current and past bars.
+        
+        Args:
+            alignment_series: Series of tf_momentum_alignment values
+            
+        Returns:
+            Array of stability values (0-1 range)
+        """
+        stability = np.zeros(len(alignment_series))
+        
+        if len(alignment_series) == 0:
+            return stability
+        
+        # Start with first bar
+        current_value = alignment_series.iloc[0]
+        count = 1
+        stability[0] = 1
+        
+        # Iterate forward through time (no lookahead!)
+        for i in range(1, len(alignment_series)):
+            if alignment_series.iloc[i] == current_value:
+                # Same regime continues
+                count += 1
+            else:
+                # Regime changed, reset counter
+                current_value = alignment_series.iloc[i]
+                count = 1
+            
+            stability[i] = count
+        
+        # Normalize to 0-1 range (cap at 20 bars max)
+        return np.minimum(stability / 20.0, 1.0)
 
     def add_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -273,10 +312,9 @@ class MultiTFDirectionalStrategy(BaseStrategy):
         df['hour_sin'] = np.sin(2 * np.pi * hour / 24.0)
         df['hour_cos'] = np.cos(2 * np.pi * hour / 24.0)
         
-        # 23. Regime Stability
-        vol_of_vol = df['fast_volatility_regime'].rolling(fast_window).std()
-        vol_mean = df['fast_volatility_regime'].rolling(fast_window).mean()
-        df['regime_stability'] = 1.0 / (1.0 + vol_of_vol / (vol_mean + 1e-10))
+        # 23. Regime Stability (matches training exactly)
+        # Count how many bars current regime has persisted
+        df['regime_stability'] = self._calculate_regime_stability(df['tf_momentum_alignment'])
         
         # =====================================================================
         # CLEANUP
