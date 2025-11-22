@@ -85,6 +85,9 @@ class SimulationBot(TradingBot):
         # Pending entry system (sim bot only)
         self.pending_entry = None
         
+        # Track if we just entered this bar (prevents same-bar exit)
+        self.just_entered_this_bar = False
+        
         # Performance tracking
         self.total_pnl = 0.0
         self.total_pnl_dollars = 0.0
@@ -272,6 +275,7 @@ class SimulationBot(TradingBot):
         """
         Process a single bar from historical data.
         ✅ FIXED: Proper entry timing (enter at next bar open after signal)
+        ✅ FIXED: Prevent same-bar entry/exit
         """
         try:
             timestamp, bar = bar_data
@@ -289,7 +293,7 @@ class SimulationBot(TradingBot):
             if self.pending_entry and not self.in_position:
                 # Signal was generated on bar[i-1] using close price
                 # Now entering at bar[i] OPEN (realistic timing)
-                entry_price = open_price  # ✅ CORRECT - realistic entry
+                entry_price = open_price
                 
                 direction = self.pending_entry['direction']
                 
@@ -312,15 +316,19 @@ class SimulationBot(TradingBot):
                 self.profit_target = profit_target
                 self.entry_timestamp = timestamp
                 
+                # Mark that we just entered this bar (prevents same-bar exit)
+                self.just_entered_this_bar = True
+                
                 self._log_entry(direction, entry_price, stop_loss, profit_target)
-                                
+                
                 # Clear pending entry
                 self.pending_entry = None
             
             # ========================================
             # STEP 2: Check exits if in position
+            # Skip exit check if we just entered this bar
             # ========================================
-            if self.in_position:
+            if self.in_position and not self.just_entered_this_bar:
                 # Determine which price was hit first (simple heuristic)
                 if abs(open_price - low) < abs(open_price - high):
                     prices_to_check = [low, high, close]
@@ -374,6 +382,9 @@ class SimulationBot(TradingBot):
                             return True
                         
                         break  # Exit processed
+            
+            # Reset the just_entered flag at end of bar processing
+            self.just_entered_this_bar = False
             
             # ========================================
             # STEP 3: Add CURRENT bar to history
@@ -436,7 +447,6 @@ class SimulationBot(TradingBot):
         if self.profit_target is not None and self.total_pnl_dollars >= self.profit_target:
             print(f"🎉 Profit Target Hit: {self.total_pnl_dollars:,.2f} USD (Target: {self.profit_target:,.2f} USD)")
         
-        # NEW CODE: Only perform comparison if self.max_loss_limit is set (not None)
         if self.max_loss_limit is not None and self.total_pnl_dollars <= -self.max_loss_limit:
             print(f"🛑 Max Loss Limit Hit: {self.total_pnl_dollars:,.2f} USD (Limit: -{self.max_loss_limit:,.2f} USD)")
         
@@ -448,8 +458,8 @@ class SimulationBot(TradingBot):
             print("-"*60)
             for i, trade in enumerate(self.trades_log, 1):
                 print(f"\nTrade #{i}:")
-                print(f"  Entry Time: {trade['entry_timestamp']}")  # ← FIXED
-                print(f"  Exit Time: {trade['exit_timestamp']}")     # ← FIXED
+                print(f"  Entry Time: {trade['entry_timestamp']}")
+                print(f"  Exit Time: {trade['exit_timestamp']}")
                 print(f"  Type: {trade['type']}")
                 print(f"  Entry: {trade['entry']:.2f}")
                 print(f"  Exit: {trade['exit']:.2f}")
@@ -474,7 +484,6 @@ class SimulationBot(TradingBot):
             
             # Filter the DataFrame using the index
             original_len = len(df)
-            # The filter now selects bars where the index (timestamp) is GREATER than or equal to the start date
             df = df[df.index >= simulation_start_date].copy() 
 
             if len(df) == 0:
@@ -506,7 +515,6 @@ class SimulationBot(TradingBot):
         logging.info(f"📊 Starting to process {len(df)} bars...")
         
         # Process each bar from the DataFrame
-        # df.iterrows() returns (index, Series) tuples
         stop_simulation = False
         for idx, bar_data in enumerate(df.iterrows(), start=1):
             stop_simulation = await self._process_bar(bar_data, idx, len(df))
