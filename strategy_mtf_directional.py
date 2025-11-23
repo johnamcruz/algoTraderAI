@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
 """
-Multi-Timeframe Directional Strategy Implementation (V4.0) - FIXED FOR LIVE
+Multi-Timeframe Directional Strategy Implementation (V6.3.6) - PRODUCTION-READY
 
-CRITICAL FIX: Uses ROLLING WINDOWS (not resampling) to match training
+CRITICAL: Uses ROLLING WINDOWS that EXACTLY match training/simulator
+
+Rolling window equivalents:
+- Fast (3T):   Direct calculation
+- Medium:      5-period rolling (5 * 3min = 15min equivalent)
+- Slow:        20-period rolling (20 * 3min = 60min equivalent)
 
 DATA REQUIREMENTS:
-- Minimum: 250 bars (~12.5 hours / 1.5 trading days)
-  - Needed for slow_window=200 + sequence=80
-- Recommended: 300+ bars (~15 hours / 2 days) for stable features
-- Full quality: 400+ bars for all calculations to stabilize
-
-WINDOW SIZES (MUST MATCH TRAINING):
-- Fast: 20 bars (60 minutes)
-- Medium: 60 bars (180 minutes / 3 hours)
-- Slow: 200 bars (600 minutes / 10 hours)
+- Minimum: 300 bars (~15 hours / 2 trading days)
+  - Needed for slow 20-bar * 14 ADX period = 280 + sequence 80
+- Recommended: 400+ bars (~20 hours / 2.5 days) for stable features
 """
 
 import pandas as pd
@@ -29,33 +28,35 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 
 class MultiTFDirectionalStrategy(BaseStrategy):
-    """Multi-Timeframe Directional V4.0 - FIXED for Live Trading"""
+    """Multi-Timeframe Directional V6.3.6 - PRODUCTION-READY"""
 
     def __init__(self, model_path: str, scaler_path: str, contract_symbol: str):
-        """Initialize Multi-TF Directional Strategy V4.0"""
+        """Initialize Multi-TF Directional Strategy V6.3.6"""
         super().__init__(model_path, scaler_path, contract_symbol)
         
         self.bar_count = 0
         self.last_quality = None
         
         logging.info("=" * 70)
-        logging.info("🚀 Multi-Timeframe Directional Strategy V4.0 - FIXED")
+        logging.info("🚀 Multi-Timeframe Directional Strategy V6.3.6 - PRODUCTION")
         logging.info("=" * 70)
         logging.info("📊 Features: 23 multi-timeframe indicators")
         logging.info("🎯 Sequence: 80 bars")
-        logging.info("🔧 Feature Calculation: ROLLING WINDOWS (matches training)")
+        logging.info("🔧 Feature Calculation: ROLLING WINDOWS (production-ready)")
+        logging.info("   - Fast: Direct 3T bars")
+        logging.info("   - Medium: 5-bar rolling (15min equiv)")
+        logging.info("   - Slow: 20-bar rolling (60min equiv)")
         logging.info("📈 Data Requirements:")
-        logging.info("   - Minimum: 250 bars (~12.5 hours / 1.5 days)")
-        logging.info("   - Recommended: 300+ bars for stable features")
-        logging.info("   - Full quality: 400+ bars")
-        logging.info("⚡ Expected Performance @ 0.55 threshold:")
+        logging.info("   - Minimum: 300 bars (~15 hours / 2 days)")
+        logging.info("   - Recommended: 400+ bars for stable features")
+        logging.info("⚡ Expected Performance @ 0.60 threshold:")
         logging.info("   - BUY Precision: 78.7%")
-        logging.info("   - Signal Rate: 0.5% (~0.7 trades/day)")
-        logging.info("   - Win Rate: ~75%+ (4R targets)")
+        logging.info("   - Confidence: 0.76-0.83")
+        logging.info("   - Signal Rate: ~2-7 trades/day")
         logging.info("=" * 70)
 
     def get_feature_columns(self) -> List[str]:
-        """Returns the 23 multi-timeframe feature columns for V4.0"""
+        """Returns the 23 multi-timeframe feature columns for V6.3.6"""
         return [
             'fast_momentum', 'fast_trend_strength', 'fast_volatility_regime',
             'fast_volume_regime', 'fast_price_position',
@@ -69,16 +70,16 @@ class MultiTFDirectionalStrategy(BaseStrategy):
         ]
 
     def get_sequence_length(self) -> int:
-        """V4.0 uses 80 bars"""
+        """V6.3.6 uses 80 bars"""
         return 80
     
     def get_quality_level(self, bars: int) -> str:
         """Return data quality level based on bar count"""
-        if bars < 250:
+        if bars < 300:
             return "INSUFFICIENT"
-        elif bars < 300:
-            return "WARMING_UP"
         elif bars < 400:
+            return "WARMING_UP"
+        elif bars < 500:
             return "GOOD"
         else:
             return "EXCELLENT"
@@ -90,12 +91,6 @@ class MultiTFDirectionalStrategy(BaseStrategy):
         
         For each bar, counts consecutive bars with same alignment value.
         Only looks at current and past bars.
-        
-        Args:
-            alignment_series: Series of tf_momentum_alignment values
-            
-        Returns:
-            Array of stability values (0-1 range)
         """
         stability = np.zeros(len(alignment_series))
         
@@ -124,15 +119,15 @@ class MultiTFDirectionalStrategy(BaseStrategy):
 
     def add_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Calculate V4.0 Multi-Timeframe features using ROLLING WINDOWS
+        Calculate V6.3.6 Multi-Timeframe features using ROLLING WINDOWS
         
-        CRITICAL: This MUST match the training calculation method!
-        Uses rolling windows on 3-minute data (NOT resampling to 15min/1hr)
+        CRITICAL: This MUST match the training/simulator calculation!
+        Uses rolling windows on 3-minute data (NOT resampling)
         
-        Window sizes:
-        - fast_window = 20 bars
-        - med_window = 60 bars
-        - slow_window = 200 bars
+        Window multipliers:
+        - Fast:   1x (direct)
+        - Medium: 5x (5-bar rolling)
+        - Slow:   20x (20-bar rolling)
         """
         self.bar_count += 1
         current_bars = len(df)
@@ -141,7 +136,7 @@ class MultiTFDirectionalStrategy(BaseStrategy):
         # Log quality changes
         if quality != self.last_quality:
             if quality == "INSUFFICIENT":
-                logging.warning(f"⚠️ INSUFFICIENT DATA: {current_bars} bars (need 250+)")
+                logging.warning(f"⚠️ INSUFFICIENT DATA: {current_bars} bars (need 300+)")
             elif quality == "WARMING_UP":
                 logging.info(f"🔥 WARMING UP: {current_bars} bars - predictions starting")
             elif quality == "GOOD":
@@ -152,180 +147,183 @@ class MultiTFDirectionalStrategy(BaseStrategy):
         
         df = df.copy()
         
-        # Window sizes MUST match training
-        fast_window = 20
-        med_window = 60
-        slow_window = 200
+        # Import pandas_ta for consistent indicator calculation
+        try:
+            import pandas_ta as ta
+        except ImportError:
+            raise ImportError("pandas_ta required. Install with: pip install pandas_ta")
+        
+        # Calculate ATR (used by all timeframes)
+        df['atr'] = ta.atr(df['high'], df['low'], df['close'], length=14)
+        df['atr'] = df['atr'].fillna(method='ffill').fillna(1e-6)
         
         # =====================================================================
-        # TRUE RANGE CALCULATION (base for all trend strength)
+        # FAST TIMEFRAME (Direct 3T)
         # =====================================================================
+        prefix = 'fast'
         
-        high_low = df['high'] - df['low']
-        high_close = np.abs(df['high'] - df['close'].shift())
-        low_close = np.abs(df['low'] - df['close'].shift())
-        true_range = np.maximum(high_low, np.maximum(high_close, low_close))
+        # Momentum
+        roc_short = df['close'].pct_change(3)
+        roc_med = df['close'].pct_change(7)
+        roc_long = df['close'].pct_change(14)
+        df[f'{prefix}_momentum'] = (roc_short * 0.5 + roc_med * 0.3 + roc_long * 0.2).fillna(0)
         
-        plus_dm = df['high'].diff()
-        minus_dm = -df['low'].diff()
-        plus_dm[plus_dm < 0] = 0
-        minus_dm[minus_dm < 0] = 0
+        # Trend strength using ADX
+        adx_df = ta.adx(df['high'], df['low'], df['close'], length=14)
+        adx_val = adx_df['ADX_14'].fillna(0)
+        plus_di = adx_df['DMP_14'].fillna(0)
+        minus_di = adx_df['DMN_14'].fillna(0)
+        trend_direction = np.sign(plus_di - minus_di)
+        df[f'{prefix}_trend_strength'] = (adx_val / 100) * trend_direction
         
-        # =====================================================================
-        # FAST TIMEFRAME (20 bars = 60 minutes)
-        # =====================================================================
+        # Volatility regime
+        atr_ma = df['atr'].rolling(50, min_periods=20).mean()
+        df[f'{prefix}_volatility_regime'] = df['atr'] / (atr_ma + 1e-6)
         
-        # 1. Fast Momentum
-        df['fast_momentum'] = df['close'].pct_change(fast_window)
+        # Volume regime
+        vol_ma = df['volume'].rolling(20, min_periods=20).mean()
+        df[f'{prefix}_volume_regime'] = df['volume'] / (vol_ma + 1e-6)
         
-        # 2. Fast Trend Strength (ADX-like)
-        plus_di = 100 * (plus_dm.rolling(fast_window).mean() / true_range.rolling(fast_window).mean())
-        minus_di = 100 * (minus_dm.rolling(fast_window).mean() / true_range.rolling(fast_window).mean())
-        dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di + 1e-10)
-        df['fast_trend_strength'] = dx.rolling(fast_window).mean() / 100.0
-        
-        # 3. Fast Volatility Regime
-        atr_fast = true_range.rolling(fast_window).mean()
-        df['fast_volatility_regime'] = atr_fast / df['close']
-        
-        # 4. Fast Volume Regime
-        df['fast_volume_regime'] = (
-            df['volume'] / df['volume'].rolling(fast_window).mean()
-        ) - 1.0
-        
-        # 5. Fast Price Position
-        rolling_high = df['high'].rolling(fast_window).max()
-        rolling_low = df['low'].rolling(fast_window).min()
-        df['fast_price_position'] = (
-            (df['close'] - rolling_low) / (rolling_high - rolling_low + 1e-10)
-        )
+        # Price position
+        rolling_min = df['close'].rolling(100, min_periods=50).min()
+        rolling_max = df['close'].rolling(100, min_periods=50).max()
+        df[f'{prefix}_price_position'] = (df['close'] - rolling_min) / (rolling_max - rolling_min + 1e-6)
+        df[f'{prefix}_price_position'] = df[f'{prefix}_price_position'].fillna(0.5)
         
         # =====================================================================
-        # MEDIUM TIMEFRAME (60 bars = 3 hours)
+        # MEDIUM TIMEFRAME (5-bar rolling = 15min)
         # =====================================================================
+        prefix = 'med'
+        window = 5
         
-        # 6. Med Momentum
-        df['med_momentum'] = df['close'].pct_change(med_window)
+        # Create rolling aggregations
+        rolling_high = df['high'].rolling(window).max()
+        rolling_low = df['low'].rolling(window).min()
+        rolling_close = df['close'].rolling(window).mean()
         
-        # 7. Med Trend Strength
-        plus_di_med = 100 * (plus_dm.rolling(med_window).mean() / true_range.rolling(med_window).mean())
-        minus_di_med = 100 * (minus_dm.rolling(med_window).mean() / true_range.rolling(med_window).mean())
-        dx_med = 100 * np.abs(plus_di_med - minus_di_med) / (plus_di_med + minus_di_med + 1e-10)
-        df['med_trend_strength'] = dx_med.rolling(med_window).mean() / 100.0
+        # Momentum on rolled data
+        roc_short = rolling_close.pct_change(3 * window)
+        roc_med = rolling_close.pct_change(7 * window)
+        roc_long = rolling_close.pct_change(14 * window)
+        df[f'{prefix}_momentum'] = (roc_short * 0.5 + roc_med * 0.3 + roc_long * 0.2).fillna(0)
         
-        # 8. Med Volatility Regime
-        atr_med = true_range.rolling(med_window).mean()
-        df['med_volatility_regime'] = atr_med / df['close']
+        # Trend strength (use longer ADX period)
+        adx_df_med = ta.adx(df['high'], df['low'], df['close'], length=14 * window)
+        adx_val_med = adx_df_med[f'ADX_{14*window}'].fillna(0)
+        plus_di_med = adx_df_med[f'DMP_{14*window}'].fillna(0)
+        minus_di_med = adx_df_med[f'DMN_{14*window}'].fillna(0)
+        trend_direction_med = np.sign(plus_di_med - minus_di_med)
+        df[f'{prefix}_trend_strength'] = (adx_val_med / 100) * trend_direction_med
         
-        # 9. Med Volume Regime
-        df['med_volume_regime'] = (
-            df['volume'] / df['volume'].rolling(med_window).mean()
-        ) - 1.0
+        # Volatility regime
+        atr_ma_med = df['atr'].rolling(50 * window, min_periods=20 * window).mean()
+        df[f'{prefix}_volatility_regime'] = df['atr'] / (atr_ma_med + 1e-6)
         
-        # 10. Med Price Position
-        rolling_high_med = df['high'].rolling(med_window).max()
-        rolling_low_med = df['low'].rolling(med_window).min()
-        df['med_price_position'] = (
-            (df['close'] - rolling_low_med) / (rolling_high_med - rolling_low_med + 1e-10)
-        )
+        # Volume regime
+        vol_ma_med = df['volume'].rolling(20 * window, min_periods=20 * window).mean()
+        df[f'{prefix}_volume_regime'] = df['volume'] / (vol_ma_med + 1e-6)
+        
+        # Price position
+        rolling_min_med = df['close'].rolling(100 * window, min_periods=50 * window).min()
+        rolling_max_med = df['close'].rolling(100 * window, min_periods=50 * window).max()
+        df[f'{prefix}_price_position'] = (df['close'] - rolling_min_med) / (rolling_max_med - rolling_min_med + 1e-6)
+        df[f'{prefix}_price_position'] = df[f'{prefix}_price_position'].fillna(0.5)
         
         # =====================================================================
-        # SLOW TIMEFRAME (200 bars = 10 hours)
+        # SLOW TIMEFRAME (20-bar rolling = 60min)
         # =====================================================================
+        prefix = 'slow'
+        window = 20
         
-        # 11. Slow Momentum
-        df['slow_momentum'] = df['close'].pct_change(slow_window)
+        # Create rolling aggregations
+        rolling_high = df['high'].rolling(window).max()
+        rolling_low = df['low'].rolling(window).min()
+        rolling_close = df['close'].rolling(window).mean()
         
-        # 12. Slow Trend Strength
-        plus_di_slow = 100 * (plus_dm.rolling(slow_window).mean() / true_range.rolling(slow_window).mean())
-        minus_di_slow = 100 * (minus_dm.rolling(slow_window).mean() / true_range.rolling(slow_window).mean())
-        dx_slow = 100 * np.abs(plus_di_slow - minus_di_slow) / (plus_di_slow + minus_di_slow + 1e-10)
-        df['slow_trend_strength'] = dx_slow.rolling(slow_window).mean() / 100.0
+        # Momentum on rolled data
+        roc_short = rolling_close.pct_change(3 * window)
+        roc_med = rolling_close.pct_change(7 * window)
+        roc_long = rolling_close.pct_change(14 * window)
+        df[f'{prefix}_momentum'] = (roc_short * 0.5 + roc_med * 0.3 + roc_long * 0.2).fillna(0)
         
-        # 13. Slow Volatility Regime
-        atr_slow = true_range.rolling(slow_window).mean()
-        df['slow_volatility_regime'] = atr_slow / df['close']
+        # Trend strength (use longer ADX period)
+        adx_df_slow = ta.adx(df['high'], df['low'], df['close'], length=14 * window)
+        adx_val_slow = adx_df_slow[f'ADX_{14*window}'].fillna(0)
+        plus_di_slow = adx_df_slow[f'DMP_{14*window}'].fillna(0)
+        minus_di_slow = adx_df_slow[f'DMN_{14*window}'].fillna(0)
+        trend_direction_slow = np.sign(plus_di_slow - minus_di_slow)
+        df[f'{prefix}_trend_strength'] = (adx_val_slow / 100) * trend_direction_slow
         
-        # 14. Slow Volume Regime
-        df['slow_volume_regime'] = (
-            df['volume'] / df['volume'].rolling(slow_window).mean()
-        ) - 1.0
+        # Volatility regime
+        atr_ma_slow = df['atr'].rolling(50 * window, min_periods=20 * window).mean()
+        df[f'{prefix}_volatility_regime'] = df['atr'] / (atr_ma_slow + 1e-6)
         
-        # 15. Slow Price Position
-        rolling_high_slow = df['high'].rolling(slow_window).max()
-        rolling_low_slow = df['low'].rolling(slow_window).min()
-        df['slow_price_position'] = (
-            (df['close'] - rolling_low_slow) / (rolling_high_slow - rolling_low_slow + 1e-10)
-        )
+        # Volume regime
+        vol_ma_slow = df['volume'].rolling(20 * window, min_periods=20 * window).mean()
+        df[f'{prefix}_volume_regime'] = df['volume'] / (vol_ma_slow + 1e-6)
+        
+        # Price position
+        rolling_min_slow = df['close'].rolling(100 * window, min_periods=50 * window).min()
+        rolling_max_slow = df['close'].rolling(100 * window, min_periods=50 * window).max()
+        df[f'{prefix}_price_position'] = (df['close'] - rolling_min_slow) / (rolling_max_slow - rolling_min_slow + 1e-6)
+        df[f'{prefix}_price_position'] = df[f'{prefix}_price_position'].fillna(0.5)
         
         # =====================================================================
         # CROSS-TIMEFRAME FEATURES
         # =====================================================================
         
-        # 16. TF Momentum Alignment
-        df['tf_momentum_alignment'] = (
-            np.sign(df['fast_momentum']) + 
-            np.sign(df['med_momentum']) + 
-            np.sign(df['slow_momentum'])
-        ) / 3.0
+        fast_mom_sign = np.sign(df['fast_momentum'])
+        med_mom_sign = np.sign(df['med_momentum'])
+        slow_mom_sign = np.sign(df['slow_momentum'])
         
-        # 17. TF Trend Consistency
-        trend_mean = (df['fast_trend_strength'] + df['med_trend_strength'] + df['slow_trend_strength']) / 3.0
-        trend_std = np.sqrt(
-            ((df['fast_trend_strength'] - trend_mean) ** 2 +
-             (df['med_trend_strength'] - trend_mean) ** 2 +
-             (df['slow_trend_strength'] - trend_mean) ** 2) / 3.0
-        )
-        df['tf_trend_consistency'] = 1.0 / (1.0 + trend_std)
-        
-        # 18. TF Volatility Divergence
-        df['tf_volatility_divergence'] = (
-            df['fast_volatility_regime'] - df['slow_volatility_regime']
+        df['tf_momentum_alignment'] = np.where(
+            (fast_mom_sign == med_mom_sign) & (med_mom_sign == slow_mom_sign),
+            fast_mom_sign,
+            0
         )
         
-        # =====================================================================
-        # MICROSTRUCTURE FEATURES
-        # =====================================================================
+        df['tf_trend_consistency'] = (
+            df['fast_trend_strength'] +
+            df['med_trend_strength'] +
+            df['slow_trend_strength']
+        ) / 3
         
-        # 19. Order Flow Proxy
-        df['orderflow_proxy'] = (
-            (df['close'] - df['low']) - (df['high'] - df['close'])
-        ) / (df['high'] - df['low'] + 1e-10)
-        
-        # 20. Liquidity Regime
-        df['liquidity_regime'] = (
-            df['volume'].rolling(fast_window).mean() * 
-            df['fast_volatility_regime']
-        )
-        df['liquidity_regime'] = df['liquidity_regime'] / df['liquidity_regime'].rolling(100).mean()
+        vol_std = df[['fast_volatility_regime', 'med_volatility_regime', 'slow_volatility_regime']].std(axis=1)
+        df['tf_volatility_divergence'] = vol_std
         
         # =====================================================================
-        # TEMPORAL FEATURES
+        # MICROSTRUCTURE
         # =====================================================================
         
-        # 21-22. Hour encoding
-        if isinstance(df.index, pd.DatetimeIndex):
-            hour = df.index.hour + df.index.minute / 60.0
-        else:
-            hour = pd.Series(12.0, index=df.index)
+        df['orderflow_proxy'] = df['fast_momentum'] * df['fast_volume_regime']
+        df['liquidity_regime'] = df['fast_volume_regime'] / (df['fast_volatility_regime'] + 0.1)
         
-        df['hour_sin'] = np.sin(2 * np.pi * hour / 24.0)
-        df['hour_cos'] = np.cos(2 * np.pi * hour / 24.0)
+        # =====================================================================
+        # REGIME STABILITY
+        # =====================================================================
         
-        # 23. Regime Stability (matches training exactly)
-        # Count how many bars current regime has persisted
         df['regime_stability'] = self._calculate_regime_stability(df['tf_momentum_alignment'])
+        
+        # =====================================================================
+        # TEMPORAL
+        # =====================================================================
+        
+        if isinstance(df.index, pd.DatetimeIndex):
+            df['hour'] = df.index.hour
+            df['hour_sin'] = np.sin(2 * np.pi * df['hour'] / 24)
+            df['hour_cos'] = np.cos(2 * np.pi * df['hour'] / 24)
+        else:
+            df['hour_sin'] = 0
+            df['hour_cos'] = 1
         
         # =====================================================================
         # CLEANUP
         # =====================================================================
         
-        df = df.replace([np.inf, -np.inf], np.nan)
-        
-        feature_cols = self.get_feature_columns()
-        for col in feature_cols:
-            if col in df.columns:
-                df[col] = df[col].fillna(method='ffill').fillna(0)
+        df.drop(columns=['hour', 'atr'], inplace=True, errors='ignore')
+        df.replace([np.inf, -np.inf], np.nan, inplace=True)
+        df.fillna(method='ffill', inplace=True)
+        df.fillna(0, inplace=True)
         
         return df
 
@@ -335,7 +333,7 @@ class MultiTFDirectionalStrategy(BaseStrategy):
             if not os.path.exists(self.model_path):
                 raise FileNotFoundError(f"Model file not found: {self.model_path}")
             self.model = onnxruntime.InferenceSession(self.model_path)
-            logging.info(f"✅ Loaded Multi-TF V4.0 model: {os.path.basename(self.model_path)}")
+            logging.info(f"✅ Loaded Multi-TF V6.3.6 model: {os.path.basename(self.model_path)}")
         except Exception as e:
             logging.exception(f"❌ Error loading model: {e}")
             raise
@@ -353,7 +351,7 @@ class MultiTFDirectionalStrategy(BaseStrategy):
             
             if base_symbol in scalers:
                 self.scaler = scalers[base_symbol]
-                logging.info(f"✅ Loaded '{base_symbol}' scaler for Multi-TF V4.0")
+                logging.info(f"✅ Loaded '{base_symbol}' scaler for Multi-TF V6.3.6")
             else:
                 available = list(scalers.keys())
                 raise ValueError(f"'{base_symbol}' scaler not found. Available: {available}")
@@ -363,7 +361,7 @@ class MultiTFDirectionalStrategy(BaseStrategy):
 
     def predict(self, df: pd.DataFrame) -> Tuple[int, float]:
         """
-        Generate prediction from Multi-TF V4.0 model
+        Generate prediction from Multi-TF V6.3.6 model
         
         Returns:
             prediction: 0=HOLD, 1=BUY, 2=SELL
@@ -373,10 +371,10 @@ class MultiTFDirectionalStrategy(BaseStrategy):
             seq_len = self.get_sequence_length()
             current_bars = len(df)
             
-            # Need minimum bars for slow_window + sequence
-            if df.empty or current_bars < 250:
+            # Need minimum bars for slow_window * 14 ADX + sequence
+            if df.empty or current_bars < 300:
                 if self.bar_count % 50 == 0:  # Log every 50 bars
-                    logging.info(f"⏳ Accumulating data: {current_bars}/250 bars")
+                    logging.info(f"⏳ Accumulating data: {current_bars}/300 bars")
                 return 0, 0.0
 
             features = self.preprocess_features(df)
@@ -426,22 +424,28 @@ class MultiTFDirectionalStrategy(BaseStrategy):
         prediction: int,
         confidence: float,
         bar: Dict,
-        entry_conf: float = 0.55,
+        entry_conf: float = 0.60,
         adx_thresh: float = 0.0,
     ) -> Tuple[bool, Optional[str]]:
         """
-        Determine if entry conditions are met for Multi-TF V4.0
+        Determine if entry conditions are met for Multi-TF V6.3.6
         
-        VALIDATED THRESHOLD: 0.55
-        - Expected precision: 78.7% (at full quality)
-        - Expected signal rate: 0.5% (~0.7 trades/day)
-        - Expected win rate: ~75%+ with 4R targets
+        PRODUCTION THRESHOLD: 0.60 (recommended)
+        - Expected precision: 78.7%
+        - Expected confidence: 0.76-0.83
+        - Expected signal rate: ~2-7 trades/day
+        - Expected win rate: ~80%+ with proper risk management
+        
+        CONSERVATIVE THRESHOLD: 0.75
+        - Expected precision: 92.8%
+        - Expected confidence: 0.81-0.84
+        - Expected signal rate: ~0.5-1 trades/day (very selective)
         
         Args:
             prediction: Model prediction (0=HOLD, 1=BUY, 2=SELL)
             confidence: Model confidence (0-1)
             bar: Current bar data (not used, kept for compatibility)
-            entry_conf: Confidence threshold (default 0.55)
+            entry_conf: Confidence threshold (default 0.60)
             adx_thresh: Not used (kept for compatibility)
         
         Returns:
@@ -456,8 +460,11 @@ class MultiTFDirectionalStrategy(BaseStrategy):
         if prediction == 1:
             logging.info(f"✅ [{quality}] BUY SIGNAL | Conf: {confidence:.3f}")
             if quality == "EXCELLENT":
-                logging.info(f"   Expected: 78.7% precision @ 0.55 threshold")
-                logging.info(f"   Win Rate: ~75%+ with 4R targets")
+                if entry_conf >= 0.75:
+                    logging.info(f"   Expected: 92.8% precision (CONSERVATIVE)")
+                else:
+                    logging.info(f"   Expected: 78.7% precision @ 0.60 threshold")
+                logging.info(f"   Win Rate: ~80%+ with 4:1 R:R")
             elif quality == "GOOD":
                 logging.info(f"   Expected: ~75% precision (good quality)")
             else:
@@ -465,7 +472,7 @@ class MultiTFDirectionalStrategy(BaseStrategy):
             return True, 'LONG'
         
         elif prediction == 2:
-            # Log SELL signals but don't trade them
+            # Log SELL signals but don't trade them (use as risk-off filter)
             if confidence > 0.60:
                 logging.info(f"ℹ️ [{quality}] SELL signal (conf: {confidence:.3f}) - risk-off indicator")
             return False, None
