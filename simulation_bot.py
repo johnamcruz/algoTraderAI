@@ -234,6 +234,15 @@ class SimulationBot(TradingBot):
         """Get tick size for the contract."""
         return self.tick_size
     
+    async def _has_existing_position(self):
+        """
+        Check if there's an existing position using internal state.
+        
+        Returns:
+            bool: True if position exists, False otherwise
+        """
+        return self.in_position
+    
     def _log_entry(self, side, entry_price, stop_loss, profit_target):
         """Override base class to show timestamp and more details."""
         print("\n" + "="*70)
