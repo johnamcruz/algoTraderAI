@@ -17,6 +17,7 @@ from strategy_supertrend_pullback3 import SupertrendPullback3Strategy
 from strategy_multihorizon_directional import MultiHorizonDirectionalStrategy
 from strategy_mtf_directional import MultiTFDirectionalStrategy
 from strategy_ema import EMATransformerStrategy
+from strategy_flag_pennant import FlagPennantStrategy
 
 class StrategyFactory:
     """
@@ -35,7 +36,8 @@ class StrategyFactory:
         'ema_pullback': EmaPullbackStrategy,
         'multihorizon': MultiHorizonDirectionalStrategy,
         'mtf_directional': MultiTFDirectionalStrategy,
-        'ema': EMATransformerStrategy
+        'ema': EMATransformerStrategy,
+        'flag': FlagPennantStrategy
     }
     
     @classmethod
