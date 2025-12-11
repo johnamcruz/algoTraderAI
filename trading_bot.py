@@ -223,8 +223,8 @@ class RealTimeBot(TradingBot):
             bool: True if position exists, False otherwise
         """
         try:
-            # Call broker API to get current positions
-            positions_url = f"{self.base_url}/Position/list"
+            # Call broker API to get open positions
+            positions_url = f"{self.base_url}/Position/searchOpen"  # ✅ Correct endpoint
             headers = {'Authorization': f'Bearer {self.token}'}
             payload = {"accountId": self.account}
             
@@ -237,14 +237,21 @@ class RealTimeBot(TradingBot):
             response.raise_for_status()
             
             data = response.json()
+            
+            # Check if API call was successful
+            if not data.get('success', False):
+                error_msg = data.get('errorMessage', 'Unknown error')
+                logging.error(f"❌ Position check API error: {error_msg}")
+                return True  # Fail-safe
+            
             positions = data.get('positions', [])
             
             # Check if any position matches our contract
             for position in positions:
                 if position.get('contractId') == self.contract:
-                    net_pos = position.get('netPos', 0)
-                    if net_pos != 0:
-                        logging.info(f"📍 Existing position found: {net_pos} contracts")
+                    size = position.get('size', 0)  # ✅ Using 'size' field
+                    if size != 0:
+                        logging.info(f"📍 Existing position found: {size} contracts @ {position.get('averagePrice', 0):.2f}")
                         return True
             
             return False
