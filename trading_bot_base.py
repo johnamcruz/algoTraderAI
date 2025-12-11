@@ -172,6 +172,13 @@ class TradingBot(ABC):
             logging.info(f"AI: {pred_labels[prediction]} (Conf: {confidence:.2%}) ADX: {latest_bar.get('adx', 0):.1f}")
             
             if should_enter:
+                # ✅ CHECK FOR EXISTING POSITION BEFORE ENTERING
+                has_position = await self._has_existing_position()
+                if has_position:
+                    print("⚠️ SIGNAL IGNORED - Already in position")
+                    logging.info(f"{direction} signal ignored: Already in position")
+                    return
+                
                 close_price = latest_bar['close']
                 tick_size = self._get_tick_size()
                 
@@ -229,6 +236,19 @@ class TradingBot(ABC):
     @abstractmethod
     def _get_tick_size(self):
         """Get tick size for the contract. Must be implemented by subclass."""
+        pass
+
+    @abstractmethod
+    async def _has_existing_position(self):
+        """
+        Check if there's an existing position. Must be implemented by subclass.
+        
+        For SimBot: Check internal state (self.in_position)
+        For LiveBot: Call broker API to check actual positions
+        
+        Returns:
+            bool: True if position exists, False otherwise
+        """
         pass
 
     @abstractmethod

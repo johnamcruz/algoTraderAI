@@ -215,6 +215,45 @@ class RealTimeBot(TradingBot):
             return contract_details['tickSize']
         return 0.01  # Default fallback
 
+    async def _has_existing_position(self):
+        """
+        Check if there's an existing position by querying the broker API.
+        
+        Returns:
+            bool: True if position exists, False otherwise
+        """
+        try:
+            # Call broker API to get current positions
+            positions_url = f"{self.base_url}/Position/list"
+            headers = {'Authorization': f'Bearer {self.token}'}
+            payload = {"accountId": self.account}
+            
+            response = requests.post(
+                positions_url, 
+                headers=headers, 
+                json=payload, 
+                timeout=10
+            )
+            response.raise_for_status()
+            
+            data = response.json()
+            positions = data.get('positions', [])
+            
+            # Check if any position matches our contract
+            for position in positions:
+                if position.get('contractId') == self.contract:
+                    net_pos = position.get('netPos', 0)
+                    if net_pos != 0:
+                        logging.info(f"📍 Existing position found: {net_pos} contracts")
+                        return True
+            
+            return False
+            
+        except Exception as e:
+            logging.error(f"❌ Error checking positions: {e}")
+            # Fail-safe: Assume position exists to prevent duplicate orders
+            return True
+
     async def _close_and_print_bar(self):
         """Finalize current bar and run strategy."""
         if not self.current_bar:
