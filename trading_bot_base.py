@@ -195,20 +195,6 @@ class TradingBot(ABC):
                 close_price = latest_bar['close']
                 tick_size = self._get_tick_size()
 
-                # Scale risk budget up on high-confidence signals
-                HIGH_CONF_THRESHOLD = 0.90
-                effective_risk = (
-                    self.risk_amount * self.high_conf_multiplier
-                    if self.risk_amount and confidence >= HIGH_CONF_THRESHOLD
-                    else self.risk_amount
-                )
-                if self.risk_amount and confidence >= HIGH_CONF_THRESHOLD and self.high_conf_multiplier > 1.0:
-                    logging.info(
-                        f"⚡ High confidence ({confidence:.2%}) — risk scaled "
-                        f"${self.risk_amount:.0f} → ${effective_risk:.0f} "
-                        f"(×{self.high_conf_multiplier})"
-                    )
-
                 # Let the strategy provide its own stop/target (e.g. zone-based).
                 # Fall back to the bot's global stop_pts / target_pts if not provided.
                 strat_stop, strat_target = self.strategy.get_stop_target_pts(
@@ -216,6 +202,19 @@ class TradingBot(ABC):
                 )
                 stop_pts   = strat_stop   if strat_stop   is not None else self.stop_pts
                 target_pts = strat_target if strat_target is not None else self.target_pts
+
+                # On high-confidence signals, extend the target (same risk, larger reward).
+                HIGH_CONF_THRESHOLD = 0.90
+                if confidence >= HIGH_CONF_THRESHOLD and self.high_conf_multiplier > 1.0:
+                    extended_target = target_pts * self.high_conf_multiplier
+                    logging.info(
+                        f"⚡ High confidence ({confidence:.2%}) — target extended "
+                        f"{target_pts:.2f}pts → {extended_target:.2f}pts "
+                        f"(×{self.high_conf_multiplier}, risk unchanged)"
+                    )
+                    target_pts = extended_target
+
+                effective_risk = self.risk_amount
 
                 if stop_pts is None or target_pts is None:
                     logging.error(
