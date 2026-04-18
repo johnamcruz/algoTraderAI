@@ -3,6 +3,7 @@
 Base Trading Bot Class - Simplified for live trading
 """
 
+import math
 import logging
 import pandas as pd
 from collections import deque
@@ -24,11 +25,13 @@ class TradingBot(ABC):
         adx_thresh,
         stop_pts,
         target_pts,
-        enable_trailing_stop=False
+        enable_trailing_stop=False,
+        risk_amount=None
     ):
         """Initialize the trading bot base."""
         self.contract = contract
         self.size = size
+        self.risk_amount = risk_amount
         self.timeframe_minutes = int(timeframe_minutes)
         self.enable_trailing_stop = enable_trailing_stop
         
@@ -188,7 +191,8 @@ class TradingBot(ABC):
                     profit_target = close_price + self.target_pts
                     stop_ticks = -int(self.stop_pts / tick_size)
                     take_profit_ticks = int(self.target_pts / tick_size)
-                    
+                    size = self._calculate_size(stop_ticks)
+
                     # Pass data to subclass implementation
                     await self._place_order(
                         side=0,
@@ -196,7 +200,8 @@ class TradingBot(ABC):
                         stop_loss=stop_loss,
                         profit_target=profit_target,
                         stop_ticks=stop_ticks,
-                        take_profit_ticks=take_profit_ticks
+                        take_profit_ticks=take_profit_ticks,
+                        size=size
                     )
                     
                     print("="*40)
@@ -212,7 +217,8 @@ class TradingBot(ABC):
                     profit_target = close_price - self.target_pts
                     stop_ticks = int(self.stop_pts / tick_size)
                     take_profit_ticks = -int(self.target_pts / tick_size)
-                    
+                    size = self._calculate_size(stop_ticks)
+
                     # Pass data to subclass implementation
                     await self._place_order(
                         side=1,
@@ -220,7 +226,8 @@ class TradingBot(ABC):
                         stop_loss=stop_loss,
                         profit_target=profit_target,
                         stop_ticks=stop_ticks,
-                        take_profit_ticks=take_profit_ticks
+                        take_profit_ticks=take_profit_ticks,
+                        size=size
                     )
                     
                     print("="*40)
@@ -237,6 +244,18 @@ class TradingBot(ABC):
     def _get_tick_size(self):
         """Get tick size for the contract. Must be implemented by subclass."""
         pass
+
+    @abstractmethod
+    def _get_tick_value(self):
+        """Get dollar value per tick for the contract. Must be implemented by subclass."""
+        pass
+
+    def _calculate_size(self, sl_ticks):
+        """Return dynamic contract size based on risk_amount, or fall back to self.size."""
+        if self.risk_amount and sl_ticks != 0:
+            tick_value = self._get_tick_value()
+            return min(15, max(1, math.floor(self.risk_amount / (abs(sl_ticks) * tick_value))))
+        return self.size
 
     @abstractmethod
     async def _has_existing_position(self):

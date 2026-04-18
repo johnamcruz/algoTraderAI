@@ -30,15 +30,16 @@ class RealTimeBot(TradingBot):
         market_hub,
         base_url,
         account, 
-        contract, 
-        size, 
+        contract,
+        size,
         timeframe_minutes,
         strategy: BaseStrategy,
-        entry_conf, 
-        adx_thresh, 
+        entry_conf,
+        adx_thresh,
         stop_pts,
         target_pts,
-        enable_trailing_stop=False
+        enable_trailing_stop=False,
+        risk_amount=None
     ):
         """
         Initialize the real-time trading bot.
@@ -68,7 +69,8 @@ class RealTimeBot(TradingBot):
             adx_thresh=adx_thresh,
             stop_pts=stop_pts,
             target_pts=target_pts,
-            enable_trailing_stop=enable_trailing_stop
+            enable_trailing_stop=enable_trailing_stop,
+            risk_amount=risk_amount
         )
         
         # Real-time specific attributes
@@ -213,7 +215,14 @@ class RealTimeBot(TradingBot):
         contract_details = self.find_contract(self.contract)
         if contract_details and contract_details.get('tickSize'):
             return contract_details['tickSize']
-        return 0.01  # Default fallback
+        return 0.01
+
+    def _get_tick_value(self):
+        """Get dollar value per tick from contract details."""
+        contract_details = self.find_contract(self.contract)
+        if contract_details and contract_details.get('tickValue'):
+            return contract_details['tickValue']
+        return 0.50
 
     async def _has_existing_position(self):
         """
@@ -320,10 +329,10 @@ class RealTimeBot(TradingBot):
     # =========================================================
     # ORDER MANAGEMENT
     # =========================================================
-    async def _place_order(self, side, close_price, stop_loss, profit_target, stop_ticks, take_profit_ticks):
+    async def _place_order(self, side, close_price, stop_loss, profit_target, stop_ticks, take_profit_ticks, size):
         """
         Place order to broker immediately.
-        
+
         Args:
             side: 0 for LONG, 1 for SHORT
             close_price: Reference price (not used in live bot)
@@ -331,6 +340,7 @@ class RealTimeBot(TradingBot):
             profit_target: Profit target price (not used - calculated by broker from ticks)
             stop_ticks: Stop loss in ticks
             take_profit_ticks: Profit target in ticks
+            size: Number of contracts (dynamically calculated or static fallback)
         """
         order_url = f"{self.base_url}/Order/place"
         payload = {
@@ -338,7 +348,7 @@ class RealTimeBot(TradingBot):
             "contractId": self.contract,
             "type": 2,  # Market order
             "side": side,
-            "size": self.size,
+            "size": size,
             "stopLossBracket": {
                 "ticks": stop_ticks,
                 "type": 5 if self.enable_trailing_stop else 4

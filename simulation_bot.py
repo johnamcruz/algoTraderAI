@@ -17,6 +17,7 @@ import pandas as pd
 from datetime import datetime
 from strategy_base import BaseStrategy
 from trading_bot_base import TradingBot
+from bot_utils import TICK_VALUES
 
 CONTRACTS = {
     "CON.F.US.ENQ.Z25": "NQ",
@@ -42,7 +43,8 @@ class SimulationBot(TradingBot):
         profit_target=6000,
         max_loss_limit=3000,
         enable_trailing_stop=False,
-        simulation_days=None
+        simulation_days=None,
+        risk_amount=None
     ):
         """
         Initialize the simulation bot.
@@ -72,7 +74,8 @@ class SimulationBot(TradingBot):
             adx_thresh=adx_thresh,
             stop_pts=stop_pts,
             target_pts=target_pts,
-            enable_trailing_stop=enable_trailing_stop            
+            enable_trailing_stop=enable_trailing_stop,
+            risk_amount=risk_amount
         )
         
         # Simulation-specific attributes
@@ -84,6 +87,7 @@ class SimulationBot(TradingBot):
         
         # Pending entry system (sim bot only)
         self.pending_entry = None
+        self.current_trade_size = size
         
         # Track if we just entered this bar (prevents same-bar exit)
         self.just_entered_this_bar = False
@@ -175,37 +179,16 @@ class SimulationBot(TradingBot):
             raise
 
     def _points_to_dollars(self, points):
-        """
-        Convert points to dollars based on contract specifications.
-        For futures, typically: dollars = points * multiplier
-        
-        Args:
-            points: P&L in points
-            
-        Returns:
-            float: P&L in dollars
-        """
-        # Common multipliers: ES=50, NQ=20, RTY=50, YM=5
-        # Get contract symbol to determine multiplier
-        contract_symbol = CONTRACTS.get(self.contract, None)
-        
-        if contract_symbol == "NQ":
-            multiplier = 20  # NQ = $20 per point
-        elif contract_symbol == "ES":
-            multiplier = 50  # ES = $50 per point
-        elif contract_symbol == "RTY":
-            multiplier = 50  # RTY = $50 per point
-        elif contract_symbol == "YM":
-            multiplier = 5   # YM = $5 per point
-        else:
-            multiplier = 50  # Default multiplier
-            
-        return points * multiplier
+        """Convert points to dollars using tick value / tick size ratio, scaled by position size."""
+        tick_value = self._get_tick_value()
+        tick_size = self._get_tick_size()
+        point_value = tick_value / tick_size if tick_size != 0 else 1.0
+        return points * point_value * self.current_trade_size
 
-    async def _place_order(self, side, close_price, stop_loss, profit_target, stop_ticks, take_profit_ticks):
+    async def _place_order(self, side, close_price, stop_loss, profit_target, stop_ticks, take_profit_ticks, size):
         """
         Store order data in pending_entry for execution on next bar.
-        
+
         Args:
             side: 0 for LONG, 1 for SHORT
             close_price: Reference price (bar close where signal generated)
@@ -213,9 +196,10 @@ class SimulationBot(TradingBot):
             profit_target: Profit target price
             stop_ticks: Stop loss in ticks
             take_profit_ticks: Profit target in ticks
+            size: Number of contracts
         """
         direction = 'LONG' if side == 0 else 'SHORT'
-        
+
         # Store for next bar entry
         self.pending_entry = {
             'direction': direction,
@@ -223,7 +207,8 @@ class SimulationBot(TradingBot):
             'stop_loss': stop_loss,
             'profit_target': profit_target,
             'stop_ticks': stop_ticks,
-            'take_profit_ticks': take_profit_ticks
+            'take_profit_ticks': take_profit_ticks,
+            'size': size,
         }
         
         # Log the pending order
@@ -233,6 +218,19 @@ class SimulationBot(TradingBot):
     def _get_tick_size(self):
         """Get tick size for the contract."""
         return self.tick_size
+
+    def _get_tick_value(self):
+        """Get dollar value per tick using hardcoded lookup (API not available in sim)."""
+        parts = self.contract.upper().split('.')
+        # Full contract ID format: CON.F.US.{SYMBOL}.{EXPIRY} — segment index 3 is the product code
+        if len(parts) >= 4:
+            symbol = parts[3]
+            if symbol in TICK_VALUES:
+                return TICK_VALUES[symbol]
+        # Simple symbol format: "MNQ", "NQ", etc.
+        if self.contract.upper() in TICK_VALUES:
+            return TICK_VALUES[self.contract.upper()]
+        return 0.50
     
     async def _has_existing_position(self):
         """
@@ -324,6 +322,7 @@ class SimulationBot(TradingBot):
                 self.stop_loss = stop_loss
                 self.profit_target = profit_target
                 self.entry_timestamp = timestamp
+                self.current_trade_size = self.pending_entry.get('size', self.size)
                 
                 # Mark that we just entered this bar (prevents same-bar exit)
                 self.just_entered_this_bar = True
