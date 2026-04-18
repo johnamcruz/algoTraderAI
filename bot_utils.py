@@ -16,6 +16,27 @@ import requests
 MARKET_HUB = "https://rtc.topstepx.com/hubs/market"
 BASE_URL = "https://api.topstepx.com/api"
 
+# Dollar value per tick for each instrument — used as sim fallback when API is unavailable.
+# Keys cover both common symbols (MNQ, NQ) and the product codes used in contract IDs (ENQ, EP).
+TICK_VALUES = {
+    "MNQ":  0.50,   # Micro E-mini Nasdaq-100
+    "MES":  1.25,   # Micro E-mini S&P 500
+    "MGC":  1.00,   # Micro Gold
+    "SIL":  5.00,   # Micro Silver
+    "MCL":  1.00,   # Micro Crude Oil
+    "MCLE": 1.00,   # Micro Crude Oil (contract ID code)
+    "NQ":   5.00,
+    "ENQ":  5.00,   # E-mini Nasdaq (contract ID code)
+    "ES":   12.50,
+    "EP":   12.50,  # E-mini S&P (contract ID code)
+    "GC":   10.00,
+    "GCE":  10.00,  # Gold (contract ID code)
+    "SI":   25.00,
+    "SIE":  25.00,  # Silver (contract ID code)
+    "CL":   10.00,
+    "CLE":  10.00,  # Crude Oil (contract ID code)
+}
+
 # This map is ESSENTIAL because naming is not consistent.
 MICRO_TO_MINI_MAP = {
     # Indices

@@ -81,6 +81,8 @@ Example Usage (Backtesting):
                         help='Full contract ID (e.g., CON.F.US.ENQ.Z25) or symbol for backtesting')
     parser.add_argument('--size', type=int, default=1,
                         help='Trade size (number of contracts)')
+    parser.add_argument('--risk_amount', type=float, default=None,
+                        help='Max dollars to risk per trade for dynamic sizing (overrides --size when set)')
     parser.add_argument('--username', type=str,
                         help='TopstepX username (not required for backtesting)')
     parser.add_argument('--apikey', type=str,
@@ -206,6 +208,7 @@ def run_backtesting(config):
             max_loss_limit=config.get("max_loss", 3000),
             enable_trailing_stop=config.get("enable_trailing_stop", False),
             simulation_days=config.get("simulation_days"),
+            risk_amount=config.get("risk_amount"),
         )
         
         # Run simulation
@@ -261,7 +264,8 @@ def run_live_trading(config):
             adx_thresh=config["adx_thresh"],
             stop_pts=config["stop_pts"],
             target_pts=config["target_pts"],
-            enable_trailing_stop=config.get("enable_trailing_stop", False)
+            enable_trailing_stop=config.get("enable_trailing_stop", False),
+            risk_amount=config.get("risk_amount"),
         )
         
         asyncio.run(bot.run())
