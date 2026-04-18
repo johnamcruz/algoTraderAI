@@ -178,10 +178,10 @@ class CISDOTEStrategy(BaseStrategy):
         df = self._compute_ffm_features(df)
 
         # ── Run incremental CISD detector on latest bar ──
-        self._update_cisd_detector(df)
+        self._update_cisd_detector(df, self._bar_count)
 
         # ── Build 28-element CISD feature vector for latest bar ──
-        self._latest_cisd_features = self._build_cisd_feature_vector(df)
+        self._latest_cisd_features = self._build_cisd_feature_vector(df, self._bar_count)
 
         self._bar_count += 1
         return df
@@ -247,9 +247,9 @@ class CISDOTEStrategy(BaseStrategy):
 
             # ── Temporal inputs ──
             # time_of_day: normalized 0-1 position within 24h
-            hours = df.index[-seq_len:].hour if hasattr(df.index, 'hour') \
+            hours = df.index[-seq_len:].hour.values if hasattr(df.index, 'hour') \
                     else np.zeros(seq_len)
-            mins  = df.index[-seq_len:].minute if hasattr(df.index, 'minute') \
+            mins  = df.index[-seq_len:].minute.values if hasattr(df.index, 'minute') \
                     else np.zeros(seq_len)
             tod   = ((hours * 60 + mins) / 1440.0).astype(np.float32)
             time_of_day = tod.reshape(1, seq_len)
@@ -378,7 +378,7 @@ class CISDOTEStrategy(BaseStrategy):
         logging.info(
             f"  CISD stop/target | dir={direction} entry={entry_price:.2f} "
             f"zone=[{fb:.2f}–{ft:.2f}] stop={stop_pts:.2f}pts "
-            f"target={target_pts:.2f}pts (R:R {rr:.2f})"
+            f"target={target_pts:.2f}pts (R:R 2.00)"
         )
         return stop_pts, target_pts
 
@@ -549,14 +549,14 @@ class CISDOTEStrategy(BaseStrategy):
 
     # ── Incremental CISD Detector ─────────────────────────────────
 
-    def _update_cisd_detector(self, df: pd.DataFrame):
+    def _update_cisd_detector(self, df: pd.DataFrame, abs_bar: int):
         """
-        Incremental CISD detector — processes only the latest bar.
-        Maintains rolling state across calls (pivots, sweeps, zones).
-        Matches training labeler logic exactly.
+        Incremental CISD detector using absolute bar indices for all stored state.
+        Pivots, pots, and zones store absolute bar numbers so state stays valid
+        across calls where df is a sliding window (rel index is always 0..n-1).
         """
         n   = len(df)
-        bar = n - 1   # latest bar index (0-based in current df)
+        bar = n - 1   # df-relative index of current bar (always n-1)
 
         if bar < 1:
             return
@@ -566,79 +566,77 @@ class CISDOTEStrategy(BaseStrategy):
         l_arr = df['low'].values
         c_arr = df['close'].values
 
+        def to_rel(abs_idx):
+            """Convert absolute bar index to df-relative, clamped to window start."""
+            return max(0, n - 1 - abs_bar + abs_idx)
+
         # ── Track sweep (wick-throughs) ──
-        # Check if any tracked pivot high was wicked through
         new_ph = []
-        for ph_price, ph_idx in self._pivot_highs:
-            if (bar - ph_idx) >= EXPIRY_BARS:
+        for ph_price, ph_abs in self._pivot_highs:
+            if (abs_bar - ph_abs) >= EXPIRY_BARS:
                 continue
             if h_arr[bar] >= ph_price:
-                self._last_wicked_high = bar
+                self._last_wicked_high = abs_bar
             else:
-                new_ph.append((ph_price, ph_idx))
+                new_ph.append((ph_price, ph_abs))
         self._pivot_highs = deque(new_ph, maxlen=200)
 
         new_pl = []
-        for pl_price, pl_idx in self._pivot_lows:
-            if (bar - pl_idx) >= EXPIRY_BARS:
+        for pl_price, pl_abs in self._pivot_lows:
+            if (abs_bar - pl_abs) >= EXPIRY_BARS:
                 continue
             if l_arr[bar] <= pl_price:
-                self._last_wicked_low = bar
+                self._last_wicked_low = abs_bar
             else:
-                new_pl.append((pl_price, pl_idx))
+                new_pl.append((pl_price, pl_abs))
         self._pivot_lows = deque(new_pl, maxlen=200)
 
-        # ── Pivot confirmation (SWING_PERIOD bars after formation) ──
-        # A pivot high at bar i is confirmed at bar i+SWING_PERIOD
-        confirm_ph_bar = bar - SWING_PERIOD
-        if confirm_ph_bar >= 1:
-            # Check if bar at confirm_ph_bar is a pivot high
-            window = h_arr[max(0, confirm_ph_bar - SWING_PERIOD):
-                           min(n, confirm_ph_bar + SWING_PERIOD + 1)]
+        # ── Pivot confirmation ──
+        confirm_rel = bar - SWING_PERIOD
+        confirm_abs = abs_bar - SWING_PERIOD
+        if confirm_rel >= 1:
+            window = h_arr[max(0, confirm_rel - SWING_PERIOD):
+                           min(n, confirm_rel + SWING_PERIOD + 1)]
             if len(window) == 2 * SWING_PERIOD + 1:
-                center = h_arr[confirm_ph_bar]
+                center = h_arr[confirm_rel]
                 if center == window.max() and (window == center).sum() == 1:
-                    self._pivot_highs.append((center, confirm_ph_bar))
+                    self._pivot_highs.append((center, confirm_abs))
 
-        confirm_pl_bar = bar - SWING_PERIOD
-        if confirm_pl_bar >= 1:
-            window = l_arr[max(0, confirm_pl_bar - SWING_PERIOD):
-                           min(n, confirm_pl_bar + SWING_PERIOD + 1)]
+            window = l_arr[max(0, confirm_rel - SWING_PERIOD):
+                           min(n, confirm_rel + SWING_PERIOD + 1)]
             if len(window) == 2 * SWING_PERIOD + 1:
-                center = l_arr[confirm_pl_bar]
+                center = l_arr[confirm_rel]
                 if center == window.min() and (window == center).sum() == 1:
-                    self._pivot_lows.append((center, confirm_pl_bar))
+                    self._pivot_lows.append((center, confirm_abs))
 
-        # ── Track potential CISD candles ──
-        # Bear potential: prev bar bearish, this bar bullish
+        # ── Track potential CISD candles (stored with absolute indices) ──
         if c_arr[bar-1] < o_arr[bar-1] and c_arr[bar] > o_arr[bar]:
-            self._bear_pots.append((o_arr[bar], bar))
-        # Bull potential: prev bar bullish, this bar bearish
+            self._bear_pots.append((o_arr[bar], abs_bar))
         if c_arr[bar-1] > o_arr[bar-1] and c_arr[bar] < o_arr[bar]:
-            self._bull_pots.append((o_arr[bar], bar))
+            self._bull_pots.append((o_arr[bar], abs_bar))
 
-        # Expire old potentials
         self._bear_pots = deque(
-            [(p, b) for p, b in self._bear_pots if bar - b < EXPIRY_BARS],
+            [(p, b) for p, b in self._bear_pots if abs_bar - b < EXPIRY_BARS],
             maxlen=20)
         self._bull_pots = deque(
-            [(p, b) for p, b in self._bull_pots if bar - b < EXPIRY_BARS],
+            [(p, b) for p, b in self._bull_pots if abs_bar - b < EXPIRY_BARS],
             maxlen=20)
 
-        # ── P/D midpoint for P/D filter ──
+        # ── P/D midpoint ──
         rng_h = h_arr[max(0, bar - HTF_RANGE_BARS):bar].max() if bar > 0 else h_arr[bar]
         rng_l = l_arr[max(0, bar - HTF_RANGE_BARS):bar].min() if bar > 0 else l_arr[bar]
         pd_mid = (rng_h + rng_l) / 2.0
 
         # ── Bearish CISD check ──
-        cisd_bar = None
-        cisd_dir = None
-        new_bear = deque(maxlen=20)
-        for pot_price, pot_bar in self._bear_pots:
+        cisd_zone = None
+        cisd_dir  = None
+        new_bear  = deque(maxlen=20)
+        for pot_price, pot_abs in self._bear_pots:
+            pot_rel = to_rel(pot_abs)
             if c_arr[bar] < pot_price:
-                highest_c = c_arr[pot_bar:bar+1].max()
+                highest_c = c_arr[pot_rel:bar+1].max()
                 top_level = 0.0
-                idx = pot_bar + 1
+                idx = pot_rel + 1
                 while idx < bar and c_arr[idx] < o_arr[idx]:
                     top_level = o_arr[idx]; idx += 1
                 if top_level > 0 and (top_level - pot_price) > 0:
@@ -646,28 +644,23 @@ class CISDOTEStrategy(BaseStrategy):
                     if ratio > TOLERANCE:
                         full_range = h_arr[bar] - l_arr[bar]
                         body = abs(c_arr[bar] - o_arr[bar])
-                        if full_range > 0:
-                            br = body / full_range
-                            cs = (h_arr[bar] - c_arr[bar]) / full_range
-                        else:
-                            br = cs = 0.0
+                        br = body / full_range if full_range > 0 else 0.0
+                        cs = (h_arr[bar] - c_arr[bar]) / full_range if full_range > 0 else 0.0
                         if br >= DISP_BODY_RATIO and cs >= DISP_CLOSE_STR:
-                            # Valid bearish CISD
                             in_premium = c_arr[bar] > pd_mid
-                            had_sweep  = (bar - self._last_wicked_high) <= LIQUIDITY_LOOKBACK
-                            # P/D filter: bears must be in premium OR had_sweep
+                            had_sweep  = (abs_bar - self._last_wicked_high) <= LIQUIDITY_LOOKBACK
                             if in_premium or had_sweep:
-                                h_max = h_arr[pot_bar:bar+1].max()
+                                h_max = h_arr[pot_rel:bar+1].max()
                                 diff  = h_max - l_arr[bar]
                                 ft = h_max - diff * FIB_1
                                 fb = h_max - diff * FIB_2
                                 fib_top = max(ft, fb); fib_bot = min(ft, fb)
                                 if fib_top > fib_bot:
-                                    cisd_bar = {
+                                    cisd_zone = {
                                         'is_bullish':    False,
                                         'fib_top':       fib_top,
                                         'fib_bot':       fib_bot,
-                                        'created_bar':   bar,
+                                        'created_bar':   abs_bar,
                                         'had_sweep':     had_sweep,
                                         'disp_strength': float(ratio),
                                         'signal_fired':  False,
@@ -676,17 +669,18 @@ class CISDOTEStrategy(BaseStrategy):
                                     cisd_dir = 'BEAR'
                             break
             else:
-                new_bear.append((pot_price, pot_bar))
+                new_bear.append((pot_price, pot_abs))
         if cisd_dir is None:
             self._bear_pots = new_bear
 
         # ── Bullish CISD check ──
         new_bull = deque(maxlen=20)
-        for pot_price, pot_bar in self._bull_pots:
+        for pot_price, pot_abs in self._bull_pots:
+            pot_rel = to_rel(pot_abs)
             if c_arr[bar] > pot_price and cisd_dir is None:
-                lowest_c     = c_arr[pot_bar:bar+1].min()
+                lowest_c     = c_arr[pot_rel:bar+1].min()
                 bottom_level = 0.0
-                idx = pot_bar + 1
+                idx = pot_rel + 1
                 while idx < bar and c_arr[idx] > o_arr[idx]:
                     bottom_level = o_arr[idx]; idx += 1
                 if bottom_level > 0 and (pot_price - bottom_level) > 0:
@@ -694,27 +688,23 @@ class CISDOTEStrategy(BaseStrategy):
                     if ratio > TOLERANCE:
                         full_range = h_arr[bar] - l_arr[bar]
                         body = abs(c_arr[bar] - o_arr[bar])
-                        if full_range > 0:
-                            br = body / full_range
-                            cs = (c_arr[bar] - l_arr[bar]) / full_range
-                        else:
-                            br = cs = 0.0
+                        br = body / full_range if full_range > 0 else 0.0
+                        cs = (c_arr[bar] - l_arr[bar]) / full_range if full_range > 0 else 0.0
                         if br >= DISP_BODY_RATIO and cs >= DISP_CLOSE_STR:
                             in_discount = c_arr[bar] <= pd_mid
-                            had_sweep   = (bar - self._last_wicked_low) <= LIQUIDITY_LOOKBACK
-                            # P/D filter: longs must be in discount
-                            if in_discount:
-                                l_min = l_arr[pot_bar:bar+1].min()
+                            had_sweep   = (abs_bar - self._last_wicked_low) <= LIQUIDITY_LOOKBACK
+                            if in_discount or had_sweep:
+                                l_min = l_arr[pot_rel:bar+1].min()
                                 diff  = h_arr[bar] - l_min
                                 ft = l_min + diff * FIB_1
                                 fb = l_min + diff * FIB_2
                                 fib_top = max(ft, fb); fib_bot = min(ft, fb)
                                 if fib_top > fib_bot:
-                                    cisd_bar = {
+                                    cisd_zone = {
                                         'is_bullish':    True,
                                         'fib_top':       fib_top,
                                         'fib_bot':       fib_bot,
-                                        'created_bar':   bar,
+                                        'created_bar':   abs_bar,
                                         'had_sweep':     had_sweep,
                                         'disp_strength': float(ratio),
                                         'signal_fired':  False,
@@ -723,13 +713,12 @@ class CISDOTEStrategy(BaseStrategy):
                                     cisd_dir = 'BULL'
                             break
             else:
-                new_bull.append((pot_price, pot_bar))
+                new_bull.append((pot_price, pot_abs))
         if cisd_dir is None:
             self._bull_pots = new_bull
 
-        # Register new zone
-        if cisd_bar is not None:
-            self._active_zones.appendleft(cisd_bar)
+        if cisd_zone is not None:
+            self._active_zones.appendleft(cisd_zone)
 
         # ── Update active zones ──
         current_close = c_arr[bar]
@@ -739,53 +728,43 @@ class CISDOTEStrategy(BaseStrategy):
 
         surviving = []
         for z in self._active_zones:
-            # Expire
-            if bar - z['created_bar'] > ZONE_MAX_BARS:
+            if abs_bar - z['created_bar'] > ZONE_MAX_BARS:
                 continue
-            # Invalidate
             if z['is_bullish'] and current_close < z['fib_bot']:
                 continue
             if not z['is_bullish'] and current_close > z['fib_top']:
                 continue
-            # Zone touch
             if current_low <= z['fib_top'] and current_high >= z['fib_bot']:
                 z['entered_zone'] = True
             surviving.append(z)
 
         self._active_zones = deque(surviving, maxlen=20)
 
-        # ── Check for OTE entry on latest bar ──
+        # ── Check for OTE entry ──
         for z in self._active_zones:
             if z.get('signal_fired'):
                 continue
             if not z['entered_zone']:
                 continue
-            if bar <= z['created_bar']:
+            if abs_bar <= z['created_bar']:
                 continue
-
             touched = current_low <= z['fib_top'] and current_high >= z['fib_bot']
             if not touched:
                 continue
-
-            # Confirming directional close
-            if z['is_bullish']:
-                confirmed = current_close > current_open
-            else:
-                confirmed = current_close < current_open
-
+            confirmed = current_close > current_open if z['is_bullish'] \
+                        else current_close < current_open
             if confirmed:
-                # Mark as entered — model will decide whether to trade
                 z['signal_fired'] = True
-                z['entry_bar']    = bar
+                z['entry_bar']    = abs_bar
                 z['entry_price']  = current_close
                 logging.debug(
                     f"  OTE zone touched | {'BULL' if z['is_bullish'] else 'BEAR'} "
                     f"zone [{z['fib_bot']:.2f}–{z['fib_top']:.2f}] "
                     f"entry @ {current_close:.2f}"
                 )
-                break  # one entry per bar
+                break
 
-    def _build_cisd_feature_vector(self, df: pd.DataFrame) -> Optional[np.ndarray]:
+    def _build_cisd_feature_vector(self, df: pd.DataFrame, abs_bar: int) -> Optional[np.ndarray]:
         """
         Build the 28-element CISD feature vector for the latest bar.
         Returns None if no active zone exists.
@@ -857,7 +836,7 @@ class CISDOTEStrategy(BaseStrategy):
 
         ft = z['fib_top']; fb = z['fib_bot']
         zh = ft - fb; zh_safe = max(zh, 1e-6)
-        age = float(bar - z['created_bar'])
+        age = float(abs_bar - z['created_bar'])
 
         # HTF trend from structure feature
         htf_trend = float(df['str_structure_state'].iloc[-1]) \
@@ -968,12 +947,11 @@ class CISDOTEStrategy(BaseStrategy):
             # FFM-pulled features (7)
             np.clip(ffm('sess_dist_from_vwap'), -10, 10), # 21: ffm_sess_dist_from_vwap
             np.clip(ffm('str_structure_state'), -5, 5),   # 22: ffm_str_structure_state
-            np.clip(ffm('ret_acceleration') * 100, -10, 10), # 23: ffm_ret_acceleration
+            np.clip(ffm('ret_acceleration'), -10, 10),       # 23: ffm_ret_acceleration
             np.clip(ffm('vty_atr_of_atr'), -5, 5),        # 24: ffm_vty_atr_of_atr
             np.clip(ffm('sess_dist_from_open'), -10, 10), # 25: ffm_sess_dist_from_open
-            np.clip(ffm('ret_momentum_10') * 100, -10, 10), # 26: ffm_ret_momentum_10
-            np.clip(ffm('vol_delta_proxy') * 0.001 if 'vol_delta_proxy' in df.columns
-                    else 0.0, -10, 10),                   # 27: ffm_vol_delta_proxy
+            np.clip(ffm('ret_momentum_10'), -10, 10),      # 26: ffm_ret_momentum_10
+            np.clip(ffm('vol_delta_proxy'), -1, 1),        # 27: ffm_vol_delta_proxy
         ], dtype=np.float32)
 
         features = np.nan_to_num(features, nan=0.0, posinf=5.0, neginf=-5.0)
