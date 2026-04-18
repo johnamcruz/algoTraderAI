@@ -306,17 +306,35 @@ class SimulationBot(TradingBot):
             # ========================================
             # STEP 1: Process pending entry from PREVIOUS bar
             # ========================================
+            if self.pending_entry and self.in_position:
+                self.pending_entry = None  # discard stale signal — already in position
+
             if self.pending_entry and not self.in_position:
                 # Signal was generated on bar[i-1] using close price
                 # Now entering at bar[i] OPEN (realistic timing)
                 entry_price = open_price
-                
+
                 direction = self.pending_entry['direction']
-                
+
                 # Adjust stop/target based on actual entry vs reference
                 # (in case open gapped significantly from yesterday's close)
                 price_diff = entry_price - self.pending_entry['reference_price']
-                
+
+                # Cancel entry if the gap exceeds the original stop distance —
+                # price has moved so far that the zone is no longer valid.
+                stored_stop_pts = abs(self.pending_entry['stop_loss'] - self.pending_entry['reference_price'])
+                if stored_stop_pts > 0 and abs(price_diff) > stored_stop_pts:
+                    logging.info(
+                        f"⚠️ Pending {direction} entry cancelled — gap {price_diff:+.2f}pts "
+                        f"exceeds stop {stored_stop_pts:.2f}pts (zone no longer valid)"
+                    )
+                    self.pending_entry = None
+
+            if self.pending_entry and not self.in_position:
+                entry_price = open_price
+                direction = self.pending_entry['direction']
+                price_diff = entry_price - self.pending_entry['reference_price']
+
                 if direction == 'LONG':
                     stop_loss = self.pending_entry['stop_loss'] + price_diff
                     profit_target = self.pending_entry['profit_target'] + price_diff
@@ -346,60 +364,88 @@ class SimulationBot(TradingBot):
             # Skip exit check if we just entered this bar
             # ========================================
             if self.in_position and not self.just_entered_this_bar:
-                # Determine which price was hit first (simple heuristic)
-                if abs(open_price - low) < abs(open_price - high):
-                    prices_to_check = [low, high, close]
-                else:
-                    prices_to_check = [high, low, close]
-                
-                for price in prices_to_check:
-                    exit_price, exit_reason = self._check_exit_conditions(price)
-                    
-                    if exit_reason:
-                        pnl_points = self._calculate_pnl(exit_price)
-                        pnl_dollars = self._points_to_dollars(pnl_points)
-                        
-                        self.total_pnl += pnl_points
-                        self.total_pnl_dollars += pnl_dollars
-                        self.trade_count += 1
-                        
-                        if pnl_points > 0:
-                            self.winning_trades += 1
-                        else:
-                            self.losing_trades += 1
-                        
-                        # Log trade
-                        trade_info = {
-                            'entry_timestamp': self.entry_timestamp,
-                            'exit_timestamp': timestamp,
-                            'type': self.position_type,
-                            'entry': self.entry_price,
-                            'exit': exit_price,
-                            'reason': exit_reason,
-                            'pnl_points': pnl_points,
-                            'pnl_dollars': pnl_dollars,
-                            'total_pnl_dollars': self.total_pnl_dollars
-                        }
-                        self.trades_log.append(trade_info)
-                        
-                        self._log_exit(exit_price, exit_reason, pnl_points)
-                        self.strategy.on_trade_exit(exit_reason)
-                        self._reset_position_state()
-                        
-                        # Check profit/loss limits
-                        if self.session_profit_target is not None and self.total_pnl_dollars >= self.session_profit_target:
-                            print("\n" + "="*50)
-                            print(f"🎉 PROFIT TARGET REACHED: ${self.total_pnl_dollars:,.2f}")
-                            print("="*50 + "\n")
-                            return True
-                        
-                        if self.max_loss_limit is not None and self.total_pnl_dollars <= -self.max_loss_limit:
-                            print("\n" + "="*50)
-                            print(f"⛔ MAX LOSS LIMIT HIT: ${self.total_pnl_dollars:,.2f}")
-                            print("="*50 + "\n")
-                            return True
-                        
-                        break  # Exit processed
+                # ── Gap-open check: if bar opens past stop/target, fill at open ──
+                exit_price, exit_reason = None, None
+                if self.position_type == 'LONG':
+                    if open_price <= self.stop_loss:
+                        exit_price, exit_reason = open_price, 'STOP_LOSS'
+                    elif open_price >= self.profit_target:
+                        exit_price, exit_reason = open_price, 'PROFIT_TARGET'
+                elif self.position_type == 'SHORT':
+                    if open_price >= self.stop_loss:
+                        exit_price, exit_reason = open_price, 'STOP_LOSS'
+                    elif open_price <= self.profit_target:
+                        exit_price, exit_reason = open_price, 'PROFIT_TARGET'
+
+                # ── Intrabar check: wick (high/low) touches stop or target ──
+                if not exit_reason:
+                    if self.position_type == 'LONG':
+                        stop_hit   = low  <= self.stop_loss
+                        target_hit = high >= self.profit_target
+                        if stop_hit and target_hit:
+                            # Both levels touched — assume the one closer to open happened first
+                            if abs(open_price - low) <= abs(open_price - high):
+                                exit_price, exit_reason = self.stop_loss,     'STOP_LOSS'
+                            else:
+                                exit_price, exit_reason = self.profit_target, 'PROFIT_TARGET'
+                        elif stop_hit:
+                            exit_price, exit_reason = self.stop_loss,     'STOP_LOSS'
+                        elif target_hit:
+                            exit_price, exit_reason = self.profit_target, 'PROFIT_TARGET'
+                    elif self.position_type == 'SHORT':
+                        stop_hit   = high >= self.stop_loss
+                        target_hit = low  <= self.profit_target
+                        if stop_hit and target_hit:
+                            if abs(open_price - high) <= abs(open_price - low):
+                                exit_price, exit_reason = self.stop_loss,     'STOP_LOSS'
+                            else:
+                                exit_price, exit_reason = self.profit_target, 'PROFIT_TARGET'
+                        elif stop_hit:
+                            exit_price, exit_reason = self.stop_loss,     'STOP_LOSS'
+                        elif target_hit:
+                            exit_price, exit_reason = self.profit_target, 'PROFIT_TARGET'
+
+                if exit_reason:
+                    pnl_points = self._calculate_pnl(exit_price)
+                    pnl_dollars = self._points_to_dollars(pnl_points)
+
+                    self.total_pnl += pnl_points
+                    self.total_pnl_dollars += pnl_dollars
+                    self.trade_count += 1
+
+                    if pnl_points > 0:
+                        self.winning_trades += 1
+                    else:
+                        self.losing_trades += 1
+
+                    trade_info = {
+                        'entry_timestamp': self.entry_timestamp,
+                        'exit_timestamp': timestamp,
+                        'type': self.position_type,
+                        'entry': self.entry_price,
+                        'exit': exit_price,
+                        'reason': exit_reason,
+                        'pnl_points': pnl_points,
+                        'pnl_dollars': pnl_dollars,
+                        'total_pnl_dollars': self.total_pnl_dollars
+                    }
+                    self.trades_log.append(trade_info)
+
+                    self._log_exit(exit_price, exit_reason, pnl_points)
+                    self.strategy.on_trade_exit(exit_reason)
+                    self._reset_position_state()
+
+                    if self.session_profit_target is not None and self.total_pnl_dollars >= self.session_profit_target:
+                        print("\n" + "="*50)
+                        print(f"🎉 PROFIT TARGET REACHED: ${self.total_pnl_dollars:,.2f}")
+                        print("="*50 + "\n")
+                        return True
+
+                    if self.max_loss_limit is not None and self.total_pnl_dollars <= -self.max_loss_limit:
+                        print("\n" + "="*50)
+                        print(f"⛔ MAX LOSS LIMIT HIT: ${self.total_pnl_dollars:,.2f}")
+                        print("="*50 + "\n")
+                        return True
             
             # Reset the just_entered flag at end of bar processing
             self.just_entered_this_bar = False

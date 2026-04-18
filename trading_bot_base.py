@@ -301,7 +301,9 @@ class TradingBot(ABC):
         (caller should skip the signal in that case).
         """
         risk = effective_risk if effective_risk is not None else self.risk_amount
-        if risk and sl_ticks != 0:
+        if risk:
+            if sl_ticks == 0:
+                return 0  # can't size a 0-tick stop; caller will skip the signal
             tick_value = self._get_tick_value()
             raw = math.floor(risk / (abs(sl_ticks) * tick_value))
             return min(15, raw)  # 0 is preserved — caller handles it
