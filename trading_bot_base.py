@@ -27,11 +27,13 @@ class TradingBot(ABC):
         target_pts=None,
         enable_trailing_stop=False,
         risk_amount=None,
+        high_conf_multiplier=1.0,
     ):
         """Initialize the trading bot base."""
         self.contract = contract
         self.size = size
         self.risk_amount = risk_amount
+        self.high_conf_multiplier = high_conf_multiplier
         self.timeframe_minutes = int(timeframe_minutes)
         self.enable_trailing_stop = enable_trailing_stop
         
@@ -185,6 +187,20 @@ class TradingBot(ABC):
                 close_price = latest_bar['close']
                 tick_size = self._get_tick_size()
 
+                # Scale risk budget up on high-confidence signals
+                HIGH_CONF_THRESHOLD = 0.90
+                effective_risk = (
+                    self.risk_amount * self.high_conf_multiplier
+                    if self.risk_amount and confidence >= HIGH_CONF_THRESHOLD
+                    else self.risk_amount
+                )
+                if self.risk_amount and confidence >= HIGH_CONF_THRESHOLD and self.high_conf_multiplier > 1.0:
+                    logging.info(
+                        f"⚡ High confidence ({confidence:.2%}) — risk scaled "
+                        f"${self.risk_amount:.0f} → ${effective_risk:.0f} "
+                        f"(×{self.high_conf_multiplier})"
+                    )
+
                 # Let the strategy provide its own stop/target (e.g. zone-based).
                 # Fall back to the bot's global stop_pts / target_pts if not provided.
                 strat_stop, strat_target = self.strategy.get_stop_target_pts(
@@ -205,7 +221,7 @@ class TradingBot(ABC):
                     profit_target    = close_price + target_pts
                     stop_ticks       = -int(stop_pts / tick_size)
                     take_profit_ticks = int(target_pts / tick_size)
-                    size = self._calculate_size(stop_ticks)
+                    size = self._calculate_size(stop_ticks, effective_risk)
 
                     if size == 0:
                         logging.info(
@@ -237,7 +253,7 @@ class TradingBot(ABC):
                     profit_target    = close_price - target_pts
                     stop_ticks       = int(stop_pts / tick_size)
                     take_profit_ticks = -int(target_pts / tick_size)
-                    size = self._calculate_size(stop_ticks)
+                    size = self._calculate_size(stop_ticks, effective_risk)
 
                     if size == 0:
                         logging.info(
@@ -277,15 +293,17 @@ class TradingBot(ABC):
         """Get dollar value per tick for the contract. Must be implemented by subclass."""
         pass
 
-    def _calculate_size(self, sl_ticks):
+    def _calculate_size(self, sl_ticks, effective_risk=None):
         """
         Return dynamic contract size based on risk_amount, or fall back to self.size.
+        Pass effective_risk to override risk_amount (e.g. for high-confidence scaling).
         Returns 0 when risk_amount is set but even 1 contract would exceed it
         (caller should skip the signal in that case).
         """
-        if self.risk_amount and sl_ticks != 0:
+        risk = effective_risk if effective_risk is not None else self.risk_amount
+        if risk and sl_ticks != 0:
             tick_value = self._get_tick_value()
-            raw = math.floor(self.risk_amount / (abs(sl_ticks) * tick_value))
+            raw = math.floor(risk / (abs(sl_ticks) * tick_value))
             return min(15, raw)  # 0 is preserved — caller handles it
         return self.size
 
