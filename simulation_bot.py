@@ -150,16 +150,15 @@ class SimulationBot(TradingBot):
                 logging.warning("⚠️ No volume column found - using 0 for all bars")
                 df['volume'] = 0
             
-            # Convert timestamp to datetime
-            # Handle both Unix timestamps (numbers) and datetime strings
+            # Convert timestamp to datetime then localize to US/Eastern (matching training)
             if df[time_col].dtype in ['int64', 'float64']:
-                # Unix timestamp - convert from seconds
                 logging.info(f"📅 Detected Unix timestamp format in '{time_col}' column, converting...")
-                df['timestamp'] = pd.to_datetime(df[time_col], unit='s')
+                df['timestamp'] = pd.to_datetime(df[time_col], unit='s', utc=True)
             else:
-                # String format - parse as datetime
                 logging.info(f"📅 Parsing datetime strings from '{time_col}' column...")
-                df['timestamp'] = pd.to_datetime(df[time_col])
+                df['timestamp'] = pd.to_datetime(df[time_col], utc=True)
+            df['timestamp'] = df['timestamp'].dt.tz_convert('America/New_York')
+            logging.info("🕐 Timestamps converted to America/New_York (ET)")
             
             # Keep only necessary columns
             df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
