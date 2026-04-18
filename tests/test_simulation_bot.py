@@ -1,9 +1,16 @@
 """Unit tests for SimulationBot."""
 
+import asyncio
 import pytest
 import pandas as pd
+from datetime import datetime, timezone
 from simulation_bot import SimulationBot
 from tests.helpers import MockStrategy
+
+
+def run(coro):
+    """Run a coroutine synchronously (avoids pytest-asyncio dependency)."""
+    return asyncio.get_event_loop().run_until_complete(coro)
 
 
 # ─────────────────────────────────────────────
@@ -208,3 +215,233 @@ class TestLoadCsvData:
         )
         df = bot._load_csv_data()
         assert set(df.columns) == {"open", "high", "low", "close", "volume"}
+
+
+# ─────────────────────────────────────────────
+# _process_bar exit logic
+# ─────────────────────────────────────────────
+
+class TestProcessBarExitLogic:
+    """
+    Tests for gap-open and intrabar exit logic in _process_bar.
+
+    Each test puts the bot into an open position, then feeds a single
+    bar and checks that the correct exit price / reason / position-reset
+    behaviour is produced.
+    """
+
+    TS = datetime(2025, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
+
+    def _put_in_position(self, bot, position_type, entry, stop, target):
+        bot.in_position = True
+        bot.position_type = position_type
+        bot.entry_price = entry
+        bot.stop_loss = stop
+        bot.profit_target = target
+        bot.entry_timestamp = self.TS
+        bot.just_entered_this_bar = False
+        bot.current_trade_size = 1
+
+    def _make_bar(self, open_, high, low, close):
+        return (self.TS, {"open": open_, "high": high, "low": low,
+                          "close": close, "volume": 100})
+
+    # ── Gap-open exits ────────────────────────────────────────────────
+
+    def test_long_gap_open_above_target_exits_at_target(self, sim_bot):
+        """Bar opens above TP → limit order fills at TP, not gap price."""
+        self._put_in_position(sim_bot, "LONG", entry=100, stop=95, target=110)
+        bar = self._make_bar(open_=115, high=120, low=114, close=117)
+        run(sim_bot._process_bar(bar, 1, 10))
+        trade = sim_bot.trades_log[-1]
+        assert trade["exit"] == 110
+        assert trade["reason"] == "PROFIT_TARGET"
+        assert not sim_bot.in_position
+
+    def test_long_gap_open_below_stop_exits_at_open(self, sim_bot):
+        """Bar gaps below stop → market-fill slippage, exits at open."""
+        self._put_in_position(sim_bot, "LONG", entry=100, stop=95, target=110)
+        bar = self._make_bar(open_=92, high=93, low=90, close=91)
+        run(sim_bot._process_bar(bar, 1, 10))
+        trade = sim_bot.trades_log[-1]
+        assert trade["exit"] == 92
+        assert trade["reason"] == "STOP_LOSS"
+
+    def test_short_gap_open_below_target_exits_at_target(self, sim_bot):
+        """SHORT gap below TP → limit order fills at TP."""
+        self._put_in_position(sim_bot, "SHORT", entry=100, stop=105, target=90)
+        bar = self._make_bar(open_=85, high=86, low=84, close=85)
+        run(sim_bot._process_bar(bar, 1, 10))
+        trade = sim_bot.trades_log[-1]
+        assert trade["exit"] == 90
+        assert trade["reason"] == "PROFIT_TARGET"
+
+    def test_short_gap_open_above_stop_exits_at_open(self, sim_bot):
+        """SHORT gap above stop → market-fill slippage."""
+        self._put_in_position(sim_bot, "SHORT", entry=100, stop=105, target=90)
+        bar = self._make_bar(open_=108, high=110, low=107, close=109)
+        run(sim_bot._process_bar(bar, 1, 10))
+        trade = sim_bot.trades_log[-1]
+        assert trade["exit"] == 108
+        assert trade["reason"] == "STOP_LOSS"
+
+    # ── Intrabar wick exits ───────────────────────────────────────────
+
+    def test_long_wick_hits_target(self, sim_bot):
+        """High touches TP → exits at profit_target."""
+        self._put_in_position(sim_bot, "LONG", entry=100, stop=95, target=110)
+        bar = self._make_bar(open_=101, high=111, low=100, close=105)
+        run(sim_bot._process_bar(bar, 1, 10))
+        trade = sim_bot.trades_log[-1]
+        assert trade["exit"] == 110
+        assert trade["reason"] == "PROFIT_TARGET"
+
+    def test_long_wick_hits_stop(self, sim_bot):
+        """Low touches stop → exits at stop_loss."""
+        self._put_in_position(sim_bot, "LONG", entry=100, stop=95, target=110)
+        bar = self._make_bar(open_=99, high=101, low=94, close=98)
+        run(sim_bot._process_bar(bar, 1, 10))
+        trade = sim_bot.trades_log[-1]
+        assert trade["exit"] == 95
+        assert trade["reason"] == "STOP_LOSS"
+
+    def test_short_wick_hits_target(self, sim_bot):
+        """Low touches TP on SHORT → exits at profit_target."""
+        self._put_in_position(sim_bot, "SHORT", entry=100, stop=105, target=90)
+        bar = self._make_bar(open_=99, high=100, low=89, close=95)
+        run(sim_bot._process_bar(bar, 1, 10))
+        trade = sim_bot.trades_log[-1]
+        assert trade["exit"] == 90
+        assert trade["reason"] == "PROFIT_TARGET"
+
+    def test_short_wick_hits_stop(self, sim_bot):
+        """High touches stop on SHORT → exits at stop_loss."""
+        self._put_in_position(sim_bot, "SHORT", entry=100, stop=105, target=90)
+        bar = self._make_bar(open_=101, high=106, low=100, close=102)
+        run(sim_bot._process_bar(bar, 1, 10))
+        trade = sim_bot.trades_log[-1]
+        assert trade["exit"] == 105
+        assert trade["reason"] == "STOP_LOSS"
+
+    # ── Intrabar close-based exits ────────────────────────────────────
+
+    def test_long_close_above_target_exits_at_close(self, sim_bot):
+        """Bar closes above TP but wick never reached TP → exits at close."""
+        self._put_in_position(sim_bot, "LONG", entry=100, stop=95, target=110)
+        # high=109 (below 110), close=112 (above 110)
+        bar = self._make_bar(open_=101, high=109, low=100, close=112)
+        run(sim_bot._process_bar(bar, 1, 10))
+        trade = sim_bot.trades_log[-1]
+        assert trade["exit"] == 112
+        assert trade["reason"] == "PROFIT_TARGET"
+
+    def test_short_close_below_target_exits_at_close(self, sim_bot):
+        """Bar closes below TP but wick never reached TP → exits at close."""
+        self._put_in_position(sim_bot, "SHORT", entry=100, stop=105, target=90)
+        # low=91 (above 90), close=88 (below 90)
+        bar = self._make_bar(open_=99, high=100, low=91, close=88)
+        run(sim_bot._process_bar(bar, 1, 10))
+        trade = sim_bot.trades_log[-1]
+        assert trade["exit"] == 88
+        assert trade["reason"] == "PROFIT_TARGET"
+
+    # ── Both stop and target hit same bar ────────────────────────────
+
+    def test_long_stop_wins_when_open_closer_to_low(self, sim_bot):
+        """Open near low → stop hit first."""
+        self._put_in_position(sim_bot, "LONG", entry=100, stop=95, target=110)
+        # open=96 (2 pts above stop=95, 14 pts below target=110)
+        bar = self._make_bar(open_=96, high=111, low=94, close=105)
+        run(sim_bot._process_bar(bar, 1, 10))
+        trade = sim_bot.trades_log[-1]
+        assert trade["reason"] == "STOP_LOSS"
+        assert trade["exit"] == 95
+
+    def test_long_target_wins_when_open_closer_to_high(self, sim_bot):
+        """Open near high → target hit first, exits at profit_target."""
+        self._put_in_position(sim_bot, "LONG", entry=100, stop=95, target=110)
+        # open=109 (1 pt below target=110, 14 pts above stop=95)
+        bar = self._make_bar(open_=109, high=111, low=94, close=105)
+        run(sim_bot._process_bar(bar, 1, 10))
+        trade = sim_bot.trades_log[-1]
+        assert trade["reason"] == "PROFIT_TARGET"
+        assert trade["exit"] == 110
+
+    def test_short_stop_wins_when_open_closer_to_high(self, sim_bot):
+        """SHORT: open near high → stop hit first."""
+        self._put_in_position(sim_bot, "SHORT", entry=100, stop=105, target=90)
+        # open=104 (1 pt below stop=105, 14 pts above target=90)
+        bar = self._make_bar(open_=104, high=106, low=89, close=95)
+        run(sim_bot._process_bar(bar, 1, 10))
+        trade = sim_bot.trades_log[-1]
+        assert trade["reason"] == "STOP_LOSS"
+
+    def test_short_target_wins_when_open_closer_to_low(self, sim_bot):
+        """SHORT: open near low → target hit first."""
+        self._put_in_position(sim_bot, "SHORT", entry=100, stop=105, target=90)
+        # open=91 (1 pt above target=90, 14 pts below stop=105)
+        bar = self._make_bar(open_=91, high=106, low=89, close=95)
+        run(sim_bot._process_bar(bar, 1, 10))
+        trade = sim_bot.trades_log[-1]
+        assert trade["reason"] == "PROFIT_TARGET"
+
+    # ── No exit ───────────────────────────────────────────────────────
+
+    def test_no_exit_when_bar_is_inside_range(self, sim_bot):
+        """Bar that doesn't touch stop or target leaves position open."""
+        self._put_in_position(sim_bot, "LONG", entry=100, stop=95, target=110)
+        bar = self._make_bar(open_=101, high=105, low=98, close=103)
+        before = len(sim_bot.trades_log)
+        run(sim_bot._process_bar(bar, 1, 10))
+        assert len(sim_bot.trades_log) == before
+        assert sim_bot.in_position
+
+    def test_no_exit_when_no_position(self, sim_bot):
+        """Bar processed with no open position logs nothing."""
+        bar = self._make_bar(open_=101, high=105, low=98, close=103)
+        before = len(sim_bot.trades_log)
+        run(sim_bot._process_bar(bar, 1, 10))
+        assert len(sim_bot.trades_log) == before
+
+    # ── Same-bar entry guard ──────────────────────────────────────────
+
+    def test_same_bar_entry_does_not_exit(self, sim_bot):
+        """Position entered this bar must not exit on the same bar."""
+        self._put_in_position(sim_bot, "LONG", entry=100, stop=95, target=110)
+        sim_bot.just_entered_this_bar = True
+        # Bar would normally trigger stop
+        bar = self._make_bar(open_=99, high=101, low=94, close=98)
+        before = len(sim_bot.trades_log)
+        run(sim_bot._process_bar(bar, 1, 10))
+        assert len(sim_bot.trades_log) == before
+        assert sim_bot.in_position
+
+    # ── PnL accounting ────────────────────────────────────────────────
+
+    def test_winning_trade_increments_winning_count(self, sim_bot):
+        self._put_in_position(sim_bot, "LONG", entry=100, stop=95, target=110)
+        bar = self._make_bar(open_=101, high=111, low=100, close=105)
+        run(sim_bot._process_bar(bar, 1, 10))
+        assert sim_bot.winning_trades == 1
+        assert sim_bot.losing_trades == 0
+
+    def test_losing_trade_increments_losing_count(self, sim_bot):
+        self._put_in_position(sim_bot, "LONG", entry=100, stop=95, target=110)
+        bar = self._make_bar(open_=99, high=101, low=94, close=98)
+        run(sim_bot._process_bar(bar, 1, 10))
+        assert sim_bot.losing_trades == 1
+        assert sim_bot.winning_trades == 0
+
+    def test_pnl_points_correct_for_long_win(self, sim_bot):
+        """LONG TP hit: PnL = profit_target - entry."""
+        self._put_in_position(sim_bot, "LONG", entry=100, stop=95, target=110)
+        bar = self._make_bar(open_=101, high=111, low=100, close=105)
+        run(sim_bot._process_bar(bar, 1, 10))
+        assert sim_bot.trades_log[-1]["pnl_points"] == pytest.approx(10.0)
+
+    def test_pnl_points_correct_for_long_loss(self, sim_bot):
+        """LONG stop hit: PnL = stop_loss - entry (negative)."""
+        self._put_in_position(sim_bot, "LONG", entry=100, stop=95, target=110)
+        bar = self._make_bar(open_=99, high=101, low=94, close=98)
+        run(sim_bot._process_bar(bar, 1, 10))
+        assert sim_bot.trades_log[-1]["pnl_points"] == pytest.approx(-5.0)
