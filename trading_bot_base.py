@@ -134,9 +134,12 @@ class TradingBot(ABC):
             # Convert historical bars to DataFrame
             df = pd.DataFrame(list(self.historical_bars))
             
-            # Convert timestamp column to datetime and set as index
+            # Convert timestamp column to datetime, normalize to ET, and set as index
             if 'timestamp' in df.columns:
                 df['timestamp'] = pd.to_datetime(df['timestamp'])
+                if df['timestamp'].dt.tz is None:
+                    df['timestamp'] = df['timestamp'].dt.tz_localize('UTC')
+                df['timestamp'] = df['timestamp'].dt.tz_convert('America/New_York')
                 df.set_index('timestamp', inplace=True)
             
             logging.debug(f"🔍 Running AI prediction with {len(df)} bars")
