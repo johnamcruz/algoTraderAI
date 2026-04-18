@@ -369,40 +369,50 @@ class SimulationBot(TradingBot):
                     if open_price <= self.stop_loss:
                         exit_price, exit_reason = open_price, 'STOP_LOSS'
                     elif open_price >= self.profit_target:
-                        exit_price, exit_reason = open_price, 'PROFIT_TARGET'
+                        # TP is a limit order — gap fills at the TP level, not the open
+                        exit_price, exit_reason = self.profit_target, 'PROFIT_TARGET'
                 elif self.position_type == 'SHORT':
                     if open_price >= self.stop_loss:
                         exit_price, exit_reason = open_price, 'STOP_LOSS'
                     elif open_price <= self.profit_target:
-                        exit_price, exit_reason = open_price, 'PROFIT_TARGET'
+                        # TP is a limit order — gap fills at the TP level, not the open
+                        exit_price, exit_reason = self.profit_target, 'PROFIT_TARGET'
 
-                # ── Intrabar check: wick (high/low) touches stop or target ──
+                # ── Intrabar check: wick or close touches stop or target ──
                 if not exit_reason:
                     if self.position_type == 'LONG':
-                        stop_hit   = low  <= self.stop_loss
-                        target_hit = high >= self.profit_target
+                        stop_hit        = low  <= self.stop_loss
+                        wick_target_hit = high >= self.profit_target
+                        close_target_hit = close >= self.profit_target
+                        target_hit      = wick_target_hit or close_target_hit
                         if stop_hit and target_hit:
                             # Both levels touched — assume the one closer to open happened first
                             if abs(open_price - low) <= abs(open_price - high):
                                 exit_price, exit_reason = self.stop_loss,     'STOP_LOSS'
                             else:
-                                exit_price, exit_reason = self.profit_target, 'PROFIT_TARGET'
+                                exit_price = self.profit_target if wick_target_hit else close
+                                exit_reason = 'PROFIT_TARGET'
                         elif stop_hit:
                             exit_price, exit_reason = self.stop_loss,     'STOP_LOSS'
                         elif target_hit:
-                            exit_price, exit_reason = self.profit_target, 'PROFIT_TARGET'
+                            exit_price = self.profit_target if wick_target_hit else close
+                            exit_reason = 'PROFIT_TARGET'
                     elif self.position_type == 'SHORT':
-                        stop_hit   = high >= self.stop_loss
-                        target_hit = low  <= self.profit_target
+                        stop_hit        = high >= self.stop_loss
+                        wick_target_hit = low  <= self.profit_target
+                        close_target_hit = close <= self.profit_target
+                        target_hit      = wick_target_hit or close_target_hit
                         if stop_hit and target_hit:
                             if abs(open_price - high) <= abs(open_price - low):
                                 exit_price, exit_reason = self.stop_loss,     'STOP_LOSS'
                             else:
-                                exit_price, exit_reason = self.profit_target, 'PROFIT_TARGET'
+                                exit_price = self.profit_target if wick_target_hit else close
+                                exit_reason = 'PROFIT_TARGET'
                         elif stop_hit:
                             exit_price, exit_reason = self.stop_loss,     'STOP_LOSS'
                         elif target_hit:
-                            exit_price, exit_reason = self.profit_target, 'PROFIT_TARGET'
+                            exit_price = self.profit_target if wick_target_hit else close
+                            exit_reason = 'PROFIT_TARGET'
 
                 if exit_reason:
                     pnl_points = self._calculate_pnl(exit_price)
