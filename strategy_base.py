@@ -121,6 +121,10 @@ class BaseStrategy(ABC):
         """
         pass
     
+    def on_trade_exit(self, reason: str):
+        """Called by the bot when a trade exits. Override to react to exit events."""
+        pass
+
     def get_stop_target_pts(
         self,
         df: pd.DataFrame,

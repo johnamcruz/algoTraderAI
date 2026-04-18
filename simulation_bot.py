@@ -81,7 +81,7 @@ class SimulationBot(TradingBot):
         # Simulation-specific attributes
         self.csv_path = csv_path
         self.tick_size = tick_size
-        self.profit_target = profit_target
+        self.session_profit_target = profit_target  # dollar P&L target (not trade take-profit price)
         self.max_loss_limit = max_loss_limit
         self.simulation_days = simulation_days
         
@@ -107,7 +107,7 @@ class SimulationBot(TradingBot):
         print(f"📈 Trade Params: Entry={self.entry_conf}, ADX={self.adx_thresh}, "
               f"Stop={self.stop_pts} pts, Target={self.target_pts} pts")
         print(f"📊 Strategy: {self.strategy.__class__.__name__}")
-        print(f"💰 Profit Target: ${self.profit_target:,.2f} | Max Loss: ${self.max_loss_limit:,.2f}")
+        print(f"💰 Profit Target: ${self.session_profit_target:,.2f} | Max Loss: ${self.max_loss_limit:,.2f}")
 
     def _load_csv_data(self):
         """
@@ -374,10 +374,11 @@ class SimulationBot(TradingBot):
                         self.trades_log.append(trade_info)
                         
                         self._log_exit(exit_price, exit_reason, pnl_points)
+                        self.strategy.on_trade_exit(exit_reason)
                         self._reset_position_state()
                         
                         # Check profit/loss limits
-                        if self.profit_target is not None and self.total_pnl_dollars >= self.profit_target:
+                        if self.session_profit_target is not None and self.total_pnl_dollars >= self.session_profit_target:
                             print("\n" + "="*50)
                             print(f"🎉 PROFIT TARGET REACHED: ${self.total_pnl_dollars:,.2f}")
                             print("="*50 + "\n")
@@ -452,8 +453,8 @@ class SimulationBot(TradingBot):
         print(f"\nTotal P&L (Points): {self.total_pnl:.2f}")
         print(f"Total P&L (Dollars): ${self.total_pnl_dollars:,.2f}")
                 
-        if self.profit_target is not None and self.total_pnl_dollars >= self.profit_target:
-            print(f"🎉 Profit Target Hit: {self.total_pnl_dollars:,.2f} USD (Target: {self.profit_target:,.2f} USD)")
+        if self.session_profit_target is not None and self.total_pnl_dollars >= self.session_profit_target:
+            print(f"🎉 Profit Target Hit: {self.total_pnl_dollars:,.2f} USD (Target: {self.session_profit_target:,.2f} USD)")
         
         if self.max_loss_limit is not None and self.total_pnl_dollars <= -self.max_loss_limit:
             print(f"🛑 Max Loss Limit Hit: {self.total_pnl_dollars:,.2f} USD (Limit: -{self.max_loss_limit:,.2f} USD)")

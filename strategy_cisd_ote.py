@@ -346,6 +346,14 @@ class CISDOTEStrategy(BaseStrategy):
 
         return False, None
 
+    def on_trade_exit(self, reason: str):
+        """Clear all active zones after a stop loss — zone is invalidated."""
+        if reason == 'STOP_LOSS':
+            self._active_zones.clear()
+            self._latest_cisd_features = None
+            self._latest_zone_bullish = 0.0
+            logging.info("🚫 Stop loss — all CISD zones cleared")
+
     def get_stop_target_pts(self, df, direction, entry_price):
         """
         Return stop and target in points derived from the active OTE zone.
@@ -822,6 +830,9 @@ class CISDOTEStrategy(BaseStrategy):
         nearest = None
         nearest_dist = float('inf')
         for z in self._active_zones:
+            # Skip zones that already fired on a previous bar (consumed)
+            if z.get('signal_fired') and z.get('entry_bar', abs_bar) < abs_bar:
+                continue
             mid = (z['fib_top'] + z['fib_bot']) / 2.0
             d   = abs(c - mid)
             if d < nearest_dist:
