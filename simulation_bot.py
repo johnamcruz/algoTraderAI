@@ -17,7 +17,7 @@ import pandas as pd
 from datetime import datetime
 from strategy_base import BaseStrategy
 from trading_bot_base import TradingBot
-from bot_utils import TICK_VALUES
+from bot_utils import TICK_VALUES, TICK_SIZES
 
 CONTRACTS = {
     "CON.F.US.ENQ.Z25": "NQ",
@@ -216,7 +216,14 @@ class SimulationBot(TradingBot):
                      f"take_profit_ticks={take_profit_ticks}")
 
     def _get_tick_size(self):
-        """Get tick size for the contract."""
+        """Get tick size from TICK_SIZES lookup, falling back to --tick_size arg."""
+        parts = self.contract.upper().split('.')
+        if len(parts) >= 4:
+            symbol = parts[3]
+            if symbol in TICK_SIZES:
+                return TICK_SIZES[symbol]
+        if self.contract.upper() in TICK_SIZES:
+            return TICK_SIZES[self.contract.upper()]
         return self.tick_size
 
     def _get_tick_value(self):

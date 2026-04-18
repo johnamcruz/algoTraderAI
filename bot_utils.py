@@ -37,6 +37,27 @@ TICK_VALUES = {
     "CLE":  10.00,  # Crude Oil (contract ID code)
 }
 
+# Tick size (minimum price increment) per instrument — mirrors TICK_VALUES keys.
+# Used alongside TICK_VALUES to derive point_value = tick_value / tick_size.
+TICK_SIZES = {
+    "MNQ":  0.25,
+    "MES":  0.25,
+    "MGC":  0.10,
+    "SIL":  0.005,
+    "MCL":  0.01,
+    "MCLE": 0.01,
+    "NQ":   0.25,
+    "ENQ":  0.25,
+    "ES":   0.25,
+    "EP":   0.25,
+    "GC":   0.10,
+    "GCE":  0.10,
+    "SI":   0.005,
+    "SIE":  0.005,
+    "CL":   0.01,
+    "CLE":  0.01,
+}
+
 # This map is ESSENTIAL because naming is not consistent.
 MICRO_TO_MINI_MAP = {
     # Indices
