@@ -373,8 +373,7 @@ class CISDOTEStrategy(BaseStrategy):
         if stop_pts <= 0:
             return None, None
 
-        rr = max(self._latest_risk_rr, 1.0)
-        target_pts = stop_pts * rr
+        target_pts = stop_pts * 2.0
 
         logging.info(
             f"  CISD stop/target | dir={direction} entry={entry_price:.2f} "
