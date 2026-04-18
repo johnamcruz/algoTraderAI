@@ -125,6 +125,13 @@ class BaseStrategy(ABC):
         """Called by the bot when a trade exits. Override to react to exit events."""
         pass
 
+    def is_trading_allowed(self, timestamp: pd.Timestamp) -> bool:
+        """
+        Return False to block entry at this bar's timestamp.
+        Default: always allowed. Override in strategies with session restrictions.
+        """
+        return True
+
     def get_stop_target_pts(
         self,
         df: pd.DataFrame,

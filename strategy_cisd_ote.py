@@ -83,8 +83,17 @@ class CISDOTEStrategy(BaseStrategy):
       )
     """
 
-    def __init__(self, model_path: str, scaler_path: str, contract_symbol: str):
+    def __init__(
+        self,
+        model_path: str,
+        scaler_path: str,
+        contract_symbol: str,
+        session_start_hour: int = SESSION_START_HOUR,
+        session_end_hour: int = SESSION_END_HOUR,
+    ):
         super().__init__(model_path, scaler_path, contract_symbol)
+        self._session_start_hour = session_start_hour
+        self._session_end_hour = session_end_hour
 
         # CISD zone tracker state
         self._active_zones: deque = deque(maxlen=20)
@@ -314,6 +323,17 @@ class CISDOTEStrategy(BaseStrategy):
         except Exception as e:
             logging.exception(f"❌ CISD+OTE predict error: {e}")
             return 0, 0.0
+
+    def is_trading_allowed(self, timestamp: pd.Timestamp) -> bool:
+        """Block entries outside the configured session window (ET hours)."""
+        hour = timestamp.hour
+        allowed = self._session_start_hour <= hour < self._session_end_hour
+        if not allowed:
+            logging.debug(
+                f"⏸ Entry blocked — {timestamp.strftime('%H:%M %Z')} outside "
+                f"session [{self._session_start_hour:02d}:00–{self._session_end_hour:02d}:00]"
+            )
+        return allowed
 
     def should_enter_trade(
         self,

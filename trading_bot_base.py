@@ -164,7 +164,12 @@ class TradingBot(ABC):
             
             # Get latest bar for entry checks
             latest_bar = df.iloc[-1].to_dict()
-            
+            bar_time = df.index[-1]
+
+            # Let the strategy veto entries outside its allowed trading window
+            if not self.strategy.is_trading_allowed(bar_time):
+                return
+
             # Check if should enter trade
             should_enter, direction = self.strategy.should_enter_trade(
                 prediction,
