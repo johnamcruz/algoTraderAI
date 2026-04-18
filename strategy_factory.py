@@ -18,6 +18,7 @@ from strategy_multihorizon_directional import MultiHorizonDirectionalStrategy
 from strategy_mtf_directional import MultiTFDirectionalStrategy
 from strategy_ema import EMATransformerStrategy
 from strategy_flag_pennant import FlagPennantStrategy
+from strategy_cisd_ote import CISDOTEStrategy
 
 class StrategyFactory:
     """
@@ -37,7 +38,8 @@ class StrategyFactory:
         'multihorizon': MultiHorizonDirectionalStrategy,
         'mtf_directional': MultiTFDirectionalStrategy,
         'ema': EMATransformerStrategy,
-        'flag': FlagPennantStrategy
+        'flag': FlagPennantStrategy,
+        'cisd-ote': CISDOTEStrategy,
     }
     
     @classmethod
