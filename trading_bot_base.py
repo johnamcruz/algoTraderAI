@@ -23,8 +23,8 @@ class TradingBot(ABC):
         strategy: BaseStrategy,
         entry_conf,
         adx_thresh,
-        stop_pts,
-        target_pts,
+        stop_pts=None,
+        target_pts=None,
         enable_trailing_stop=False,
         risk_amount=None
     ):
@@ -184,16 +184,29 @@ class TradingBot(ABC):
                 
                 close_price = latest_bar['close']
                 tick_size = self._get_tick_size()
-                
+
+                # Let the strategy provide its own stop/target (e.g. zone-based).
+                # Fall back to the bot's global stop_pts / target_pts if not provided.
+                strat_stop, strat_target = self.strategy.get_stop_target_pts(
+                    df, direction, close_price
+                )
+                stop_pts   = strat_stop   if strat_stop   is not None else self.stop_pts
+                target_pts = strat_target if strat_target is not None else self.target_pts
+
+                if stop_pts is None or target_pts is None:
+                    logging.error(
+                        "❌ No stop/target available — set --stop_pts/--target_pts "
+                        "or use a strategy that provides them."
+                    )
+                    return
+
                 if direction == 'LONG':
-                    # Calculate stop/target
-                    stop_loss = close_price - self.stop_pts
-                    profit_target = close_price + self.target_pts
-                    stop_ticks = -int(self.stop_pts / tick_size)
-                    take_profit_ticks = int(self.target_pts / tick_size)
+                    stop_loss        = close_price - stop_pts
+                    profit_target    = close_price + target_pts
+                    stop_ticks       = -int(stop_pts / tick_size)
+                    take_profit_ticks = int(target_pts / tick_size)
                     size = self._calculate_size(stop_ticks)
 
-                    # Pass data to subclass implementation
                     await self._place_order(
                         side=0,
                         close_price=close_price,
@@ -203,23 +216,21 @@ class TradingBot(ABC):
                         take_profit_ticks=take_profit_ticks,
                         size=size
                     )
-                    
+
                     print("="*40)
                     print(f"🔥 LONG SIGNAL")
                     print(f"  Reference: {close_price:.2f}")
                     print(f"  Stop: {stop_loss:.2f} | Target: {profit_target:.2f}")
                     print("="*40)
                     logging.info(f"LONG SIGNAL @ {close_price:.2f} Stop: {stop_loss:.2f} Target: {profit_target:.2f}")
-                    
+
                 else:  # SHORT
-                    # Calculate stop/target
-                    stop_loss = close_price + self.stop_pts
-                    profit_target = close_price - self.target_pts
-                    stop_ticks = int(self.stop_pts / tick_size)
-                    take_profit_ticks = -int(self.target_pts / tick_size)
+                    stop_loss        = close_price + stop_pts
+                    profit_target    = close_price - target_pts
+                    stop_ticks       = int(stop_pts / tick_size)
+                    take_profit_ticks = -int(target_pts / tick_size)
                     size = self._calculate_size(stop_ticks)
 
-                    # Pass data to subclass implementation
                     await self._place_order(
                         side=1,
                         close_price=close_price,
@@ -229,7 +240,7 @@ class TradingBot(ABC):
                         take_profit_ticks=take_profit_ticks,
                         size=size
                     )
-                    
+
                     print("="*40)
                     print(f"🥶 SHORT SIGNAL")
                     print(f"  Reference: {close_price:.2f}")

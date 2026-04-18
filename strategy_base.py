@@ -121,6 +121,19 @@ class BaseStrategy(ABC):
         """
         pass
     
+    def get_stop_target_pts(
+        self,
+        df: pd.DataFrame,
+        direction: str,
+        entry_price: float,
+    ) -> Tuple[Optional[float], Optional[float]]:
+        """
+        Return strategy-derived (stop_pts, target_pts) for the upcoming trade.
+        Return (None, None) to use the bot's global --stop_pts / --target_pts instead.
+        Strategies that know their natural stop (e.g. zone-based) should override this.
+        """
+        return None, None
+
     def get_sequence_length(self) -> int:
         """
         Returns the number of historical bars needed for prediction.
