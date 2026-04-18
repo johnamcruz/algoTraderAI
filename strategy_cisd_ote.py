@@ -466,11 +466,11 @@ class CISDOTEStrategy(BaseStrategy):
         dates = df.index.date if hasattr(df.index, 'date') else np.zeros(n)
         vwap_dev = np.zeros(n)
         if hasattr(df.index, 'date'):
-            tmp = pd.DataFrame({'c': c, 'v': v, 'date': df.index.date})
-            cum_pv = tmp.groupby('date').apply(lambda x: (x['c'] * x['v']).cumsum()).values
+            tmp = pd.DataFrame({'pv': c * v, 'v': v, 'date': df.index.date})
+            cum_pv = tmp.groupby('date')['pv'].cumsum().values
             cum_v  = tmp.groupby('date')['v'].cumsum().values
             vwap   = cum_pv / (cum_v + eps)
-            vwap_dev = (c - vwap) / (atr_safe)
+            vwap_dev = (c - vwap) / atr_safe
         df['vol_vwap_dev']     = vwap_dev
 
         # Volume acceleration
