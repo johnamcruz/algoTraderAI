@@ -120,7 +120,7 @@ model: "models/cisd_ote_hybrid_v5_1.onnx"
 entry_conf: 0.70
 adx_thresh: 0
 risk_amount: 300
-high_conf_multiplier: 1.5   # scale risk budget at ≥90% confidence
+high_conf_multiplier: 2.0   # extend profit target to 4R at ≥90% confidence (risk unchanged)
 ```
 
 ```bash
@@ -148,7 +148,7 @@ python algoTrader.py --config configs/cisd_ote_nq.yaml
 |----------|-------------|---------|
 | `--risk_amount` | Max dollars to risk per trade (dynamic sizing) | None |
 | `--size` | Fixed contract count (used when `--risk_amount` not set) | `1` |
-| `--high_conf_multiplier` | Scale risk budget by this factor at ≥90% confidence | `1.0` |
+| `--high_conf_multiplier` | Extend profit target by this factor at ≥90% confidence (risk unchanged) | `1.0` |
 | `--stop_pts` | Stop loss in points (optional; strategy provides its own) | None |
 | `--target_pts` | Profit target in points (optional; strategy provides its own) | None |
 
@@ -182,7 +182,7 @@ python algoTrader.py --config configs/cisd_ote_nq.yaml
 2. **OTE Zone** — Marks the 62–79% Fibonacci retracement of the displacement leg as the optimal entry zone
 3. **AI Filter** — An ONNX classifier confirms the setup using ~30 price-action and market-structure features
 4. **Entry** — Triggers when price retraces into the OTE zone and AI confidence exceeds `entry_conf`
-5. **Stop/Target** — Zone boundaries define the stop; target is 2R from the zone
+5. **Stop/Target** — Zone boundaries define the stop; target is 2R by default, extended to 4R on ≥90% confidence signals (via `high_conf_multiplier`)
 
 **Zone lifecycle:**
 - A zone is consumed (signal fired) when price enters it — it won't re-trigger
@@ -203,7 +203,7 @@ contracts = floor(risk_amount / (stop_ticks × tick_value))
 
 - If even 1 contract exceeds the budget, the signal is skipped
 - The CISD+OTE strategy provides its own stop (zone boundary) — no need to set `--stop_pts`
-- At ≥90% confidence, `--high_conf_multiplier` scales the effective budget (e.g. `2.0` doubles size)
+- At ≥90% confidence, `--high_conf_multiplier` extends the profit target (e.g. `2.0` doubles the target from 2R → 4R); risk per trade is always `risk_amount` regardless of confidence
 
 ### Fixed Sizing
 
