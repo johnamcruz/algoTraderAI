@@ -103,6 +103,7 @@ class CISDOTEStrategy(BaseStrategy):
         # Latest signal state (set by add_features, read by predict)
         self._latest_cisd_features: Optional[np.ndarray] = None
         self._latest_zone_bullish: float = 0.0
+        self._latest_risk_rr: float = 0.0
 
         # Bar counter for session/optimal tracking
         self._bar_count: int = 0
@@ -288,6 +289,7 @@ class CISDOTEStrategy(BaseStrategy):
 
             signal_probs = outputs[0]   # [1, 2]
             confidence   = float(outputs[1][0])  # scalar
+            self._latest_risk_rr = float(np.array(outputs[2]).flatten()[0])
 
             signal_prob = float(signal_probs[0, 1])
 
@@ -343,6 +345,43 @@ class CISDOTEStrategy(BaseStrategy):
             return True, 'SHORT'
 
         return False, None
+
+    def get_stop_target_pts(self, df, direction, entry_price):
+        """
+        Return stop and target in points derived from the active OTE zone.
+
+        Stop  = distance from entry to the far zone boundary
+                (fib_bot for LONG, fib_top for SHORT).
+        Target = stop_pts × predicted R:R from model's risk head (min 1.0).
+        """
+        if not self._active_zones:
+            return None, None
+
+        nearest = min(
+            self._active_zones,
+            key=lambda z: abs(entry_price - (z['fib_top'] + z['fib_bot']) / 2.0)
+        )
+
+        ft = nearest['fib_top']
+        fb = nearest['fib_bot']
+
+        if direction == 'LONG':
+            stop_pts = abs(entry_price - fb)
+        else:
+            stop_pts = abs(ft - entry_price)
+
+        if stop_pts <= 0:
+            return None, None
+
+        rr = max(self._latest_risk_rr, 1.0)
+        target_pts = stop_pts * rr
+
+        logging.info(
+            f"  CISD stop/target | dir={direction} entry={entry_price:.2f} "
+            f"zone=[{fb:.2f}–{ft:.2f}] stop={stop_pts:.2f}pts "
+            f"target={target_pts:.2f}pts (R:R {rr:.2f})"
+        )
+        return stop_pts, target_pts
 
     # ── FFM Feature Computation ───────────────────────────────────
 

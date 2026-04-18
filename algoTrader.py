@@ -110,10 +110,10 @@ Example Usage (Backtesting):
                         help='Min AI confidence to enter (default: 0.9)')
     parser.add_argument('--adx_thresh', type=int, default=0,
                         help='Min ADX value to enter (default: 0)')
-    parser.add_argument('--stop_pts', type=float, default=8.0,
-                        help='Stop loss in points (default: 8.0)')
-    parser.add_argument('--target_pts', type=float, default=16.0,
-                        help='Profit target in points (default: 16.0)')
+    parser.add_argument('--stop_pts', type=float, default=None,
+                        help='Stop loss in points (optional if strategy provides its own)')
+    parser.add_argument('--target_pts', type=float, default=None,
+                        help='Profit target in points (optional if strategy provides its own)')
     parser.add_argument('--enable_trailing_stop', action='store_true',
                         help='Enable trailing stop vs stop order')
     
