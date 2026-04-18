@@ -503,10 +503,10 @@ class CISDOTEStrategy(BaseStrategy):
         roll_low  = pd.Series(l).rolling(20).min().values
         prev_roll_h = np.roll(roll_high, 20); prev_roll_h[:20] = roll_high[0]
         prev_roll_l = np.roll(roll_low,  20); prev_roll_l[:20] = roll_low[0]
-        hh = (roll_high > prev_roll_h).astype(float)
-        hl = (roll_low  > prev_roll_l).astype(float)
-        ll = (roll_low  < prev_roll_l).astype(float)
-        lh = (roll_high < prev_roll_h).astype(float)
+        hh = (roll_high > prev_roll_h)
+        hl = (roll_low  > prev_roll_l)
+        ll = (roll_low  < prev_roll_l)
+        lh = (roll_high < prev_roll_h)
         structure = np.where(hh & hl, 1, np.where(ll & lh, -1, 0)).astype(float)
         df['str_structure_state'] = structure
 
