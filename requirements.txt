@@ -8,3 +8,5 @@ scikit-learn
 requests
 pysignalr
 python-dateutil
+pytest
+pyyaml
