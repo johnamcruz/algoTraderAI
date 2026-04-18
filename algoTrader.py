@@ -116,7 +116,6 @@ Example Usage (Backtesting):
                         help='Profit target in points (optional if strategy provides its own)')
     parser.add_argument('--enable_trailing_stop', action='store_true',
                         help='Enable trailing stop vs stop order')
-    
     # Strategy-specific parameters
     parser.add_argument('--pivot_lookback', type=int, default=8,
                         help='Pivot lookback period (for pivot_reversal strategy)')

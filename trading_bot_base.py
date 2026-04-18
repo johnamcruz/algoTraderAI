@@ -26,7 +26,7 @@ class TradingBot(ABC):
         stop_pts=None,
         target_pts=None,
         enable_trailing_stop=False,
-        risk_amount=None
+        risk_amount=None,
     ):
         """Initialize the trading bot base."""
         self.contract = contract
@@ -207,6 +207,14 @@ class TradingBot(ABC):
                     take_profit_ticks = int(target_pts / tick_size)
                     size = self._calculate_size(stop_ticks)
 
+                    if size == 0:
+                        logging.info(
+                            f"⚠️ Signal skipped — zone stop {stop_pts:.2f}pts "
+                            f"({abs(stop_ticks)} ticks × ${self._get_tick_value():.2f}) "
+                            f"exceeds risk_amount ${self.risk_amount:.0f}"
+                        )
+                        return
+
                     await self._place_order(
                         side=0,
                         close_price=close_price,
@@ -230,6 +238,14 @@ class TradingBot(ABC):
                     stop_ticks       = int(stop_pts / tick_size)
                     take_profit_ticks = -int(target_pts / tick_size)
                     size = self._calculate_size(stop_ticks)
+
+                    if size == 0:
+                        logging.info(
+                            f"⚠️ Signal skipped — zone stop {stop_pts:.2f}pts "
+                            f"({abs(stop_ticks)} ticks × ${self._get_tick_value():.2f}) "
+                            f"exceeds risk_amount ${self.risk_amount:.0f}"
+                        )
+                        return
 
                     await self._place_order(
                         side=1,
@@ -262,10 +278,15 @@ class TradingBot(ABC):
         pass
 
     def _calculate_size(self, sl_ticks):
-        """Return dynamic contract size based on risk_amount, or fall back to self.size."""
+        """
+        Return dynamic contract size based on risk_amount, or fall back to self.size.
+        Returns 0 when risk_amount is set but even 1 contract would exceed it
+        (caller should skip the signal in that case).
+        """
         if self.risk_amount and sl_ticks != 0:
             tick_value = self._get_tick_value()
-            return min(15, max(1, math.floor(self.risk_amount / (abs(sl_ticks) * tick_value))))
+            raw = math.floor(self.risk_amount / (abs(sl_ticks) * tick_value))
+            return min(15, raw)  # 0 is preserved — caller handles it
         return self.size
 
     @abstractmethod

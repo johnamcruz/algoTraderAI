@@ -39,7 +39,7 @@ class RealTimeBot(TradingBot):
         stop_pts,
         target_pts,
         enable_trailing_stop=False,
-        risk_amount=None
+        risk_amount=None,
     ):
         """
         Initialize the real-time trading bot.
@@ -70,7 +70,7 @@ class RealTimeBot(TradingBot):
             stop_pts=stop_pts,
             target_pts=target_pts,
             enable_trailing_stop=enable_trailing_stop,
-            risk_amount=risk_amount
+            risk_amount=risk_amount,
         )
         
         # Real-time specific attributes

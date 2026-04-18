@@ -44,7 +44,7 @@ class SimulationBot(TradingBot):
         max_loss_limit=3000,
         enable_trailing_stop=False,
         simulation_days=None,
-        risk_amount=None
+        risk_amount=None,
     ):
         """
         Initialize the simulation bot.
@@ -75,7 +75,7 @@ class SimulationBot(TradingBot):
             stop_pts=stop_pts,
             target_pts=target_pts,
             enable_trailing_stop=enable_trailing_stop,
-            risk_amount=risk_amount
+            risk_amount=risk_amount,
         )
         
         # Simulation-specific attributes
