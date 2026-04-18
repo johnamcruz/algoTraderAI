@@ -116,6 +116,8 @@ Example Usage (Backtesting):
                         help='Profit target in points (optional if strategy provides its own)')
     parser.add_argument('--enable_trailing_stop', action='store_true',
                         help='Enable trailing stop vs stop order')
+    parser.add_argument('--high_conf_multiplier', type=float, default=1.0,
+                        help='Scale risk_amount by this factor when confidence ≥0.90 (e.g. 2.0 doubles size)')
     # Strategy-specific parameters
     parser.add_argument('--pivot_lookback', type=int, default=8,
                         help='Pivot lookback period (for pivot_reversal strategy)')
@@ -208,6 +210,7 @@ def run_backtesting(config):
             enable_trailing_stop=config.get("enable_trailing_stop", False),
             simulation_days=config.get("simulation_days"),
             risk_amount=config.get("risk_amount"),
+            high_conf_multiplier=config.get("high_conf_multiplier", 1.0),
         )
         
         # Run simulation
@@ -265,6 +268,7 @@ def run_live_trading(config):
             target_pts=config["target_pts"],
             enable_trailing_stop=config.get("enable_trailing_stop", False),
             risk_amount=config.get("risk_amount"),
+            high_conf_multiplier=config.get("high_conf_multiplier", 1.0),
         )
         
         asyncio.run(bot.run())

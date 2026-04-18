@@ -1,3 +1,3 @@
 #python3 algoTrader.py --backtest --backtest_data data/ES_continuous_5min.csv --contract CON.F.US.EP.Z25 --risk_amount 300 --entry_conf 0.70 --model models/cisd_ote_hybrid_v5_1.onnx --strategy "cisd-ote" --simulation-days 10
 
-python3 algoTrader.py --backtest --backtest_data data/NQ_continuous_5min.csv --contract CON.F.US.ENQ.Z25 --risk_amount 300 --entry_conf 0.70 --model models/cisd_ote_hybrid_v5_1.onnx --strategy "cisd-ote" --simulation-days 3
+python3 algoTrader.py --backtest --backtest_data data/NQ_continuous_5min.csv --contract CON.F.US.ENQ.Z25 --risk_amount 400 --entry_conf 0.70 --model models/cisd_ote_hybrid_v5_1.onnx --strategy "cisd-ote" --simulation-days 3 --high_conf_multiplier 2.0
