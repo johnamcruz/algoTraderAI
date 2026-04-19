@@ -1,0 +1,13 @@
+backtest: true
+backtest_data: data/NQ_continuous_5min.csv
+contract: CON.F.US.ENQ.Z25
+strategy: cisd-ote
+model: models/cisd_ote_hybrid_v5_1.onnx
+scaler: ~
+
+risk_amount: 300
+entry_conf: 0.70
+simulation_days: 30
+high_conf_multiplier: 2.0
+profit_target: 12000
+max_loss: 3000
