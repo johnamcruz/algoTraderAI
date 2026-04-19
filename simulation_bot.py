@@ -86,8 +86,11 @@ class SimulationBot(TradingBot):
         self.csv_path = csv_path
         self.tick_size = tick_size
         self.session_profit_target = profit_target  # dollar P&L target (not trade take-profit price)
-        self.max_loss_limit = max_loss_limit
+        self.initial_max_loss = max_loss_limit       # never changes
+        self.mll = max_loss_limit                    # grows EOD when PnL >= MLL
+        self.max_loss_limit = max_loss_limit         # kept for summary/display compat
         self.simulation_days = simulation_days
+        self._last_bar_date = None                   # for EOD detection
         
         # Pending entry system (sim bot only)
         self.pending_entry = None
@@ -283,9 +286,8 @@ class SimulationBot(TradingBot):
         print(f"   P&L Points: {pnl:+.2f}")
         print(f"   P&L $:      ${pnl_dollars:+,.2f}")
         print(f"   Total P&L:  ${self.total_pnl_dollars:+,.2f}")
-        if self.max_loss_limit is not None:
-            mll_balance = self.max_loss_limit + self.total_pnl_dollars
-            print(f"   MLL Balance: ${mll_balance:,.2f} / ${self.max_loss_limit:,.2f}")
+        if self.mll is not None:
+            print(f"   MLL: ${self.mll:,.2f}")
         print("="*70 + "\n")
         
         logging.info(f"EXIT {self.position_type} @ {exit_price:.2f} ({exit_reason}) | "
@@ -307,6 +309,17 @@ class SimulationBot(TradingBot):
             low = bar['low']
             close = bar['close']
             volume = bar['volume']
+
+            # ========================================
+            # EOD MLL RATCHET: on first bar of a new day, lock in MLL if PnL exceeded it
+            # ========================================
+            bar_date = timestamp.date()
+            if self._last_bar_date is not None and bar_date != self._last_bar_date:
+                if self.mll is not None and self.total_pnl_dollars >= self.mll:
+                    old_mll = self.mll
+                    self.mll = self.total_pnl_dollars
+                    logging.info(f"📈 EOD MLL ratchet: ${old_mll:,.2f} → ${self.mll:,.2f}")
+            self._last_bar_date = bar_date
 
             # ========================================
             # STEP 1: Process pending entry from PREVIOUS bar
@@ -450,11 +463,10 @@ class SimulationBot(TradingBot):
                     self.strategy.on_trade_exit(exit_reason)
                     self._reset_position_state()
 
-                    if self.max_loss_limit is not None and self.total_pnl_dollars <= -self.max_loss_limit:
-                        mll_balance = self.max_loss_limit + self.total_pnl_dollars
+                    if self.mll is not None and self.total_pnl_dollars <= -self.mll:
                         print("\n" + "="*50)
                         print(f"⛔ MLL HIT ZERO: P&L ${self.total_pnl_dollars:,.2f} "
-                              f"(MLL balance: ${mll_balance:,.2f})")
+                              f"(MLL: ${self.mll:,.2f})")
                         print("="*50 + "\n")
                         return True
 
@@ -528,9 +540,8 @@ class SimulationBot(TradingBot):
         if self.session_profit_target is not None and self.total_pnl_dollars >= self.session_profit_target:
             print(f"🎉 Profit Target Hit: {self.total_pnl_dollars:,.2f} USD (Target: {self.session_profit_target:,.2f} USD)")
         
-        if self.max_loss_limit is not None and self.total_pnl_dollars <= -self.max_loss_limit:
-            print(f"🛑 MLL Hit Zero: P&L ${self.total_pnl_dollars:,.2f} "
-                  f"(MLL balance: ${self.max_loss_limit + self.total_pnl_dollars:,.2f})")
+        if self.mll is not None and self.total_pnl_dollars <= -self.mll:
+            print(f"🛑 MLL Hit Zero: P&L ${self.total_pnl_dollars:,.2f} (MLL: ${self.mll:,.2f})")
         
         print("="*60 + "\n")
         
