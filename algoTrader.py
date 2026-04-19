@@ -95,8 +95,8 @@ Example Usage (Backtesting):
                         help='TopstepX username (not required for backtesting)')
     parser.add_argument('--apikey', type=str,
                         help='TopstepX API key (not required for backtesting)')
-    parser.add_argument('--timeframe', type=int, choices=[1, 3, 5], default=3,
-                        help='Bar timeframe in minutes (default: 3)')    
+    parser.add_argument('--timeframe', type=int, choices=[1, 3, 5], default=5,
+                        help='Bar timeframe in minutes (default: 5)')    
     
     # RealTime Market URL and Base URL
     parser.add_argument('--market_hub', type=str, default=MARKET_HUB,
