@@ -28,12 +28,14 @@ class TradingBot(ABC):
         enable_trailing_stop=False,
         risk_amount=None,
         high_conf_multiplier=1.0,
+        max_contracts=15,
     ):
         """Initialize the trading bot base."""
         self.contract = contract
         self.size = size
         self.risk_amount = risk_amount
         self.high_conf_multiplier = high_conf_multiplier
+        self.max_contracts = max_contracts
         self.timeframe_minutes = int(timeframe_minutes)
         self.enable_trailing_stop = enable_trailing_stop
         
@@ -223,6 +225,15 @@ class TradingBot(ABC):
                     )
                     return
 
+                MIN_STOP_TICKS = 4
+                stop_ticks_raw = stop_pts / tick_size
+                if stop_ticks_raw < MIN_STOP_TICKS:
+                    logging.info(
+                        f"⚠️ Signal skipped — zone stop too tight "
+                        f"({stop_ticks_raw:.1f} ticks < {MIN_STOP_TICKS} minimum)"
+                    )
+                    return
+
                 if direction == 'LONG':
                     stop_loss        = close_price - stop_pts
                     profit_target    = close_price + target_pts
@@ -313,7 +324,7 @@ class TradingBot(ABC):
                 return 0  # can't size a 0-tick stop; caller will skip the signal
             tick_value = self._get_tick_value()
             raw = math.floor(risk / (abs(sl_ticks) * tick_value))
-            return min(15, raw)  # 0 is preserved — caller handles it
+            return min(self.max_contracts, raw)  # 0 is preserved — caller handles it
         return self.size
 
     @abstractmethod
