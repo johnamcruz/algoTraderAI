@@ -118,6 +118,8 @@ Example Usage (Backtesting):
                         help='Enable trailing stop vs stop order')
     parser.add_argument('--high_conf_multiplier', type=float, default=1.0,
                         help='Scale risk_amount by this factor when confidence ≥0.90 (e.g. 2.0 doubles size)')
+    parser.add_argument('--max_contracts', type=int, default=15,
+                        help='Maximum contracts per trade regardless of risk sizing (default: 15)')
     # Strategy-specific parameters
     parser.add_argument('--pivot_lookback', type=int, default=8,
                         help='Pivot lookback period (for pivot_reversal strategy)')
@@ -211,8 +213,9 @@ def run_backtesting(config):
             simulation_days=config.get("simulation_days"),
             risk_amount=config.get("risk_amount"),
             high_conf_multiplier=config.get("high_conf_multiplier", 1.0),
+            max_contracts=config.get("max_contracts", 15),
         )
-        
+
         # Run simulation
         asyncio.run(bot.run())
         
@@ -269,8 +272,9 @@ def run_live_trading(config):
             enable_trailing_stop=config.get("enable_trailing_stop", False),
             risk_amount=config.get("risk_amount"),
             high_conf_multiplier=config.get("high_conf_multiplier", 1.0),
+            max_contracts=config.get("max_contracts", 15),
         )
-        
+
         asyncio.run(bot.run())
         
     except KeyboardInterrupt:

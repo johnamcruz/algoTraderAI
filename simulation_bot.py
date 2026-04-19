@@ -46,6 +46,7 @@ class SimulationBot(TradingBot):
         simulation_days=None,
         risk_amount=None,
         high_conf_multiplier=1.0,
+        max_contracts=15,
     ):
         """
         Initialize the simulation bot.
@@ -78,6 +79,7 @@ class SimulationBot(TradingBot):
             enable_trailing_stop=enable_trailing_stop,
             risk_amount=risk_amount,
             high_conf_multiplier=high_conf_multiplier,
+            max_contracts=max_contracts,
         )
         
         # Simulation-specific attributes
