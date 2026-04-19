@@ -1,0 +1,188 @@
+{
+  "version": "CISD_OTE_Hybrid_v5_5",
+  "fold": "F4",
+  "checkpoint_key": "signal_f1",
+  "checkpoint_path": "/content/drive/MyDrive/AI_Models/CISD_OTE_Hybrid_v5_5/cisd_hybrid_v5_5_F4_signal_f1.pth",
+  "seq_len": 64,
+  "num_labels": 2,
+  "num_features": 42,
+  "num_cisd_features": 32,
+  "feature_cols": [
+    "bar_range_atr",
+    "bar_body_atr",
+    "bar_upper_wick_atr",
+    "bar_lower_wick_atr",
+    "bar_body_pct",
+    "bar_upper_wick_pct",
+    "bar_lower_wick_pct",
+    "bar_direction",
+    "ret_close_1",
+    "ret_close_3",
+    "ret_close_5",
+    "ret_open_close",
+    "ret_momentum_5",
+    "ret_momentum_10",
+    "ret_momentum_20",
+    "ret_acceleration",
+    "vol_ratio_5",
+    "vol_ratio_10",
+    "vol_ratio_20",
+    "vol_change",
+    "vol_close_position",
+    "vol_delta_proxy",
+    "vty_atr_zscore",
+    "vty_range_ratio_5",
+    "vty_range_ratio_20",
+    "vty_atr_of_atr",
+    "vty_realized_10",
+    "vty_realized_20",
+    "sess_bars_elapsed",
+    "sess_dist_from_open",
+    "sess_dist_from_high",
+    "sess_dist_from_low",
+    "sess_dist_from_vwap",
+    "str_swing_high_dist",
+    "str_swing_low_dist",
+    "str_structure_state",
+    "str_dist_from_high_10",
+    "str_dist_from_low_10",
+    "str_range_position_10",
+    "str_dist_from_high_20",
+    "str_dist_from_low_20",
+    "str_range_position_20"
+  ],
+  "cisd_feature_cols": [
+    "zone_height_vs_atr",
+    "price_vs_zone_top",
+    "price_vs_zone_bot",
+    "zone_age_bars",
+    "zone_is_bullish",
+    "cisd_displacement_strength",
+    "had_liquidity_sweep",
+    "htf_trend_direction",
+    "trend_alignment",
+    "rejection_wick_ratio",
+    "close_position",
+    "volume_trend",
+    "cumulative_delta_ratio",
+    "price_vs_ema20",
+    "gap_from_prior_close",
+    "session_progress",
+    "day_of_week_feat",
+    "confluence_score",
+    "risk_dollars_norm",
+    "in_optimal_session",
+    "entry_distance_pct",
+    "ffm_sess_dist_from_vwap",
+    "ffm_str_structure_state",
+    "ffm_ret_acceleration",
+    "ffm_vty_atr_of_atr",
+    "ffm_sess_dist_from_open",
+    "ffm_ret_momentum_10",
+    "ffm_vol_delta_proxy",
+    "atr_compression_ratio",
+    "htf_trend_strength",
+    "delta_momentum_ratio",
+    "regime_transition_recency"
+  ],
+  "tickers": [
+    "ES",
+    "NQ",
+    "RTY",
+    "YM",
+    "GC"
+  ],
+  "labeler_changes_from_v5_1": [
+    "v5.3: 4 regime/vol context features added (indices 28-31)",
+    "v5.4: Vol-conditioned RR threshold \u2014 ATR<0.70\u21922R, ATR<0.85\u21921.5R, \u22650.85\u21921R",
+    "v5.5: Asymmetric counter-trend gate \u2014 LONGS vs strong downtrend (\u226596bars) \u2192 2R min",
+    "v5.5: Shorts vs uptrend keep standard 1R (these perform well)",
+    "Architecture: identical to v5.1 throughout"
+  ],
+  "inference": {
+    "output_0_signal_probs": "[B,2] \u2014 signal_probs[:,1] >= threshold \u2192 TRADE",
+    "output_1_confidence": "[B]   \u2014 0-1 calibrated confidence score",
+    "output_2_risk": "[B,1] \u2014 predicted R:R ratio",
+    "trade_direction": "CISD feature idx 4 (zone_is_bullish): >0=BUY, <0=SELL",
+    "recommended_thresholds": {
+      "entry": 0.85,
+      "entry_4R": 0.9,
+      "conservative": 0.9
+    },
+    "operating_note": "Run \u22650.85 for standard entries (PF 6.06). Use \u22650.90 when targeting 4R (PF 6.56, AvgRR 4.92). v5.5 is conservative in low-vol and strong-downtrend conditions by design."
+  },
+  "walk_forward_results_v5_5": {
+    "entry_at_070": {
+      "trades": 62,
+      "correct": 26,
+      "precision": 0.419,
+      "pf": 3.07
+    },
+    "entry_at_085": {
+      "trades": 37,
+      "correct": 21,
+      "precision": 0.568,
+      "pf": 6.06,
+      "avg_rr": 4.62,
+      "note": "recommended entry threshold"
+    },
+    "target_at_090": {
+      "trades": 21,
+      "correct": 12,
+      "precision": 0.571,
+      "pf": 6.56,
+      "avg_rr": 4.92,
+      "note": "use for 4R target sizing"
+    },
+    "per_fold_at_090": {
+      "F1": {
+        "trades": 4,
+        "prec": 0.25,
+        "pf": 1.67,
+        "profit_r": 2.0
+      },
+      "F2": {
+        "trades": 9,
+        "prec": 0.778,
+        "pf": 17.0,
+        "profit_r": 32.0
+      },
+      "F3": {
+        "trades": 6,
+        "prec": 0.5,
+        "pf": 5.0,
+        "profit_r": 12.0
+      },
+      "F4": {
+        "trades": 2,
+        "prec": 0.5,
+        "pf": 5.0,
+        "profit_r": 4.0
+      }
+    }
+  },
+  "version_comparison": {
+    "v5_1": {
+      "entry_070_pf": 4.22,
+      "target_090_pf": 8.71,
+      "target_090_prec": 0.682
+    },
+    "v5_3": {
+      "entry_070_pf": 3.54,
+      "target_090_pf": 6.42,
+      "target_090_prec": 0.586
+    },
+    "v5_4": {
+      "entry_070_pf": 3.06,
+      "target_090_pf": 4.7,
+      "target_090_prec": 0.5
+    },
+    "v5_5": {
+      "entry_070_pf": 3.07,
+      "target_090_pf": 6.56,
+      "target_090_prec": 0.571,
+      "entry_085_pf": 6.06,
+      "note": "\u22650.85 is the new recommended entry"
+    }
+  }
+}
