@@ -131,6 +131,10 @@ Example Usage (Backtesting):
     # Strategy-specific parameters
     parser.add_argument('--pivot_lookback', type=int, default=8,
                         help='Pivot lookback period (for pivot_reversal strategy)')
+    parser.add_argument('--min_vty_regime', type=float, default=0.75,
+                        help='(cisd-ote) Regime gate: skip trades when vty_regime (atr14/atr_ma50) '
+                             'is below this value (0.0=disabled, 0.8=block when vol is 20%% below '
+                             'its 50-bar average). Persistent across sustained low-vol periods.')
     
     args = parser.parse_args()
 
@@ -195,6 +199,8 @@ def run_backtesting(config):
         strategy_kwargs = {}
         if config['strategy'] == '3min_pivot_reversal' or config['strategy'] == '5min_pivot_reversal':
             strategy_kwargs['pivot_lookback'] = config.get("pivot_lookback", 8)
+        if config['strategy'] == 'cisd-ote':
+            strategy_kwargs['min_vty_regime'] = config.get('min_vty_regime', 0.75)
 
         strategy = StrategyFactory.create_strategy(
             strategy_name=config["strategy"],
@@ -263,7 +269,9 @@ def run_live_trading(config):
         strategy_kwargs = {}
         if config['strategy'] == '3min_pivot_reversal' or config['strategy'] == '5min_pivot_reversal':
             strategy_kwargs['pivot_lookback'] = config.get("pivot_lookback", 8)
-        
+        if config['strategy'] == 'cisd-ote':
+            strategy_kwargs['min_vty_regime'] = config.get('min_vty_regime', 0.75)
+
         strategy = StrategyFactory.create_strategy(
             strategy_name=config["strategy"],
             model_path=config["model"],

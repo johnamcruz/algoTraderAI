@@ -90,10 +90,17 @@ class CISDOTEStrategy(BaseStrategy):
         contract_symbol: str,
         session_start_hour: int = SESSION_START_HOUR,
         session_end_hour: int = SESSION_END_HOUR,
+        min_vty_regime: float = 0.75,
     ):
         super().__init__(model_path, scaler_path, contract_symbol)
         self._session_start_hour = session_start_hour
         self._session_end_hour = session_end_hour
+
+        # Regime gate — block trades when vty_regime (atr14/atr_ma50) is below threshold.
+        # Stays persistently low during quiet periods — no rolling-window adaptation.
+        # 0.0 = disabled, 0.8 = block when current ATR >20% below its 50-bar average.
+        self._min_vty_regime = min_vty_regime
+        self._latest_vty_regime: float = 1.0  # neutral until first bar computed
 
         # CISD zone tracker state
         self._active_zones: deque = deque(maxlen=20)
@@ -126,6 +133,8 @@ class CISDOTEStrategy(BaseStrategy):
         logging.info(f"  Confidence threshold recommended: 0.90 (conservative)")
         logging.info(f"  Warmup: ~200 bars for stable features")
         logging.info(f"  Direction: zone_is_bullish feature (CISD idx 4)")
+        if min_vty_regime > 0.0:
+            logging.info(f"  Regime gate: block when vty_regime < {min_vty_regime} (atr14/atr_ma50)")
         logging.info("=" * 65)
 
     # ── BaseStrategy interface ────────────────────────────────────
@@ -185,6 +194,12 @@ class CISDOTEStrategy(BaseStrategy):
 
         # ── Compute FFM backbone features ──
         df = self._compute_ffm_features(df)
+
+        # ── Update regime gate value ──
+        if 'vty_regime' in df.columns:
+            val = float(df['vty_regime'].iloc[-1])
+            if np.isfinite(val):
+                self._latest_vty_regime = val
 
         # ── Run incremental CISD detector on latest bar ──
         self._update_cisd_detector(df, self._bar_count)
@@ -357,11 +372,19 @@ class CISDOTEStrategy(BaseStrategy):
         if confidence < entry_conf:
             return False, None
 
+        # Regime gate — skip when market is in a sustained low-vol environment
+        if self._min_vty_regime > 0.0 and self._latest_vty_regime < self._min_vty_regime:
+            logging.info(
+                f"🚫 Regime gate: vty_regime={self._latest_vty_regime:.3f} "
+                f"< {self._min_vty_regime} — skipping"
+            )
+            return False, None
+
         if prediction == 1:
-            logging.info(f"✅ CISD+OTE BUY  | signal_prob={confidence:.3f}")
+            logging.info(f"✅ CISD+OTE BUY  | signal_prob={confidence:.3f} vty_regime={self._latest_vty_regime:.3f}")
             return True, 'LONG'
         elif prediction == 2:
-            logging.info(f"✅ CISD+OTE SELL | signal_prob={confidence:.3f}")
+            logging.info(f"✅ CISD+OTE SELL | signal_prob={confidence:.3f} vty_regime={self._latest_vty_regime:.3f}")
             return True, 'SHORT'
 
         return False, None
