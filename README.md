@@ -138,7 +138,7 @@ python algoTrader.py --config configs/cisd_ote_nq.yaml
 | `--strategy` | Strategy name (`cisd-ote`) | `supertrend` |
 | `--model` | Path to ONNX model | — |
 | `--contract` | Contract ID (e.g. `CON.F.US.ENQ.Z25`) | — |
-| `--timeframe` | Bar timeframe in minutes (1, 3, 5) | `3` |
+| `--timeframe` | Bar timeframe in minutes (1, 3, 5) | `5` |
 | `--entry_conf` | Min AI confidence to enter (0.0–1.0) | `0.9` |
 | `--adx_thresh` | Min ADX for entry (0 = disabled) | `0` |
 
