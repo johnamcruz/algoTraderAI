@@ -158,9 +158,12 @@ python algoTrader.py --config configs/cisd_ote_nq.yaml
 |----------|-------------|---------|
 | `--backtest` | Run in backtesting mode | — |
 | `--backtest_data` | Path to OHLCV CSV file | — |
-| `--simulation-days` | Limit backtest to first N days of data | None |
+| `--start-date` | Start date for backtest (`YYYY-MM-DD`); overrides `--simulation-days` | None |
+| `--end-date` | End date for backtest (`YYYY-MM-DD`); defaults to end of CSV | None |
+| `--simulation-days` | Limit backtest to last N days of data | None |
 | `--profit_target` | Stop sim when cumulative P&L reaches this (dollars) | `6000` |
 | `--max_loss` | Stop sim when cumulative loss hits this (dollars) | `3000` |
+| `--min_vty_regime` | Regime gate: skip entries when `atr14/atr_ma50` is below this (0.0 = off) | `0.75` |
 
 ### Live Only
 
@@ -278,6 +281,38 @@ Enable verbose output with `--debug`.
 **Connection issues (live)**
 - Verify API credentials and account ID
 - Confirm TopstepX services are operational
+
+---
+
+## Known Issues & Limitations
+
+These are understood behavioral limitations from backtesting across multiple market regimes. They are logged here for awareness — not all are fixable without model retraining.
+
+### Gap-Through-Stop Risk (All Regimes)
+
+The bot sizes to the stop level, but if a bar opens beyond the stop (e.g. after a macro event), the fill is at the open price and the actual loss can be 3–6× the intended risk budget. This is not a bug — it reflects real market behavior. Macro events (CPI, FOMC, NFP) are the primary cause.
+
+**Workaround:** Avoid trading on known macro calendar days. There is currently no automatic macro filter.
+
+### 2023 Recovery — Regime Transition Risk
+
+The January 2023 opening days (first week of the recovery from the 2022 bear) produce consistent losses across all parameter configurations. The model fires valid-looking CISD setups but direction is ambiguous during the first days of a new trend regime. A single gap-through on Jan 5 (-125 pts, ~3× intended risk) typically triggers MLL.
+
+**Root cause:** The model was trained on setup quality (1:1 RR hit), not regime transition detection. It cannot distinguish "valid CISD in a trending market" from "valid CISD at the start of an uncertain new trend."
+
+**Workaround:** Consider reducing position size or sitting out the first 1–2 weeks after a sustained bear market ends.
+
+### 2021 Out-of-Sample — Low-Vol Grind
+
+Full-year 2021 shows elevated trade counts and losing outcomes (40+ trades, MLL hit) despite the `vty_regime` gate. This is partly expected — 2021 data was seen during model training (F1 fold begins at 2022-01-01), so overfitting to that period is likely. Additionally, the 2021 NQ bull was a slow grind with periodic vol spikes that pass the `vty_regime` filter but don't produce clean CISD displacement.
+
+**Root cause:** In-sample data + low-momentum trend that doesn't suit the strategy's displacement-based entries.
+
+**Status:** Treated as a known training artifact. Not a concern for live trading in current market conditions.
+
+### vty_regime Gate Threshold (0.75 Default)
+
+The `--min_vty_regime 0.75` default was selected via backtesting across 4 market regimes (2021, 2022, 2023, 2024). It was the only threshold that turned the 2024 selloff profitable and kept 2022 clean. However, it does not help 2023 and does not eliminate 2021 losses. It can be disabled with `--min_vty_regime 0.0` if needed.
 
 ---
 
