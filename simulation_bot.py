@@ -103,6 +103,7 @@ class SimulationBot(TradingBot):
         self.winning_trades = 0
         self.losing_trades = 0
         self.trades_log = []
+
         
         # Track current bar timestamp for display
         self.current_timestamp = None
@@ -282,6 +283,9 @@ class SimulationBot(TradingBot):
         print(f"   P&L Points: {pnl:+.2f}")
         print(f"   P&L $:      ${pnl_dollars:+,.2f}")
         print(f"   Total P&L:  ${self.total_pnl_dollars:+,.2f}")
+        if self.max_loss_limit is not None:
+            mll_balance = self.max_loss_limit + self.total_pnl_dollars
+            print(f"   MLL Balance: ${mll_balance:,.2f} / ${self.max_loss_limit:,.2f}")
         print("="*70 + "\n")
         
         logging.info(f"EXIT {self.position_type} @ {exit_price:.2f} ({exit_reason}) | "
@@ -303,7 +307,7 @@ class SimulationBot(TradingBot):
             low = bar['low']
             close = bar['close']
             volume = bar['volume']
-            
+
             # ========================================
             # STEP 1: Process pending entry from PREVIOUS bar
             # ========================================
@@ -446,15 +450,17 @@ class SimulationBot(TradingBot):
                     self.strategy.on_trade_exit(exit_reason)
                     self._reset_position_state()
 
-                    if self.session_profit_target is not None and self.total_pnl_dollars >= self.session_profit_target:
+                    if self.max_loss_limit is not None and self.total_pnl_dollars <= -self.max_loss_limit:
+                        mll_balance = self.max_loss_limit + self.total_pnl_dollars
                         print("\n" + "="*50)
-                        print(f"🎉 PROFIT TARGET REACHED: ${self.total_pnl_dollars:,.2f}")
+                        print(f"⛔ MLL HIT ZERO: P&L ${self.total_pnl_dollars:,.2f} "
+                              f"(MLL balance: ${mll_balance:,.2f})")
                         print("="*50 + "\n")
                         return True
 
-                    if self.max_loss_limit is not None and self.total_pnl_dollars <= -self.max_loss_limit:
+                    if self.session_profit_target is not None and self.total_pnl_dollars >= self.session_profit_target:
                         print("\n" + "="*50)
-                        print(f"⛔ MAX LOSS LIMIT HIT: ${self.total_pnl_dollars:,.2f}")
+                        print(f"🎉 PROFIT TARGET REACHED: ${self.total_pnl_dollars:,.2f}")
                         print("="*50 + "\n")
                         return True
             
@@ -523,7 +529,8 @@ class SimulationBot(TradingBot):
             print(f"🎉 Profit Target Hit: {self.total_pnl_dollars:,.2f} USD (Target: {self.session_profit_target:,.2f} USD)")
         
         if self.max_loss_limit is not None and self.total_pnl_dollars <= -self.max_loss_limit:
-            print(f"🛑 Max Loss Limit Hit: {self.total_pnl_dollars:,.2f} USD (Limit: -{self.max_loss_limit:,.2f} USD)")
+            print(f"🛑 MLL Hit Zero: P&L ${self.total_pnl_dollars:,.2f} "
+                  f"(MLL balance: ${self.max_loss_limit + self.total_pnl_dollars:,.2f})")
         
         print("="*60 + "\n")
         
