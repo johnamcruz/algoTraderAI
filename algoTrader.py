@@ -14,6 +14,8 @@ Requirements:
 import asyncio
 import argparse
 import logging
+import os
+import sys
 
 from bot_utils import setup_logging, authenticate, MARKET_HUB, BASE_URL
 from config_loader import load_config, merge_config_with_args, validate_config
@@ -58,7 +60,9 @@ Example Usage (Backtesting):
                         help='Path to YAML config file. Command-line args override config values.')     
     parser.add_argument('--debug', action='store_true',
                         help='Enable DEBUG level logging (default: INFO)')
-    
+    parser.add_argument('--quiet', action='store_true',
+                        help='Suppress all output except the final simulation results summary')
+
     # Backtesting options
     parser.add_argument('--backtest', action='store_true',
                         help='Run in backtesting mode using historical CSV data')
@@ -175,27 +179,27 @@ Example Usage (Backtesting):
 
 def run_backtesting(config):
     """Run in backtesting mode using SimulationBot"""
-    print("\n" + "="*60)
-    print("🔬 BACKTESTING MODE")
-    print("="*60 + "\n")
-    
+    quiet = config.get('quiet', False)
+
+    if not quiet:
+        print("\n" + "="*60)
+        print("🔬 BACKTESTING MODE")
+        print("="*60 + "\n")
+
     try:
         # Create strategy
         strategy_kwargs = {}
         if config['strategy'] == '3min_pivot_reversal' or config['strategy'] == '5min_pivot_reversal':
             strategy_kwargs['pivot_lookback'] = config.get("pivot_lookback", 8)
-        
+
         strategy = StrategyFactory.create_strategy(
             strategy_name=config["strategy"],
             model_path=config["model"],
             scaler_path=config["scaler"],
-            contract_symbol=config["contract"],  # Use contract as symbol directly in backtest
+            contract_symbol=config["contract"],
             **strategy_kwargs
         )
-        
-        logging.info(f"✅ Strategy '{config['strategy']}' created successfully!")
-        
-        # Create simulation bot
+
         bot = SimulationBot(
             csv_path=config["backtest_data"],
             contract=config["contract"],
@@ -216,9 +220,19 @@ def run_backtesting(config):
             max_contracts=config.get("max_contracts", 15),
         )
 
-        # Run simulation
-        asyncio.run(bot.run())
-        
+        if quiet:
+            # Suppress all output during run; print only the summary at the end
+            with open(os.devnull, 'w') as devnull:
+                old_stdout = sys.stdout
+                sys.stdout = devnull
+                try:
+                    asyncio.run(bot.run())
+                finally:
+                    sys.stdout = old_stdout
+            bot._print_summary()
+        else:
+            asyncio.run(bot.run())
+
     except KeyboardInterrupt:
         print("\n👋 Backtesting stopped by user.")
     except Exception as e:
