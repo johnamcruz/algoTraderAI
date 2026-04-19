@@ -7,6 +7,7 @@ Creates strategy instances based on strategy name.
 
 from strategy_base import BaseStrategy
 from strategy_cisd_ote import CISDOTEStrategy
+from strategy_cisd_ote_v2 import CISDOTEStrategyV2
 
 class StrategyFactory:
     """
@@ -16,6 +17,7 @@ class StrategyFactory:
     # Registry of available strategies
     STRATEGIES = {
         'cisd-ote': CISDOTEStrategy,
+        'cisd-ote2': CISDOTEStrategyV2
     }
     
     @classmethod
