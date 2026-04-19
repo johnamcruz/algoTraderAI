@@ -44,6 +44,8 @@ class SimulationBot(TradingBot):
         max_loss_limit=3000,
         enable_trailing_stop=False,
         simulation_days=None,
+        start_date=None,
+        end_date=None,
         risk_amount=None,
         high_conf_multiplier=1.0,
         max_contracts=15,
@@ -90,6 +92,8 @@ class SimulationBot(TradingBot):
         self.mll = max_loss_limit                    # grows EOD when PnL >= MLL
         self.max_loss_limit = max_loss_limit         # kept for summary/display compat
         self.simulation_days = simulation_days
+        self.start_date = start_date
+        self.end_date = end_date
         self._last_bar_date = None                   # for EOD detection
         
         # Pending entry system (sim bot only)
@@ -567,22 +571,23 @@ class SimulationBot(TradingBot):
         # Load CSV data
         df = self._load_csv_data()
 
-        if self.simulation_days is not None and self.simulation_days > 0:
-            
-            # Find the latest (most recent) date in the loaded data from the index
-            latest_date = df.index.max()
-            
-            # Calculate the required start date by subtracting the specified number of days
-            simulation_start_date = latest_date - pd.Timedelta(days=self.simulation_days)
-            
-            # Filter the DataFrame using the index
-            original_len = len(df)
-            df = df[df.index >= simulation_start_date].copy() 
-
+        original_len = len(df)
+        if self.start_date is not None or self.end_date is not None:
+            start = pd.Timestamp(self.start_date, tz=df.index.tz) if self.start_date else df.index.min()
+            end = pd.Timestamp(self.end_date, tz=df.index.tz) + pd.Timedelta(days=1) if self.end_date else df.index.max() + pd.Timedelta(seconds=1)
+            df = df[(df.index >= start) & (df.index < end)].copy()
             if len(df) == 0:
-                 print(f"🛑 Error: No data found within the last {self.simulation_days} days (starting from {simulation_start_date.strftime('%Y-%m-%d %H:%M:%S')}).")
-                 return
-            
+                print(f"🛑 Error: No data found between {self.start_date} and {self.end_date}.")
+                return
+            logging.info(f"📅 Date range filter: {self.start_date} → {self.end_date}")
+            print(f"Data reduced from {original_len} bars to {len(df)} bars.")
+        elif self.simulation_days is not None and self.simulation_days > 0:
+            latest_date = df.index.max()
+            simulation_start_date = latest_date - pd.Timedelta(days=self.simulation_days)
+            df = df[df.index >= simulation_start_date].copy()
+            if len(df) == 0:
+                print(f"🛑 Error: No data found within the last {self.simulation_days} days (starting from {simulation_start_date.strftime('%Y-%m-%d %H:%M:%S')}).")
+                return
             logging.info(f"📅 Limiting simulation to the last {self.simulation_days} days.")
             logging.info(f"Start date limit: {simulation_start_date.strftime('%Y-%m-%d %H:%M:%S')}")
             logging.info(f"End date: {latest_date.strftime('%Y-%m-%d %H:%M:%S')}")

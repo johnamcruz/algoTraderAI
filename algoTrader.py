@@ -74,9 +74,13 @@ Example Usage (Backtesting):
                         help='Profit target in dollars for backtesting (default: 6000)')
     parser.add_argument('--max_loss', type=float, default=3000,
                         help='Maximum loss limit in dollars for backtesting (default: 3000)')    
-    parser.add_argument('--simulation-days', type=int, 
-                        help='(Backtest Only) Limit the backtest to the first N days of the CSV data.'
+    parser.add_argument('--simulation-days', type=int,
+                        help='(Backtest Only) Limit the backtest to the last N days of the CSV data.'
     )
+    parser.add_argument('--start-date', type=str,
+                        help='(Backtest Only) Start date for simulation (YYYY-MM-DD). Overrides --simulation-days.')
+    parser.add_argument('--end-date', type=str,
+                        help='(Backtest Only) End date for simulation (YYYY-MM-DD). Defaults to end of CSV if omitted.')
     
     # Account & Contract
     parser.add_argument('--account', type=str,
@@ -215,6 +219,8 @@ def run_backtesting(config):
             max_loss_limit=config.get("max_loss", 3000),
             enable_trailing_stop=config.get("enable_trailing_stop", False),
             simulation_days=config.get("simulation_days"),
+            start_date=config.get("start_date"),
+            end_date=config.get("end_date"),
             risk_amount=config.get("risk_amount"),
             high_conf_multiplier=config.get("high_conf_multiplier", 1.0),
             max_contracts=config.get("max_contracts", 15),
