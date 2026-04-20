@@ -168,6 +168,11 @@ class TradingBot(ABC):
             latest_bar = df.iloc[-1].to_dict()
             bar_time = df.index[-1]
 
+            # Display prediction on every bar regardless of session
+            pred_labels = {0: "HOLD", 1: "BUY", 2: "SELL"}
+            print(f"🤖 AI: {pred_labels[prediction]} (Conf: {confidence:.2%})")
+            logging.info(f"AI: {pred_labels[prediction]} (Conf: {confidence:.2%}) ADX: {latest_bar.get('adx', 0):.1f}")
+
             # Let the strategy veto entries outside its allowed trading window
             if not self.strategy.is_trading_allowed(bar_time):
                 return
@@ -180,11 +185,6 @@ class TradingBot(ABC):
                 self.entry_conf,
                 self.adx_thresh
             )
-            
-            # Display prediction
-            pred_labels = {0: "HOLD", 1: "BUY", 2: "SELL"}
-            print(f"🤖 AI: {pred_labels[prediction]} (Conf: {confidence:.2%})")
-            logging.info(f"AI: {pred_labels[prediction]} (Conf: {confidence:.2%}) ADX: {latest_bar.get('adx', 0):.1f}")
             
             if should_enter:
                 # ✅ CHECK FOR EXISTING POSITION BEFORE ENTERING
