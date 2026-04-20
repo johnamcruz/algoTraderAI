@@ -212,6 +212,7 @@ __marimo__/
 
 topstep-config.yaml
 alpha-config.yaml
+configs/
 
 # Bot logs
 logs/
