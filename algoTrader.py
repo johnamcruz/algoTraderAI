@@ -69,11 +69,11 @@ Example Usage (Backtesting):
                         help='Run in backtesting mode using historical CSV data')
     parser.add_argument('--backtest_data', type=str,
                         help='Path to CSV file with historical OHLCV data for backtesting')
-    parser.add_argument('--tick_size', type=float, default=0.01,
+    parser.add_argument('--tick_size', type=float, default=None,
                         help='Contract tick size (for backtesting calculations)')
-    parser.add_argument('--profit_target', type=float, default=6000,
+    parser.add_argument('--profit_target', type=float, default=None,
                         help='Profit target in dollars for backtesting (default: 6000)')
-    parser.add_argument('--max_loss', type=float, default=3000,
+    parser.add_argument('--max_loss', type=float, default=None,
                         help='Maximum loss limit in dollars for backtesting (default: 3000)')    
     parser.add_argument('--simulation-days', type=int,
                         help='(Backtest Only) Limit the backtest to the last N days of the CSV data.'
@@ -88,7 +88,7 @@ Example Usage (Backtesting):
                         help='TopstepX account ID (not required for backtesting)')
     parser.add_argument('--contract', type=str,
                         help='Full contract ID (e.g., CON.F.US.ENQ.Z25) or symbol for backtesting')
-    parser.add_argument('--size', type=int, default=1,
+    parser.add_argument('--size', type=int, default=None,
                         help='Trade size (number of contracts)')
     parser.add_argument('--risk_amount', type=float, default=None,
                         help='Max dollars to risk per trade for dynamic sizing (overrides --size when set)')
@@ -96,28 +96,28 @@ Example Usage (Backtesting):
                         help='TopstepX username (not required for backtesting)')
     parser.add_argument('--apikey', type=str,
                         help='TopstepX API key (not required for backtesting)')
-    parser.add_argument('--timeframe', type=int, choices=[1, 3, 5], default=5,
+    parser.add_argument('--timeframe', type=int, choices=[1, 3, 5], default=None,
                         help='Bar timeframe in minutes (default: 5)')    
     
     # RealTime Market URL and Base URL
-    parser.add_argument('--market_hub', type=str, default=MARKET_HUB,
+    parser.add_argument('--market_hub', type=str, default=None,
                         help='Market Hub URL (not required for backtesting)')
-    parser.add_argument('--base_url', type=str, default=BASE_URL,
+    parser.add_argument('--base_url', type=str, default=None,
                         help='ProjectX Base URL (not required for backtesting)')
     
     # Strategy Selection
-    parser.add_argument('--strategy', type=str, default="cisd-ote",
+    parser.add_argument('--strategy', type=str, default=None,
                         choices=StrategyFactory.list_strategies(),
                         help='Strategy to use')
-    parser.add_argument('--model', type=str, default="models/cisd_ote_hybrid_v5_1.onnx",
+    parser.add_argument('--model', type=str, default=None,
                         help='Path to the ONNX model file (.onnx)')
-    parser.add_argument('--scaler', type=str, default="models/scaler_supertrend_pullback_v3.10.pkl",
+    parser.add_argument('--scaler', type=str, default=None,
                         help='Path to the pickled scaler file (.pkl)')
     
     # Trading Parameters
-    parser.add_argument('--entry_conf', type=float, default=0.9,
+    parser.add_argument('--entry_conf', type=float, default=None,
                         help='Min AI confidence to enter (default: 0.9)')
-    parser.add_argument('--adx_thresh', type=int, default=0,
+    parser.add_argument('--adx_thresh', type=int, default=None,
                         help='Min ADX value to enter (default: 0)')
     parser.add_argument('--stop_pts', type=float, default=None,
                         help='Stop loss in points (optional if strategy provides its own)')
@@ -125,14 +125,14 @@ Example Usage (Backtesting):
                         help='Profit target in points (optional if strategy provides its own)')
     parser.add_argument('--enable_trailing_stop', action='store_true',
                         help='Enable trailing stop vs stop order')
-    parser.add_argument('--high_conf_multiplier', type=float, default=1.0,
+    parser.add_argument('--high_conf_multiplier', type=float, default=None,
                         help='Scale risk_amount by this factor when confidence ≥0.90 (e.g. 2.0 doubles size)')
-    parser.add_argument('--max_contracts', type=int, default=15,
+    parser.add_argument('--max_contracts', type=int, default=None,
                         help='Maximum contracts per trade regardless of risk sizing (default: 15)')
     # Strategy-specific parameters
-    parser.add_argument('--pivot_lookback', type=int, default=8,
+    parser.add_argument('--pivot_lookback', type=int, default=None,
                         help='Pivot lookback period (for pivot_reversal strategy)')
-    parser.add_argument('--min_vty_regime', type=float, default=0.75,
+    parser.add_argument('--min_vty_regime', type=float, default=None,
                         help='(cisd-ote) Regime gate: skip trades when vty_regime (atr14/atr_ma50) '
                              'is below this value (0.0=disabled, 0.8=block when vol is 20%% below '
                              'its 50-bar average). Persistent across sustained low-vol periods.')
@@ -158,20 +158,18 @@ Example Usage (Backtesting):
             logging.exception(f"Configuration error: {e}")
             return
     else:
-        # No config file - use args directly
-        config = vars(args)        
+        # No config file - apply defaults then use args
+        config = merge_config_with_args({}, args)
         config.pop('config', None)
-        
+
         # Validate required fields based on mode
         try:
             if config.get('backtest'):
-                # Backtesting mode - only require certain fields
                 if not config.get('backtest_data'):
                     raise ValueError("--backtest_data is required when using --backtest")
                 if not config.get('contract'):
                     raise ValueError("--contract is required")
             else:
-                # Live trading mode - validate all required fields
                 validate_config(config)
         except ValueError as e:
             logging.error(f"Configuration error: {e}")
