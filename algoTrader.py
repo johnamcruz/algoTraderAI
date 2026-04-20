@@ -16,6 +16,7 @@ import argparse
 import logging
 import os
 import sys
+from datetime import datetime
 
 from bot_utils import setup_logging, authenticate, MARKET_HUB, BASE_URL
 from config_loader import load_config, merge_config_with_args, validate_config
@@ -140,7 +141,9 @@ Example Usage (Backtesting):
 
     # Setup logging
     log_level = logging.DEBUG if args.debug else logging.INFO
-    setup_logging(level=log_level, log_file="bot_log.log")    
+    os.makedirs("logs", exist_ok=True)
+    log_file = f"logs/bot_{datetime.now().strftime('%Y%m%d')}.log"
+    setup_logging(level=log_level, log_file=log_file)
     logging.info(f"Logging level set to: {'DEBUG' if args.debug else 'INFO'}")
 
     # Load configuration
