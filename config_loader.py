@@ -8,6 +8,26 @@ Command-line arguments override config file values.
 import os
 from typing import Dict, Any
 
+DEFAULTS = {
+    'size':                 1,
+    'timeframe':            5,
+    'entry_conf':           0.9,
+    'adx_thresh':           0,
+    'tick_size':            0.01,
+    'profit_target':        6000,
+    'max_loss':             3000,
+    'market_hub':           'https://rtc.topstepx.com/hubs/market',
+    'base_url':             'https://api.topstepx.com/api',
+    'strategy':             'cisd-ote',
+    'model':                'models/cisd_ote_hybrid_v5_1.onnx',
+    'scaler':               'models/scaler_supertrend_pullback_v3.10.pkl',
+    'high_conf_multiplier': 1.0,
+    'max_contracts':        15,
+    'pivot_lookback':       8,
+    'min_vty_regime':       0.75,
+    'enable_trailing_stop': False,
+}
+
 
 def load_config(config_path: str) -> Dict[str, Any]:
     """
@@ -49,26 +69,20 @@ def load_config(config_path: str) -> Dict[str, Any]:
 def merge_config_with_args(config: Dict[str, Any], args: Any) -> Dict[str, Any]:
     """
     Merge config file with command-line arguments.
-    Command-line args take precedence.
-    
-    Args:
-        config: Dictionary from config file
-        args: argparse Namespace object
-        
-    Returns:
-        Merged configuration dictionary
+    Priority: CLI args > YAML config > hardcoded defaults.
+    All argparse defaults must be None so they don't silently override YAML.
     """
-    # Start with config file values
-    merged = config.copy()
-    
-    # Override with command-line arguments (if provided)
-    args_dict = vars(args)
-    for key, value in args_dict.items():
-        # Only override if argument was explicitly provided
-        # (not just using argparse default)
+    # Start with hardcoded defaults
+    merged = DEFAULTS.copy()
+
+    # Layer YAML config on top
+    merged.update(config)
+
+    # Layer explicit CLI args on top (only non-None values were user-provided)
+    for key, value in vars(args).items():
         if value is not None:
             merged[key] = value
-    
+
     return merged
 
 
