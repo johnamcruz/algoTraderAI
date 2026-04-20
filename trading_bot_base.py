@@ -65,7 +65,8 @@ class TradingBot(ABC):
         
         logging.info(f"📊 Strategy: {self.strategy.__class__.__name__}")
         logging.info(f"📈 Trade Params: Entry={self.entry_conf}, ADX={self.adx_thresh}, "
-                    f"Stop={self.stop_pts} pts, Target={self.target_pts} pts")
+                    f"Stop={self.stop_pts} pts, Target={self.target_pts} pts, "
+                    f"HighConf={self.high_conf_multiplier}x @ ≥90%")
 
     def _check_exit_conditions(self, current_price):
         """Check if exit conditions are met for current position."""
