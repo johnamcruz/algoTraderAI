@@ -93,10 +93,13 @@ class CISDOTEStrategyV2(BaseStrategy):
         contract_symbol: str,
         session_start_hour: int = SESSION_START_HOUR,
         session_end_hour: int = SESSION_END_HOUR,
+        min_vty_regime: float = 0.75,
     ):
         super().__init__(model_path, scaler_path, contract_symbol)
         self._session_start_hour = session_start_hour
         self._session_end_hour = session_end_hour
+        self._min_vty_regime = min_vty_regime
+        self._latest_vty_regime: float = 1.0
 
         # CISD zone tracker state
         self._active_zones: deque = deque(maxlen=20)
@@ -197,9 +200,15 @@ class CISDOTEStrategyV2(BaseStrategy):
         # ── Compute FFM backbone features ──
         df = self._compute_ffm_features(df)
 
+        # ── Update regime gate value ──
+        if 'vty_regime' in df.columns:
+            val = float(df['vty_regime'].iloc[-1])
+            if np.isfinite(val):
+                self._latest_vty_regime = val
+
         # ── Update HTF trend run tracking (v5.5 features 29 and 31) ──
-        if 'str_structure_state' in df.columns:
-            current_htf = float(df['str_structure_state'].iloc[-1])
+        if '_htf_structure_60m' in df.columns:
+            current_htf = float(df['_htf_structure_60m'].iloc[-1])
             if current_htf != self._htf_prev_direction:
                 self._htf_trend_run_bars = 1
                 self._bars_since_htf_flip = 0
@@ -379,11 +388,18 @@ class CISDOTEStrategyV2(BaseStrategy):
         if confidence < entry_conf:
             return False, None
 
+        if self._min_vty_regime > 0.0 and self._latest_vty_regime < self._min_vty_regime:
+            logging.info(
+                f"🚫 Regime gate: vty_regime={self._latest_vty_regime:.3f} "
+                f"< {self._min_vty_regime} — skipping"
+            )
+            return False, None
+
         if prediction == 1:
-            logging.info(f"✅ CISD+OTE BUY  | signal_prob={confidence:.3f}")
+            logging.info(f"✅ CISD+OTE BUY  | signal_prob={confidence:.3f} vty_regime={self._latest_vty_regime:.3f}")
             return True, 'LONG'
         elif prediction == 2:
-            logging.info(f"✅ CISD+OTE SELL | signal_prob={confidence:.3f}")
+            logging.info(f"✅ CISD+OTE SELL | signal_prob={confidence:.3f} vty_regime={self._latest_vty_regime:.3f}")
             return True, 'SHORT'
 
         return False, None
@@ -508,6 +524,24 @@ class CISDOTEStrategyV2(BaseStrategy):
         df['_abs_delta_5sma']  = pd.Series(abs_delta).rolling(5,  min_periods=1).mean().values
         df['_abs_delta_20sma'] = pd.Series(abs_delta).rolling(20, min_periods=1).mean().values
 
+        # CISD feature 12: daily cumulative delta / cumulative volume (training exact)
+        cum_delta_ratio = np.zeros(n)
+        if hasattr(df.index, 'date'):
+            _tmp_cd = pd.DataFrame({'delta': bar_delta, 'vol': v, 'date': df.index.date})
+            _cum_d  = _tmp_cd.groupby('date')['delta'].cumsum().values
+            _cum_v  = _tmp_cd.groupby('date')['vol'].cumsum().values
+            _cv_s   = np.where(_cum_v > 0, _cum_v, 1e-6)
+            cum_delta_ratio = _cum_d / _cv_s
+        df['_cum_delta_ratio'] = cum_delta_ratio
+
+        # CISD feature 13: (close - EMA20) / ATR14
+        ema20_vals = pd.Series(c).ewm(span=20, adjust=False).mean().values
+        df['_price_vs_ema20'] = (c - ema20_vals) / atr_safe
+
+        # CISD feature 14: (close - 1-bar-prior-close) / ATR14  [training: gap_from_prior_close]
+        prev_c1 = np.roll(c, 1); prev_c1[0] = c[0]
+        df['_gap_from_prior_close'] = (c - prev_c1) / atr_safe
+
         # Buy/sell imbalance proxy
         buy_vol  = np.where(c > o, v, 0.0)
         sell_vol = np.where(c < o, v, 0.0)
@@ -555,6 +589,65 @@ class CISDOTEStrategyV2(BaseStrategy):
 
         df['sess_cum_ret'] = pd.Series(ret).rolling(78).sum().fillna(0).values
         df['sess_bar_of_day'] = np.arange(n) % 78 / 78.0
+
+        # ── 60-min HTF trend direction — exact replication of training compute_trend_60min() ──
+        # Training params: swing_period=5, structure_lookback=3, closed='right', label='right'
+        HTF_SWING    = 5
+        HTF_LOOKBACK = 3
+        htf_60m = np.zeros(n)
+        if hasattr(df.index, 'floor'):
+            try:
+                from numpy.lib.stride_tricks import sliding_window_view
+                ohlc  = df[['open', 'high', 'low', 'close']].copy()
+                df_60 = ohlc.resample('60min', closed='right', label='right').agg(
+                    {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last'}
+                ).dropna()
+                n60 = len(df_60)
+                if n60 >= 2 * HTF_SWING + 1:
+                    h60 = df_60['high'].values
+                    l60 = df_60['low'].values
+                    wh = sliding_window_view(h60, 2 * HTF_SWING + 1)
+                    wl = sliding_window_view(l60, 2 * HTF_SWING + 1)
+                    ch = wh[:, HTF_SWING]; cl = wl[:, HTF_SWING]
+                    is_ph = (ch == wh.max(axis=1)) & (np.sum(wh == ch[:, None], axis=1) == 1)
+                    is_pl = (cl == wl.min(axis=1)) & (np.sum(wl == cl[:, None], axis=1) == 1)
+                    piv_h = np.where(is_ph)[0] + HTF_SWING
+                    piv_l = np.where(is_pl)[0] + HTF_SWING
+                    sh_conf: dict = {}
+                    sl_conf: dict = {}
+                    for b in piv_h:
+                        cb = int(b) + HTF_SWING
+                        if cb < n60:
+                            sh_conf.setdefault(cb, []).append(h60[b])
+                    for b in piv_l:
+                        cb = int(b) + HTF_SWING
+                        if cb < n60:
+                            sl_conf.setdefault(cb, []).append(l60[b])
+                    recent_h: deque = deque(maxlen=HTF_LOOKBACK)
+                    recent_l: deque = deque(maxlen=HTF_LOOKBACK)
+                    trend_60 = np.zeros(n60, dtype=np.float32)
+                    for bar60 in range(n60):
+                        for p in sh_conf.get(bar60, []):
+                            recent_h.appendleft(p)
+                        for p in sl_conf.get(bar60, []):
+                            recent_l.appendleft(p)
+                        if len(recent_h) >= 2 and len(recent_l) >= 2:
+                            hh60 = recent_h[0] > recent_h[1]
+                            hl60 = recent_l[0] > recent_l[1]
+                            ll60 = recent_l[0] < recent_l[1]
+                            lh60 = recent_h[0] < recent_h[1]
+                            if   hh60 and hl60: trend_60[bar60] =  1.0
+                            elif ll60 and lh60: trend_60[bar60] = -1.0
+                            elif hh60 or hl60:  trend_60[bar60] =  1.0
+                            elif ll60 or lh60:  trend_60[bar60] = -1.0
+                            else:               trend_60[bar60] = trend_60[bar60-1] if bar60 > 0 else 0.0
+                        elif bar60 > 0:
+                            trend_60[bar60] = trend_60[bar60-1]
+                    s60 = pd.Series(trend_60.astype(float), index=df_60.index)
+                    htf_60m = s60.reindex(df.index, method='ffill').fillna(0.0).values
+            except Exception:
+                pass
+        df['_htf_structure_60m'] = htf_60m
 
         # ── Structure features ──
         # HH/LL state using 20-bar rolling
@@ -905,9 +998,9 @@ class CISDOTEStrategyV2(BaseStrategy):
         zh = ft - fb; zh_safe = max(zh, 1e-6)
         age = float(abs_bar - z['created_bar'])
 
-        # HTF trend from structure feature
-        htf_trend = float(df['str_structure_state'].iloc[-1]) \
-                    if 'str_structure_state' in df.columns else 0.0
+        # HTF trend from 60-min pivot state machine (exact training replication)
+        htf_trend = float(df['_htf_structure_60m'].iloc[-1]) \
+                    if '_htf_structure_60m' in df.columns else 0.0
         is_aligned = float(
             (z['is_bullish'] and htf_trend >= 0) or
             (not z['is_bullish'] and htf_trend <= 0))
@@ -928,45 +1021,57 @@ class CISDOTEStrategyV2(BaseStrategy):
         else:
             vol_trend = 1.0
 
-        # Cumulative delta ratio
-        if 'vol_delta_proxy' in df.columns:
-            cum_delta = float(df['vol_delta_proxy'].iloc[-1])
-        else:
-            cum_delta = 0.0
+        # Cumulative delta ratio — daily cum_delta / cum_vol (training exact, feature 12)
+        cum_delta = float(df['_cum_delta_ratio'].iloc[-1]) \
+                    if '_cum_delta_ratio' in df.columns else 0.0
 
-        # Price vs EMA20
-        if 'ret_momentum_20' in df.columns:
-            price_vs_ema20 = float(df['ret_momentum_20'].iloc[-1])
-        else:
-            price_vs_ema20 = 0.0
+        # Price vs EMA20 — (close - EMA20) / ATR (training exact, feature 13)
+        price_vs_ema20 = float(df['_price_vs_ema20'].iloc[-1]) \
+                         if '_price_vs_ema20' in df.columns else 0.0
 
-        # Gap from prior close
-        if 'ctx_overnight_gap' in df.columns:
-            gap = float(df['ctx_overnight_gap'].iloc[-1])
-        else:
-            gap = 0.0
+        # Gap from prior close — (close - close[-1]) / ATR (training exact, feature 14)
+        gap = float(df['_gap_from_prior_close'].iloc[-1]) \
+              if '_gap_from_prior_close' in df.columns else 0.0
 
-        # Session progress (0-1 within 7-16 NY)
+        # Session progress — (time - 9:00) / 420 clipped to [0,1] (training exact, feature 15)
+        # Training: sess_mins = hours*60 + mins - 9*60; features[:,15] = clip(sess_mins/420, 0, 1)
         if hasattr(df.index, 'hour'):
             hh = df.index[-1].hour
             mm = df.index[-1].minute
-            sess_mins = max(hh * 60 + mm - SESSION_START_HOUR * 60, 0)
-            sess_prog = min(sess_mins / 540.0, 1.0)  # 9h window = 540 min
-
+            sess_mins = hh * 60 + mm - 9 * 60   # minutes since 9:00am ET
+            sess_prog = float(np.clip(sess_mins / 420.0, 0.0, 1.0))
             in_optimal = 1.0 if (OPTIMAL_START_HOUR <= hh < OPTIMAL_END_HOUR) else 0.0
         else:
             sess_prog  = 0.5
             in_optimal = 0.0
 
-        # Day of week
+        # Day of week — raw 0-4 (training stores raw, feature 16)
         dow = float(df.index[-1].dayofweek) if hasattr(df.index[-1], 'dayofweek') else 0.0
 
-        # Confluence score (0-10)
-        score = 2.0
-        if z['had_sweep']:      score += 2.0
-        if is_aligned:          score += 1.0
-        if z['disp_strength'] >= 0.6: score += 1.0
-        if in_optimal:          score += 1.0
+        # FFM-derived features helper — must be defined before confluence score uses it
+        def ffm(col, default=0.0):
+            return float(df[col].iloc[-1]) if col in df.columns else default
+
+        # Confluence score — exact replication of training's scoring logic (feature 17)
+        vol_ratio  = ffm('vol_ratio_20', default=1.0)
+        cr_val     = max(h - l, 1e-6)
+        body_val   = abs(c - o)
+        upper_w    = h - max(o, c)
+        lower_w    = min(o, c) - l
+        closed_in  = fb <= c <= ft
+        score = 1                                              # base: always +1
+        if z['had_sweep']:            score += 2
+        if z['is_bullish']:
+            if c > o:                 score += 1              # bullish candle
+            if body_val > 0 and lower_w >= body_val * 0.3: score += 1  # lower wick
+            if c >= (h + l) / 2:      score += 1             # close above midpoint
+        else:
+            if c < o:                 score += 1              # bearish candle
+            if body_val > 0 and upper_w >= body_val * 0.3: score += 1  # upper wick
+            if c <= (h + l) / 2:      score += 1             # close below midpoint
+        if cr_val > 0 and (body_val / cr_val) >= 0.5: score += 1  # body ratio >= 50%
+        if vol_ratio >= 1.2:          score += 1              # volume surge
+        if closed_in:                 score += 1              # closed inside zone
 
         # Risk dollars norm
         base = self.contract_symbol.upper().split('.')[0][:4].rstrip('0123456789')
@@ -977,10 +1082,6 @@ class CISDOTEStrategyV2(BaseStrategy):
 
         # Entry distance
         entry_dist = abs(c - (ft + fb) / 2.0) / zh_safe
-
-        # FFM-derived features (pull from computed columns)
-        def ffm(col, default=0.0):
-            return float(df[col].iloc[-1]) if col in df.columns else default
 
         # ── v5.5 regime/vol features (indices 28-31) ──
 
@@ -1021,7 +1122,7 @@ class CISDOTEStrategyV2(BaseStrategy):
             np.clip(gap, -10, 10),                        # 14: gap_from_prior_close
             # Timing (2)
             np.clip(sess_prog, 0, 1),                     # 15: session_progress
-            dow / 4.0,                                    # 16: day_of_week_feat
+            dow,                                          # 16: day_of_week_feat (raw 0-4, training exact)
             # Filter states (4)
             np.clip(score / 10.0, 0, 1),                  # 17: confluence_score
             np.clip(risk_norm, 0, 5),                     # 18: risk_dollars_norm
@@ -1034,7 +1135,7 @@ class CISDOTEStrategyV2(BaseStrategy):
             np.clip(ffm('vty_atr_of_atr'), -5, 5),        # 24: ffm_vty_atr_of_atr
             np.clip(ffm('sess_dist_from_open'), -10, 10), # 25: ffm_sess_dist_from_open
             np.clip(ffm('ret_momentum_10'), -10, 10),     # 26: ffm_ret_momentum_10
-            np.clip(ffm('vol_delta_proxy'), -1, 1),       # 27: ffm_vol_delta_proxy
+            np.clip(ffm('vol_delta_proxy') * 0.001, -10, 10), # 27: ffm_vol_delta_proxy (scale=0.001, training exact)
             # v5.3+ regime/vol context (4)
             np.clip(atr_compression, 0, 10),              # 28: atr_compression_ratio
             np.clip(htf_trend_strength, 0, 1),            # 29: htf_trend_strength

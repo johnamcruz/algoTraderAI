@@ -105,10 +105,10 @@ Example Usage (Backtesting):
                         help='ProjectX Base URL (not required for backtesting)')
     
     # Strategy Selection
-    parser.add_argument('--strategy', type=str, default="supertrend",
+    parser.add_argument('--strategy', type=str, default="cisd-ote",
                         choices=StrategyFactory.list_strategies(),
                         help='Strategy to use')
-    parser.add_argument('--model', type=str, default="models/model_supertrend_pullback_v3.10.onnx",
+    parser.add_argument('--model', type=str, default="models/cisd_ote_hybrid_v5_1.onnx",
                         help='Path to the ONNX model file (.onnx)')
     parser.add_argument('--scaler', type=str, default="models/scaler_supertrend_pullback_v3.10.pkl",
                         help='Path to the pickled scaler file (.pkl)')
