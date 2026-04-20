@@ -139,30 +139,19 @@ Example Usage (Backtesting):
     
     args = parser.parse_args()
 
-    # Setup logging
-    log_level = logging.DEBUG if args.debug else logging.INFO
-    os.makedirs("logs", exist_ok=True)
-    log_file = f"logs/bot_{datetime.now().strftime('%Y%m%d')}.log"
-    setup_logging(level=log_level, log_file=log_file)
-    logging.info(f"Logging level set to: {'DEBUG' if args.debug else 'INFO'}")
-
-    # Load configuration
+    # Load configuration first so we know the contract for the log filename
     if args.config:
-        # Config file provided - load and merge with args
         try:
             config = load_config(args.config)
             config = merge_config_with_args(config, args)
             validate_config(config)
-            logging.info(f"Loaded config from: {args.config}")
         except (FileNotFoundError, ValueError, ImportError) as e:
-            logging.exception(f"Configuration error: {e}")
+            print(f"Configuration error: {e}")
             return
     else:
-        # No config file - apply defaults then use args
         config = merge_config_with_args({}, args)
         config.pop('config', None)
 
-        # Validate required fields based on mode
         try:
             if config.get('backtest'):
                 if not config.get('backtest_data'):
@@ -172,9 +161,21 @@ Example Usage (Backtesting):
             else:
                 validate_config(config)
         except ValueError as e:
-            logging.error(f"Configuration error: {e}")
+            print(f"Configuration error: {e}")
             parser.print_help()
             return
+
+    # Setup logging — include instrument symbol so multi-bot runs get separate files
+    log_level = logging.DEBUG if args.debug else logging.INFO
+    os.makedirs("logs", exist_ok=True)
+    contract = config.get('contract', 'unknown')
+    symbol = contract.split('.')[-2] if '.' in contract else contract
+    log_file = f"logs/bot_{symbol}_{datetime.now().strftime('%Y%m%d')}.log"
+    setup_logging(level=log_level, log_file=log_file)
+    logging.info("--- Log Start ---")
+    logging.info(f"Logging level set to: {'DEBUG' if args.debug else 'INFO'}")
+    if args.config:
+        logging.info(f"Loaded config from: {args.config}")
     
     # Log config data for debugging
     logging.info(config)
