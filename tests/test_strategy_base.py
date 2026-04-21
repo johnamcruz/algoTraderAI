@@ -17,7 +17,7 @@ class StatefulStrategy(BaseStrategy):
     """Concrete stub that records which bar indices _on_new_bar was called with."""
 
     def __init__(self):
-        super().__init__(model_path="", scaler_path="", contract_symbol="TEST")
+        super().__init__(model_path="", contract_symbol="TEST")
         self.seen_bar_indices = []
         self.seen_df_lengths = []
 
@@ -29,7 +29,6 @@ class StatefulStrategy(BaseStrategy):
     def get_feature_columns(self): return []
     def add_features(self, df): return df
     def load_model(self): pass
-    def load_scaler(self): pass
     def predict(self, df): return (0, 0.0)
     def should_enter_trade(self, pred, conf, bar, entry_conf, adx_thresh): return (False, None)
 

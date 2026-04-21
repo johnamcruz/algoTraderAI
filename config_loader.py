@@ -20,7 +20,7 @@ DEFAULTS = {
     'base_url':             'https://api.topstepx.com/api',
     'strategy':             'cisd-ote',
     'model':                'models/cisd_ote_hybrid_v5_1.onnx',
-    'scaler':               'models/scaler_supertrend_pullback_v3.10.pkl',
+
     'high_conf_multiplier': 1.0,
     'max_contracts':        15,
     'pivot_lookback':       8,
@@ -99,7 +99,7 @@ def validate_config(config: Dict[str, Any]) -> None:
     Raises:
         ValueError: If required values are missing
     """
-    required = ['account', 'contract', 'username', 'apikey', 'strategy', 'model', 'scaler', 'market_hub', 'base_url']
+    required = ['account', 'contract', 'username', 'apikey', 'strategy', 'model', 'market_hub', 'base_url']
     
     missing = [key for key in required if key not in config or config[key] is None]
     

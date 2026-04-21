@@ -48,7 +48,6 @@ def warmed_strategy(ohlcv_200):
     from strategy_cisd_ote import CISDOTEStrategy
     s = CISDOTEStrategy(
         model_path="models/cisd_ote_hybrid_v5_1.onnx",
-        scaler_path="",
         contract_symbol="MNQ",
     )
     s.add_features(ohlcv_200)
@@ -102,7 +101,7 @@ class TestBaseStrategyHooks:
         from strategy_cisd_ote import CISDOTEStrategy
         import logging
         logging.disable(logging.CRITICAL)
-        s = CISDOTEStrategy(model_path="", scaler_path="", contract_symbol="MNQ")
+        s = CISDOTEStrategy(model_path="", contract_symbol="MNQ")
         assert s._bar_count == 0
 
     def test_cisd_overrides_on_new_bar(self):
@@ -131,7 +130,7 @@ class TestCISDWarmup:
         from strategy_cisd_ote import CISDOTEStrategy
         import logging
         logging.disable(logging.CRITICAL)
-        s = CISDOTEStrategy(model_path="", scaler_path="", contract_symbol="MNQ")
+        s = CISDOTEStrategy(model_path="", contract_symbol="MNQ")
         result = s.add_features(ohlcv_200)
         assert "ret_1" in result.columns
         assert "vty_regime" in result.columns
@@ -161,7 +160,7 @@ class TestCISDWarmup:
         import logging
         logging.disable(logging.CRITICAL)
         from strategy_cisd_ote import CISDOTEStrategy
-        s = CISDOTEStrategy(model_path="", scaler_path="", contract_symbol="MNQ")
+        s = CISDOTEStrategy(model_path="", contract_symbol="MNQ")
         s.add_features(ohlcv_200)
         count_after_warmup = s._bar_count  # 200
 
@@ -187,7 +186,7 @@ class TestRunWarmupEdgeCases:
         import logging
         logging.disable(logging.CRITICAL)
         from strategy_cisd_ote import CISDOTEStrategy
-        return CISDOTEStrategy(model_path="", scaler_path="", contract_symbol="MNQ")
+        return CISDOTEStrategy(model_path="", contract_symbol="MNQ")
 
     def test_single_row_is_noop(self):
         s = self._fresh()
@@ -213,7 +212,7 @@ class TestRunWarmupEdgeCases:
             def predict(self, df): return (0, 0.0)
             def should_enter_trade(self, *a): return (False, None)
 
-        t = Tracker(model_path="", scaler_path="", contract_symbol="X")
+        t = Tracker(model_path="", contract_symbol="X")
         t._run_warmup(pd.DataFrame({"close": [1.0, 2.0]}))
         assert calls == [0]
         assert t._bar_count == 1

@@ -22,20 +22,17 @@ class BaseStrategy(ABC):
     - Entry signal generation
     """
     
-    def __init__(self, model_path: str, scaler_path: str, contract_symbol: str):
+    def __init__(self, model_path: str, contract_symbol: str):
         """
         Initialize base strategy.
-        
+
         Args:
             model_path: Path to ONNX model file
-            scaler_path: Path to pickled scaler file
             contract_symbol: Trading symbol (ES, NQ, YM, RTY)
         """
         self.model_path = model_path
-        self.scaler_path = scaler_path
         self.contract_symbol = contract_symbol
         self.model = None
-        self.scaler = None
         self._bar_count: int = 0
 
     def set_contract_symbol(self, symbol):
@@ -73,14 +70,10 @@ class BaseStrategy(ABC):
         """
         pass
     
-    @abstractmethod
     def load_scaler(self):
-        """
-        Load the scaler for this strategy.
-        Should set self.scaler to the loaded scaler.
-        """
+        """No-op — all FFM-based strategies are pre-normalized and need no scaler."""
         pass
-    
+
     @abstractmethod
     def predict(self, df: pd.DataFrame) -> Tuple[int, float]:
         """
@@ -214,9 +207,5 @@ class BaseStrategy(ABC):
         
         # Handle NaN values
         features = np.nan_to_num(features, nan=0.0)
-        
-        # Scale if scaler available
-        if self.scaler is not None:
-            features = self.scaler.transform(features)
         
         return features
