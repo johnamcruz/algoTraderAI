@@ -14,6 +14,9 @@ class MockStrategy:
     def get_sequence_length(self):
         return 64
 
+    def get_warmup_length(self):
+        return 200
+
     def get_feature_columns(self):
         return ["open", "high", "low", "close", "volume"]
 

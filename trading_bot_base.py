@@ -53,8 +53,7 @@ class TradingBot(ABC):
         self.strategy = strategy
         
         # Historical bars
-        seq_len = self.strategy.get_sequence_length()
-        self.num_historical_candles_needed = 200
+        self.num_historical_candles_needed = self.strategy.get_warmup_length()
         self.historical_bars = deque(maxlen=self.num_historical_candles_needed)
         
         # Trading parameters

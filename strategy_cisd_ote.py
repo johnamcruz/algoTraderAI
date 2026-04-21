@@ -143,6 +143,10 @@ class CISDOTEStrategy(BaseStrategy):
         """FFM backbone uses 64-bar sequences."""
         return 64
 
+    def get_warmup_length(self) -> int:
+        """200 bars needed for stable ATR, pivot detection, and P/D midpoint."""
+        return 200
+
     def get_feature_columns(self) -> List[str]:
         """
         42 FFM backbone feature columns.
