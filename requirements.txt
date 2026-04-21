@@ -1,6 +1,6 @@
 # requirements.txt
 numpy
-pandas
+pandas<2.0
 pandas-ta
 torch
 onnxruntime
