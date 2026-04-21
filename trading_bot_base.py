@@ -31,6 +31,7 @@ class TradingBot(ABC):
         high_conf_multiplier=1.0,
         max_contracts=15,
         min_stop_pts=1.0,
+        min_stop_atr_mult=0.0,
     ):
         """Initialize the trading bot base."""
         self.contract = contract
@@ -40,6 +41,7 @@ class TradingBot(ABC):
         self.max_contracts = max_contracts
         self.min_stop_pts = min_stop_pts
         self.breakeven_on_1r = breakeven_on_1r
+        self.min_stop_atr_mult = min_stop_atr_mult
         self.timeframe_minutes = int(timeframe_minutes)
         self.enable_trailing_stop = enable_trailing_stop
         
@@ -69,10 +71,11 @@ class TradingBot(ABC):
         self.target_pts = target_pts
         
         logging.info(f"📊 Strategy: {self.strategy.__class__.__name__}")
+        atr_gate = f", MinStopATR={self.min_stop_atr_mult}×ATR" if self.min_stop_atr_mult else ""
         logging.info(f"📈 Trade Params: Entry={self.entry_conf}, ADX={self.adx_thresh}, "
                     f"Stop={self.stop_pts} pts, Target={self.target_pts} pts, "
                     f"HighConf={self.high_conf_multiplier}x @ ≥90%, "
-                    f"MinStop={self.min_stop_pts}pts")
+                    f"MinStop={self.min_stop_pts}pts{atr_gate}")
 
     def _check_exit_conditions(self, current_price):
         """Check if exit conditions are met for current position."""
@@ -290,13 +293,27 @@ class TradingBot(ABC):
                     )
                     return
 
-                min_stop_ticks = self.min_stop_pts / tick_size
+                # Dynamic minimum stop: max of fixed floor and ATR-based floor.
+                # vty_atr_14 is stored normalized (atr/close); multiply back to get points.
+                effective_min_stop_pts = self.min_stop_pts
+                if self.min_stop_atr_mult > 0:
+                    vty_atr_14 = latest_bar.get('vty_atr_14', 0) or 0
+                    atr_pts = vty_atr_14 * close_price
+                    atr_floor = atr_pts * self.min_stop_atr_mult
+                    effective_min_stop_pts = max(self.min_stop_pts, atr_floor)
+
+                min_stop_ticks = effective_min_stop_pts / tick_size
                 stop_ticks_raw = stop_pts / tick_size
                 if stop_ticks_raw < min_stop_ticks:
+                    gate_desc = (
+                        f"ATR-based {effective_min_stop_pts:.2f}pts "
+                        f"({self.min_stop_atr_mult}×ATR)"
+                        if self.min_stop_atr_mult and effective_min_stop_pts > self.min_stop_pts
+                        else f"fixed {self.min_stop_pts}pts"
+                    )
                     logging.info(
                         f"⚠️ Signal skipped — zone stop too tight "
-                        f"({stop_ticks_raw:.1f} ticks < {min_stop_ticks:.0f} minimum "
-                        f"[--min_stop_pts {self.min_stop_pts}])"
+                        f"({stop_pts:.2f}pts / {stop_ticks_raw:.1f} ticks < {gate_desc})"
                     )
                     return
 
@@ -315,7 +332,7 @@ class TradingBot(ABC):
                         )
                         return
 
-                    await self._place_order(
+                    order_result = await self._place_order(
                         side=0,
                         close_price=close_price,
                         stop_loss=stop_loss,
@@ -325,12 +342,15 @@ class TradingBot(ABC):
                         size=size
                     )
 
-                    print("="*40)
-                    print(f"🔥 LONG SIGNAL")
-                    print(f"  Reference: {close_price:.2f}")
-                    print(f"  Stop: {stop_loss:.2f} | Target: {profit_target:.2f}")
-                    print("="*40)
-                    logging.info(f"LONG SIGNAL @ {close_price:.2f} Stop: {stop_loss:.2f} Target: {profit_target:.2f}")
+                    if order_result:
+                        print("="*40)
+                        print(f"🔥 LONG SIGNAL")
+                        print(f"  Reference: {close_price:.2f}")
+                        print(f"  Stop: {stop_loss:.2f} | Target: {profit_target:.2f}")
+                        print("="*40)
+                        logging.info(f"LONG SIGNAL @ {close_price:.2f} Stop: {stop_loss:.2f} Target: {profit_target:.2f}")
+                    else:
+                        logging.warning(f"⚠️ LONG order rejected by broker @ {close_price:.2f} — signal not placed")
 
                 else:  # SHORT
                     stop_loss        = close_price + stop_pts
@@ -347,7 +367,7 @@ class TradingBot(ABC):
                         )
                         return
 
-                    await self._place_order(
+                    order_result = await self._place_order(
                         side=1,
                         close_price=close_price,
                         stop_loss=stop_loss,
@@ -357,12 +377,15 @@ class TradingBot(ABC):
                         size=size
                     )
 
-                    print("="*40)
-                    print(f"🥶 SHORT SIGNAL")
-                    print(f"  Reference: {close_price:.2f}")
-                    print(f"  Stop: {stop_loss:.2f} | Target: {profit_target:.2f}")
-                    print("="*40)
-                    logging.info(f"SHORT SIGNAL @ {close_price:.2f} Stop: {stop_loss:.2f} Target: {profit_target:.2f}")
+                    if order_result:
+                        print("="*40)
+                        print(f"🥶 SHORT SIGNAL")
+                        print(f"  Reference: {close_price:.2f}")
+                        print(f"  Stop: {stop_loss:.2f} | Target: {profit_target:.2f}")
+                        print("="*40)
+                        logging.info(f"SHORT SIGNAL @ {close_price:.2f} Stop: {stop_loss:.2f} Target: {profit_target:.2f}")
+                    else:
+                        logging.warning(f"⚠️ SHORT order rejected by broker @ {close_price:.2f} — signal not placed")
                     
         except Exception as e:
             logging.exception(f"❌ Error during AI prediction: {e}")

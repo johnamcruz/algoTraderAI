@@ -41,16 +41,23 @@ def _make_bot(strategy=None, **kwargs):
     return bot
 
 
-def _fill_bars(bot, n=200):
-    """Populate historical_bars with n minimal in-session bars."""
+def _fill_bars(bot, n=200, vty_atr_14=None):
+    """Populate historical_bars with n minimal in-session bars.
+
+    Pass vty_atr_14 (normalised ATR = atr/close) to simulate ATR-based gate tests.
+    With close=100.5, vty_atr_14=0.05 → ATR ≈ 5.025 pts.
+    """
     ts = datetime(2026, 4, 21, 12, 0, 0, tzinfo=timezone.utc).isoformat()
+    bar = {
+        "timestamp": ts,
+        "open": 100.0, "high": 101.0,
+        "low": 99.0,  "close": 100.5,
+        "volume": 1000,
+    }
+    if vty_atr_14 is not None:
+        bar["vty_atr_14"] = vty_atr_14
     for _ in range(n):
-        bot.historical_bars.append({
-            "timestamp": ts,
-            "open": 100.0, "high": 101.0,
-            "low": 99.0,  "close": 100.5,
-            "volume": 1000,
-        })
+        bot.historical_bars.append(bar.copy())
 
 
 # ── Existing position blocks entry ────────────────────────────────────────────
@@ -276,6 +283,106 @@ class TestNoStopTargetGate:
         strategy.get_stop_target_pts = MagicMock(return_value=(None, None))
         bot = _make_bot(strategy=strategy, stop_pts=10.0, target_pts=20.0)
         _fill_bars(bot)
+
+        run(bot._run_ai_prediction())
+
+        bot._place_order.assert_called_once()
+
+
+# ── Dynamic ATR-based minimum stop ───────────────────────────────────────────
+
+class TestDynamicMinStopGate:
+    """--min_stop_atr sets a floor relative to ATR14; effective min = max(fixed, atr×mult)."""
+
+    # close=100.5, vty_atr_14=0.05 → ATR ≈ 5.025 pts
+
+    def test_atr_floor_blocks_tight_stop(self):
+        # ATR≈5.025 * 0.5 = 2.51 pt floor. stop=2.0 < 2.51 → blocked.
+        bot = _make_bot(stop_pts=2.0, target_pts=10.0, min_stop_atr_mult=0.5)
+        _fill_bars(bot, vty_atr_14=0.05)
+
+        run(bot._run_ai_prediction())
+
+        bot._place_order.assert_not_called()
+
+    def test_atr_floor_allows_stop_above_threshold(self):
+        # ATR≈5.025 * 0.5 = 2.51 pt floor. stop=3.0 > 2.51 → allowed.
+        bot = _make_bot(stop_pts=3.0, target_pts=10.0, min_stop_atr_mult=0.5)
+        _fill_bars(bot, vty_atr_14=0.05)
+
+        run(bot._run_ai_prediction())
+
+        bot._place_order.assert_called_once()
+
+    def test_fixed_floor_wins_when_higher_than_atr_floor(self):
+        # ATR≈5.025 * 0.1 = 0.50 pt. Fixed min_stop_pts=2.0 > 0.50 → fixed floor applies.
+        # stop=1.5 < 2.0 → blocked.
+        bot = _make_bot(stop_pts=1.5, target_pts=10.0, min_stop_pts=2.0, min_stop_atr_mult=0.1)
+        _fill_bars(bot, vty_atr_14=0.05)
+
+        run(bot._run_ai_prediction())
+
+        bot._place_order.assert_not_called()
+
+    def test_atr_floor_wins_when_higher_than_fixed_floor(self):
+        # ATR≈5.025 * 0.5 = 2.51 pt. Fixed min_stop_pts=1.0. ATR floor wins.
+        # stop=2.0 < 2.51 → blocked.
+        bot = _make_bot(stop_pts=2.0, target_pts=10.0, min_stop_pts=1.0, min_stop_atr_mult=0.5)
+        _fill_bars(bot, vty_atr_14=0.05)
+
+        run(bot._run_ai_prediction())
+
+        bot._place_order.assert_not_called()
+
+    def test_zero_mult_disables_atr_gate(self):
+        # min_stop_atr_mult=0 → ATR gate inactive; only fixed floor (1.0 pt default).
+        # stop=1.5 > 1.0 → allowed.
+        bot = _make_bot(stop_pts=1.5, target_pts=10.0, min_stop_atr_mult=0.0)
+        _fill_bars(bot, vty_atr_14=0.05)
+
+        run(bot._run_ai_prediction())
+
+        bot._place_order.assert_called_once()
+
+    def test_missing_atr_feature_falls_back_to_fixed_floor(self):
+        # No vty_atr_14 in bars → atr_pts=0 → ATR floor=0 → fixed floor=1.0 applies.
+        # stop=2.0 > 1.0 → allowed.
+        bot = _make_bot(stop_pts=2.0, target_pts=10.0, min_stop_atr_mult=0.5)
+        _fill_bars(bot)  # no vty_atr_14
+
+        run(bot._run_ai_prediction())
+
+        bot._place_order.assert_called_once()
+
+
+# ── Order rejection detection ─────────────────────────────────────────────────
+
+class TestOrderRejectionDetection:
+    """When _place_order returns falsy (broker rejected), no exception is raised
+    and the signal is treated as not placed."""
+
+    def test_rejected_order_does_not_raise(self):
+        bot = _make_bot(stop_pts=10.0, target_pts=20.0)
+        _fill_bars(bot)
+        bot._place_order = AsyncMock(return_value=None)
+
+        run(bot._run_ai_prediction())  # must not raise
+
+        bot._place_order.assert_called_once()
+
+    def test_successful_order_returns_truthy(self):
+        bot = _make_bot(stop_pts=10.0, target_pts=20.0)
+        _fill_bars(bot)
+        bot._place_order = AsyncMock(return_value="order-123")
+
+        run(bot._run_ai_prediction())
+
+        bot._place_order.assert_called_once()
+
+    def test_false_return_also_handled_gracefully(self):
+        bot = _make_bot(stop_pts=10.0, target_pts=20.0)
+        _fill_bars(bot)
+        bot._place_order = AsyncMock(return_value=False)
 
         run(bot._run_ai_prediction())
 
