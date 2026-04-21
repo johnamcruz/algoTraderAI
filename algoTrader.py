@@ -124,7 +124,9 @@ Example Usage (Backtesting):
     parser.add_argument('--target_pts', type=float, default=None,
                         help='Profit target in points (optional if strategy provides its own)')
     parser.add_argument('--enable_trailing_stop', action='store_true',
-                        help='Enable trailing stop vs stop order')
+                        help='Use TopstepX native trailing stop bracket (type 5) — trails price continuously')
+    parser.add_argument('--breakeven_on_1r', action='store_true',
+                        help='Move stop to entry price once trade reaches 1R profit (bot-managed, works in sim)')
     parser.add_argument('--high_conf_multiplier', type=float, default=None,
                         help='Scale risk_amount by this factor when confidence ≥0.90 (e.g. 2.0 doubles size)')
     parser.add_argument('--max_contracts', type=int, default=None,
@@ -235,6 +237,7 @@ def run_backtesting(config):
             high_conf_multiplier=config.get("high_conf_multiplier", 1.0),
             max_contracts=config.get("max_contracts", 15),
             min_stop_pts=config.get("min_stop_pts", 1.0),
+            breakeven_on_1r=config.get("breakeven_on_1r", False),
         )
 
         if quiet:
@@ -307,6 +310,7 @@ def run_live_trading(config):
             high_conf_multiplier=config.get("high_conf_multiplier", 1.0),
             max_contracts=config.get("max_contracts", 15),
             min_stop_pts=config.get("min_stop_pts", 1.0),
+            breakeven_on_1r=config.get("breakeven_on_1r", False),
         )
 
         asyncio.run(bot.run())

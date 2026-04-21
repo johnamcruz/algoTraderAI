@@ -355,7 +355,7 @@ class RealTimeBot(TradingBot):
             "size": size,
             "stopLossBracket": {
                 "ticks": stop_ticks,
-                "type": 4  # stop market; break-even logic is handled by the bot
+                "type": 5 if self.enable_trailing_stop else 4
             },
             "takeProfitBracket": {
                 "ticks": take_profit_ticks,

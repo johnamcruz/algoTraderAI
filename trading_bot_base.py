@@ -26,6 +26,7 @@ class TradingBot(ABC):
         stop_pts=None,
         target_pts=None,
         enable_trailing_stop=False,
+        breakeven_on_1r=False,
         risk_amount=None,
         high_conf_multiplier=1.0,
         max_contracts=15,
@@ -38,6 +39,7 @@ class TradingBot(ABC):
         self.high_conf_multiplier = high_conf_multiplier
         self.max_contracts = max_contracts
         self.min_stop_pts = min_stop_pts
+        self.breakeven_on_1r = breakeven_on_1r
         self.timeframe_minutes = int(timeframe_minutes)
         self.enable_trailing_stop = enable_trailing_stop
         
@@ -126,7 +128,7 @@ class TradingBot(ABC):
         True on the bar the move is triggered so callers can react (e.g. send
         a broker API call to update the live stop order).
         """
-        if not self.enable_trailing_stop:
+        if not self.breakeven_on_1r:
             return False
         if not self.in_position or self.breakeven_set:
             return False

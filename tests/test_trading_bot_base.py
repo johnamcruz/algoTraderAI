@@ -177,7 +177,7 @@ class TestBreakeven:
         bot.stop_loss = stop
         bot.profit_target = target
         bot.breakeven_set = False
-        bot.enable_trailing_stop = True
+        bot.breakeven_on_1r = True
 
     def _short(self, bot, entry=100.0, stop=105.0, target=90.0):
         bot.in_position = True
@@ -186,13 +186,13 @@ class TestBreakeven:
         bot.stop_loss = stop
         bot.profit_target = target
         bot.breakeven_set = False
-        bot.enable_trailing_stop = True
+        bot.breakeven_on_1r = True
 
     # ── Disabled ──────────────────────────────────────────────────────────────
 
     def test_disabled_when_flag_off(self, bot):
         self._long(bot)
-        bot.enable_trailing_stop = False
+        bot.breakeven_on_1r = False
         triggered = bot._check_and_set_breakeven(110.0)
         assert triggered is False
         assert bot.stop_loss == pytest.approx(95.0)  # unchanged
@@ -252,7 +252,7 @@ class TestBreakeven:
 
     def test_no_position_is_noop(self, bot):
         bot.in_position = False
-        bot.enable_trailing_stop = True
+        bot.breakeven_on_1r = True
         assert bot._check_and_set_breakeven(110.0) is False
 
     def test_breakeven_resets_with_position_state(self, bot):
