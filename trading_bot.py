@@ -466,6 +466,9 @@ class RealTimeBot(TradingBot):
             bar_time = self._get_bar_time(ts)
             async with self.bar_lock:
                 if bar_time != self.current_bar_time:
+                    # Discard stale ticks for bars already closed by the watcher
+                    if self.current_bar_time and bar_time < self.current_bar_time:
+                        return
                     if self.current_bar:
                         await self._close_and_print_bar()
                     self.current_bar_time = bar_time
