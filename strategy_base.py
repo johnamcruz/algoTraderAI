@@ -36,6 +36,7 @@ class BaseStrategy(ABC):
         self.contract_symbol = contract_symbol
         self.model = None
         self.scaler = None
+        self._bar_count: int = 0
 
     def set_contract_symbol(self, symbol):
         """Method to set the contract symbol after initialization."""
@@ -121,6 +122,26 @@ class BaseStrategy(ABC):
         """
         pass
     
+    def _on_new_bar(self, df: pd.DataFrame, bar_idx: int) -> None:
+        """
+        Called once per bar for stateful incremental processing.
+        No-op by default. Override in strategies that maintain running state
+        (e.g. zone detectors, pivot trackers) that must see every bar in order.
+        """
+        pass
+
+    def _run_warmup(self, df: pd.DataFrame) -> None:
+        """
+        Feed each of the n-1 historical bars through _on_new_bar so that
+        stateful strategies build correct state from prefilled history before
+        going live. Safe to call every add_features() — exits immediately after
+        the first call (when _bar_count > 0).
+        """
+        n = len(df)
+        for warmup_i in range(n - 1):
+            self._on_new_bar(df.iloc[:warmup_i + 1], warmup_i)
+            self._bar_count += 1
+
     def on_trade_exit(self, reason: str):
         """Called by the bot when a trade exits. Override to react to exit events."""
         pass
