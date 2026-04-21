@@ -17,10 +17,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: |
-          pip install "pandas<2.0"
-          pip install git+https://github.com/twopirllc/pandas-ta.git@development
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt
 
       - name: Run tests
         run: pytest --tb=short -q
