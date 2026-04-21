@@ -50,7 +50,8 @@ class TradingBot(ABC):
         self.stop_orderId = None
         self.limit_orderId = None
         self.entry_timestamp = None
-        self.mfe_pts: float = 0.0  # peak unrealized gain in points this trade
+        self.mfe_pts: float = 0.0       # peak unrealized gain in points this trade
+        self.breakeven_set: bool = False # True once stop has been moved to entry
 
         # Strategy
         self.strategy = strategy
@@ -116,6 +117,46 @@ class TradingBot(ABC):
         if unrealized > self.mfe_pts:
             self.mfe_pts = unrealized
 
+    def _check_and_set_breakeven(self, current_price: float) -> bool:
+        """
+        Move stop to entry price once the trade reaches 1R profit.
+
+        Activated only when enable_trailing_stop=True. Fires at most once per
+        trade — subsequent calls are no-ops once breakeven_set=True. Returns
+        True on the bar the move is triggered so callers can react (e.g. send
+        a broker API call to update the live stop order).
+        """
+        if not self.enable_trailing_stop:
+            return False
+        if not self.in_position or self.breakeven_set:
+            return False
+        if self.entry_price is None or self.stop_loss is None:
+            return False
+
+        stop_dist = abs(self.entry_price - self.stop_loss)
+        if stop_dist == 0:
+            return False
+
+        if self.position_type == 'LONG':
+            one_r_price = self.entry_price + stop_dist
+            triggered = current_price >= one_r_price
+        elif self.position_type == 'SHORT':
+            one_r_price = self.entry_price - stop_dist
+            triggered = current_price <= one_r_price
+        else:
+            return False
+
+        if triggered:
+            old_stop = self.stop_loss
+            self.stop_loss = self.entry_price
+            self.breakeven_set = True
+            logging.info(
+                f"🔒 Break-even set — stop moved {old_stop:.2f} → {self.entry_price:.2f} "
+                f"(1R={one_r_price:.2f} reached, price={current_price:.2f})"
+            )
+            return True
+        return False
+
     def _reset_position_state(self):
         """Reset position state after exit."""
         self.in_position = False
@@ -127,6 +168,7 @@ class TradingBot(ABC):
         self.limit_orderId = None
         self.entry_timestamp = None
         self.mfe_pts = 0.0
+        self.breakeven_set = False
 
     def _log_exit(self, exit_price, exit_reason, pnl):
         """Log exit information."""
