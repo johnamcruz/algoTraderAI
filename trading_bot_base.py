@@ -29,6 +29,7 @@ class TradingBot(ABC):
         risk_amount=None,
         high_conf_multiplier=1.0,
         max_contracts=15,
+        min_stop_pts=1.0,
     ):
         """Initialize the trading bot base."""
         self.contract = contract
@@ -36,6 +37,7 @@ class TradingBot(ABC):
         self.risk_amount = risk_amount
         self.high_conf_multiplier = high_conf_multiplier
         self.max_contracts = max_contracts
+        self.min_stop_pts = min_stop_pts
         self.timeframe_minutes = int(timeframe_minutes)
         self.enable_trailing_stop = enable_trailing_stop
         
@@ -66,7 +68,8 @@ class TradingBot(ABC):
         logging.info(f"📊 Strategy: {self.strategy.__class__.__name__}")
         logging.info(f"📈 Trade Params: Entry={self.entry_conf}, ADX={self.adx_thresh}, "
                     f"Stop={self.stop_pts} pts, Target={self.target_pts} pts, "
-                    f"HighConf={self.high_conf_multiplier}x @ ≥90%")
+                    f"HighConf={self.high_conf_multiplier}x @ ≥90%, "
+                    f"MinStop={self.min_stop_pts}pts")
 
     def _check_exit_conditions(self, current_price):
         """Check if exit conditions are met for current position."""
@@ -243,12 +246,13 @@ class TradingBot(ABC):
                     )
                     return
 
-                MIN_STOP_TICKS = 4
+                min_stop_ticks = self.min_stop_pts / tick_size
                 stop_ticks_raw = stop_pts / tick_size
-                if stop_ticks_raw < MIN_STOP_TICKS:
+                if stop_ticks_raw < min_stop_ticks:
                     logging.info(
                         f"⚠️ Signal skipped — zone stop too tight "
-                        f"({stop_ticks_raw:.1f} ticks < {MIN_STOP_TICKS} minimum)"
+                        f"({stop_ticks_raw:.1f} ticks < {min_stop_ticks:.0f} minimum "
+                        f"[--min_stop_pts {self.min_stop_pts}])"
                     )
                     return
 

@@ -408,10 +408,13 @@ class CISDOTEStrategy(BaseStrategy):
     def on_trade_exit(self, reason: str):
         """Clear all active zones after a stop loss — zone is invalidated."""
         if reason == 'STOP_LOSS':
+            logging.info(
+                f"🚫 Stop loss — clearing {len(self._active_zones)} zone(s) | "
+                f"bear_pots={len(self._bear_pots)}, bull_pots={len(self._bull_pots)}"
+            )
             self._active_zones.clear()
             self._latest_cisd_features = None
             self._latest_zone_bullish = 0.0
-            logging.info("🚫 Stop loss — all CISD zones cleared")
 
     def get_stop_target_pts(self, df, direction, entry_price):
         """
