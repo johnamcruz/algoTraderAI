@@ -70,9 +70,6 @@ class BaseStrategy(ABC):
         """
         pass
     
-    def load_scaler(self):
-        """No-op — all FFM-based strategies are pre-normalized and need no scaler."""
-        pass
 
     @abstractmethod
     def predict(self, df: pd.DataFrame) -> Tuple[int, float]:

@@ -535,9 +535,7 @@ class RealTimeBot(TradingBot):
         # Initialize the strategy with the derived symbol
         self.strategy.set_contract_symbol(contract_symbol)
 
-        # Load strategy model and scaler
         self.strategy.load_model()
-        self.strategy.load_scaler()
 
         print("🚀 Starting bot connection...")
         # ⭐️ CRITICAL FIX: Create the watcher task so it runs on the loop
