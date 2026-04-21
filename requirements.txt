@@ -1,7 +1,6 @@
 # requirements.txt
 numpy
 pandas<2.0
-pandas-ta
 torch
 onnxruntime
 scikit-learn
