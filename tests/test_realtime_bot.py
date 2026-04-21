@@ -256,3 +256,46 @@ class TestProcessTick:
     def test_malformed_tick_does_not_raise(self, live_bot):
         """Errors inside process_tick are caught — bot should not crash."""
         run(live_bot.process_tick("garbage"))
+
+
+# ── handle_trade: stale tick discard ─────────────────────────────────────────
+
+class TestStaleTick:
+    """Ticks whose bar_time is older than current_bar_time are discarded.
+
+    Scenario: bar_closer_watcher closes the 09:30 bar and advances
+    current_bar_time to 09:35. A delayed tick then arrives with a timestamp
+    of 09:30:xx — it must be silently dropped to prevent ghost bars.
+    """
+
+    def _tick(self, ts_str, price, volume=1):
+        return {"timestamp": ts_str, "price": price, "volume": volume}
+
+    def test_stale_tick_does_not_reopen_closed_bar(self, live_bot):
+        # Advance to 09:35 bar
+        run(live_bot.handle_trade(self._tick("2025-01-01T09:35:00+00:00", 100.0)))
+        bar_time_before = live_bot.current_bar_time
+
+        # Stale tick from 09:30 (already closed)
+        run(live_bot.handle_trade(self._tick("2025-01-01T09:30:45+00:00", 50.0)))
+
+        assert live_bot.current_bar_time == bar_time_before
+        assert live_bot.current_bar["open"] == 100.0
+
+    def test_stale_tick_does_not_corrupt_ohlcv(self, live_bot):
+        run(live_bot.handle_trade(self._tick("2025-01-01T09:35:00+00:00", 100.0)))
+        run(live_bot.handle_trade(self._tick("2025-01-01T09:36:00+00:00", 102.0)))
+
+        # Stale tick with extreme price should not affect the 09:35 bar
+        run(live_bot.handle_trade(self._tick("2025-01-01T09:30:00+00:00", 999.0)))
+
+        assert live_bot.current_bar["high"] == pytest.approx(102.0)
+        assert live_bot.current_bar["open"] == pytest.approx(100.0)
+
+    def test_valid_next_bar_tick_is_not_discarded(self, live_bot):
+        run(live_bot.handle_trade(self._tick("2025-01-01T09:35:00+00:00", 100.0)))
+
+        # Tick for the NEXT bar (09:40) — should open a new bar, not be dropped
+        run(live_bot.handle_trade(self._tick("2025-01-01T09:40:00+00:00", 105.0)))
+
+        assert live_bot.current_bar["open"] == pytest.approx(105.0)

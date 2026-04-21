@@ -1,7 +1,7 @@
 """Unit tests for TradingBot base class logic."""
 
 import pytest
-from tests.helpers import ConcreteBot
+from tests.helpers import ConcreteBot, MockStrategy
 
 
 class TestCalculateSize:
@@ -188,3 +188,29 @@ class TestResetPositionState:
         assert bot.profit_target is None
         assert bot.stop_orderId is None
         assert bot.limit_orderId is None
+
+
+class TestWarmupLength:
+    """num_historical_candles_needed is driven by the strategy, not hardcoded."""
+
+    def _make_bot(self, strategy):
+        return ConcreteBot(
+            contract="MNQ", size=1, timeframe_minutes=5,
+            strategy=strategy, entry_conf=0.70, adx_thresh=0,
+            stop_pts=10.0, target_pts=20.0,
+        )
+
+    def test_warmup_count_matches_strategy(self, mock_strategy):
+        bot = self._make_bot(mock_strategy)
+        assert bot.num_historical_candles_needed == mock_strategy.get_warmup_length()
+
+    def test_historical_bars_deque_capacity_matches_warmup(self, mock_strategy):
+        bot = self._make_bot(mock_strategy)
+        assert bot.historical_bars.maxlen == mock_strategy.get_warmup_length()
+
+    def test_custom_warmup_length_propagates(self):
+        strategy = MockStrategy()
+        strategy.get_warmup_length = lambda: 50
+        bot = self._make_bot(strategy)
+        assert bot.num_historical_candles_needed == 50
+        assert bot.historical_bars.maxlen == 50

@@ -17,6 +17,9 @@ class MockStrategy:
     def get_warmup_length(self):
         return 200
 
+    def is_trading_allowed(self, timestamp):
+        return True
+
     def get_feature_columns(self):
         return ["open", "high", "low", "close", "volume"]
 
