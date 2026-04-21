@@ -738,8 +738,7 @@ class CISDOTEStrategy(BaseStrategy):
                             break
             else:
                 new_bear.append((pot_price, pot_abs))
-        if cisd_dir is None:
-            self._bear_pots = new_bear
+        self._bear_pots = new_bear  # always consume the matched pot
 
         # ── Bullish CISD check ──
         new_bull = deque(maxlen=20)
@@ -782,8 +781,7 @@ class CISDOTEStrategy(BaseStrategy):
                             break
             else:
                 new_bull.append((pot_price, pot_abs))
-        if cisd_dir is None:
-            self._bull_pots = new_bull
+        self._bull_pots = new_bull  # always consume the matched pot
 
         if cisd_zone is not None:
             self._active_zones.appendleft(cisd_zone)
