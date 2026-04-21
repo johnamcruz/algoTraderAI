@@ -167,6 +167,67 @@ class TestCheckExitConditions:
         assert bot._check_exit_conditions(98.0) == (None, None)
 
 
+class TestUpdateMfe:
+    """_update_mfe: tracks peak unrealized gain in points."""
+
+    def _long(self, bot):
+        bot.in_position = True
+        bot.position_type = "LONG"
+        bot.entry_price = 100.0
+        bot.mfe_pts = 0.0
+
+    def _short(self, bot):
+        bot.in_position = True
+        bot.position_type = "SHORT"
+        bot.entry_price = 100.0
+        bot.mfe_pts = 0.0
+
+    def test_long_favorable_tick_recorded(self, bot):
+        self._long(bot)
+        bot._update_mfe(103.0)
+        assert bot.mfe_pts == pytest.approx(3.0)
+
+    def test_long_peak_not_overwritten_by_lower_tick(self, bot):
+        self._long(bot)
+        bot._update_mfe(105.0)
+        bot._update_mfe(102.0)
+        assert bot.mfe_pts == pytest.approx(5.0)
+
+    def test_long_adverse_tick_ignored(self, bot):
+        self._long(bot)
+        bot._update_mfe(98.0)  # below entry — no favorable movement
+        assert bot.mfe_pts == pytest.approx(0.0)
+
+    def test_short_favorable_tick_recorded(self, bot):
+        self._short(bot)
+        bot._update_mfe(96.0)
+        assert bot.mfe_pts == pytest.approx(4.0)
+
+    def test_short_peak_not_overwritten_by_higher_tick(self, bot):
+        self._short(bot)
+        bot._update_mfe(94.0)
+        bot._update_mfe(97.0)
+        assert bot.mfe_pts == pytest.approx(6.0)
+
+    def test_short_adverse_tick_ignored(self, bot):
+        self._short(bot)
+        bot._update_mfe(102.0)
+        assert bot.mfe_pts == pytest.approx(0.0)
+
+    def test_no_position_is_noop(self, bot):
+        bot.in_position = False
+        bot.mfe_pts = 0.0
+        bot._update_mfe(110.0)
+        assert bot.mfe_pts == pytest.approx(0.0)
+
+    def test_mfe_resets_on_position_reset(self, bot):
+        self._long(bot)
+        bot._update_mfe(108.0)
+        assert bot.mfe_pts == pytest.approx(8.0)
+        bot._reset_position_state()
+        assert bot.mfe_pts == pytest.approx(0.0)
+
+
 class TestResetPositionState:
     """_reset_position_state: clears all position fields."""
 
@@ -178,6 +239,7 @@ class TestResetPositionState:
         bot.profit_target = 110.0
         bot.stop_orderId = "abc"
         bot.limit_orderId = "def"
+        bot.mfe_pts = 7.5
 
         bot._reset_position_state()
 
@@ -188,6 +250,7 @@ class TestResetPositionState:
         assert bot.profit_target is None
         assert bot.stop_orderId is None
         assert bot.limit_orderId is None
+        assert bot.mfe_pts == pytest.approx(0.0)
 
 
 class TestWarmupLength:

@@ -48,7 +48,8 @@ class TradingBot(ABC):
         self.stop_orderId = None
         self.limit_orderId = None
         self.entry_timestamp = None
-        
+        self.mfe_pts: float = 0.0  # peak unrealized gain in points this trade
+
         # Strategy
         self.strategy = strategy
         
@@ -99,6 +100,19 @@ class TradingBot(ABC):
             return self.entry_price - exit_price
         return 0.0
 
+    def _update_mfe(self, current_price: float) -> None:
+        """Update peak unrealized gain (points) for the open trade."""
+        if not self.in_position or self.entry_price is None:
+            return
+        if self.position_type == 'LONG':
+            unrealized = current_price - self.entry_price
+        elif self.position_type == 'SHORT':
+            unrealized = self.entry_price - current_price
+        else:
+            return
+        if unrealized > self.mfe_pts:
+            self.mfe_pts = unrealized
+
     def _reset_position_state(self):
         """Reset position state after exit."""
         self.in_position = False
@@ -109,15 +123,19 @@ class TradingBot(ABC):
         self.stop_orderId = None
         self.limit_orderId = None
         self.entry_timestamp = None
+        self.mfe_pts = 0.0
 
     def _log_exit(self, exit_price, exit_reason, pnl):
         """Log exit information."""
+        target_dist = abs(self.profit_target - self.entry_price) if (self.profit_target and self.entry_price) else 0
+        mfe_pct = f" ({self.mfe_pts / target_dist * 100:.0f}% of target)" if target_dist else ""
         print("="*40)
         print(f"🛑 EXIT {self.position_type} @ {exit_price:.2f} ({exit_reason})")
-        print(f"  Entry: {self.entry_price:.2f} | PnL Points: {pnl:.2f}")
+        print(f"  Entry: {self.entry_price:.2f} | PnL Points: {pnl:.2f} | MFE: +{self.mfe_pts:.2f}pts{mfe_pct}")
         print("="*40)
         logging.info(f"EXIT {self.position_type} @ {exit_price:.2f} ({exit_reason}) "
-                    f"Entry: {self.entry_price:.2f} | PnL Points: {pnl:.2f}")
+                    f"Entry: {self.entry_price:.2f} | PnL Points: {pnl:.2f} | "
+                    f"MFE: +{self.mfe_pts:.2f}pts{mfe_pct}")
 
     def _log_entry(self, side, entry_price, stop_loss, profit_target):
         """Log entry information."""
