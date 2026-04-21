@@ -129,6 +129,8 @@ Example Usage (Backtesting):
                         help='Scale risk_amount by this factor when confidence ≥0.90 (e.g. 2.0 doubles size)')
     parser.add_argument('--max_contracts', type=int, default=None,
                         help='Maximum contracts per trade regardless of risk sizing (default: 15)')
+    parser.add_argument('--min_stop_pts', type=float, default=None,
+                        help='Minimum stop distance in points — signals with tighter stops are skipped (default: 1.0)')
     # Strategy-specific parameters
     parser.add_argument('--pivot_lookback', type=int, default=None,
                         help='Pivot lookback period (for pivot_reversal strategy)')
@@ -232,6 +234,7 @@ def run_backtesting(config):
             risk_amount=config.get("risk_amount"),
             high_conf_multiplier=config.get("high_conf_multiplier", 1.0),
             max_contracts=config.get("max_contracts", 15),
+            min_stop_pts=config.get("min_stop_pts", 1.0),
         )
 
         if quiet:
@@ -303,6 +306,7 @@ def run_live_trading(config):
             risk_amount=config.get("risk_amount"),
             high_conf_multiplier=config.get("high_conf_multiplier", 1.0),
             max_contracts=config.get("max_contracts", 15),
+            min_stop_pts=config.get("min_stop_pts", 1.0),
         )
 
         asyncio.run(bot.run())

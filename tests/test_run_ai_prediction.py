@@ -156,13 +156,17 @@ class TestHighConfMultiplier:
         assert captured["take_profit_ticks"] == 80  # unchanged
 
 
-# ── Minimum ticks gate ────────────────────────────────────────────────────────
+# ── Minimum stop gate ────────────────────────────────────────────────────────
 
-class TestMinTicksGate:
-    """Stop < 4 ticks is too tight — signal skipped to avoid broker rejection."""
+class TestMinStopGate:
+    """Signals with a stop below --min_stop_pts are skipped.
 
-    def test_stop_below_minimum_ticks_skips_order(self):
-        # 0.5 pts / 0.25 tick = 2 ticks < 4 minimum
+    ConcreteBot: tick_size=0.25
+    Default min_stop_pts=1.0 → 4 ticks minimum.
+    """
+
+    def test_stop_below_default_minimum_skips_order(self):
+        # 0.5 pts / 0.25 tick = 2 ticks < 4 ticks (1.0 pt default)
         bot = _make_bot(stop_pts=0.5, target_pts=5.0)
         _fill_bars(bot)
 
@@ -170,8 +174,8 @@ class TestMinTicksGate:
 
         bot._place_order.assert_not_called()
 
-    def test_stop_at_exactly_minimum_ticks_allows_order(self):
-        # 1.0 pts / 0.25 tick = 4 ticks == minimum
+    def test_stop_at_exactly_default_minimum_allows_order(self):
+        # 1.0 pts / 0.25 tick = 4 ticks == 4-tick minimum
         bot = _make_bot(stop_pts=1.0, target_pts=5.0)
         _fill_bars(bot)
 
@@ -179,8 +183,45 @@ class TestMinTicksGate:
 
         bot._place_order.assert_called_once()
 
-    def test_stop_above_minimum_ticks_allows_order(self):
+    def test_stop_above_default_minimum_allows_order(self):
         bot = _make_bot(stop_pts=10.0, target_pts=20.0)
+        _fill_bars(bot)
+
+        run(bot._run_ai_prediction())
+
+        bot._place_order.assert_called_once()
+
+    def test_custom_min_stop_pts_blocks_previously_valid_stop(self):
+        # Raise minimum to 2.0 pts (8 ticks). A 1.5 pt stop that previously
+        # passed (6 ticks > 4) is now rejected.
+        bot = _make_bot(stop_pts=1.5, target_pts=10.0, min_stop_pts=2.0)
+        _fill_bars(bot)
+
+        run(bot._run_ai_prediction())
+
+        bot._place_order.assert_not_called()
+
+    def test_custom_min_stop_pts_allows_stop_at_threshold(self):
+        # Exactly at the raised minimum: 2.0 pts / 0.25 tick = 8 ticks
+        bot = _make_bot(stop_pts=2.0, target_pts=10.0, min_stop_pts=2.0)
+        _fill_bars(bot)
+
+        run(bot._run_ai_prediction())
+
+        bot._place_order.assert_called_once()
+
+    def test_custom_min_stop_pts_allows_stop_above_threshold(self):
+        # 4.0 pts > 2.0 pt minimum — should pass
+        bot = _make_bot(stop_pts=4.0, target_pts=10.0, min_stop_pts=2.0)
+        _fill_bars(bot)
+
+        run(bot._run_ai_prediction())
+
+        bot._place_order.assert_called_once()
+
+    def test_min_stop_pts_zero_disables_gate(self):
+        # Setting min_stop_pts=0 means any stop width passes
+        bot = _make_bot(stop_pts=0.25, target_pts=5.0, min_stop_pts=0.0)
         _fill_bars(bot)
 
         run(bot._run_ai_prediction())
