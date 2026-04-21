@@ -615,9 +615,7 @@ class SimulationBot(TradingBot):
         # Initialize strategy with contract symbol
         self.strategy.set_contract_symbol(contract_symbol)
         
-        # Load strategy model and scaler
         self.strategy.load_model()
-        self.strategy.load_scaler()
         
         print(f"📊 Processing {len(df)} bars...\n")
         logging.info(f"📊 Starting to process {len(df)} bars...")
