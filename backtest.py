@@ -1,0 +1,277 @@
+#!/usr/bin/env python3
+"""
+Backtest runner — run predefined market-regime scenarios against algoTrader.py.
+
+Usage:
+    python3 backtest.py                        # run all scenarios
+    python3 backtest.py --scenario bull_2023   # run one scenario by key
+    python3 backtest.py --list                 # list available scenarios
+    python3 backtest.py --parallel             # run all in parallel (default: sequential)
+    python3 backtest.py --symbol MES           # override symbol (MNQ default)
+    python3 backtest.py --entry_conf 0.90      # override entry confidence
+    python3 backtest.py --model models/cisd_ote_hybrid_v5_5.onnx  # override model
+"""
+
+import argparse
+import subprocess
+import sys
+import os
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
+
+# ── Scenario definitions ─────────────────────────────────────────────────────
+
+SCENARIOS = {
+    "bear_2022": {
+        "label":      "2022 Bear Market",
+        "start_date": "2022-01-01",
+        "end_date":   "2022-10-15",
+        "note":       "Persistent downtrend; model over-fires on pullback bounces",
+    },
+    "recovery_2023": {
+        "label":      "2023 Recovery",
+        "start_date": "2023-01-01",
+        "end_date":   "2023-12-31",
+        "note":       "Full-year recovery; post-rate-hike rebound + AI hype",
+    },
+    "banking_2023": {
+        "label":      "2023 Banking Crisis",
+        "start_date": "2023-03-01",
+        "end_date":   "2023-05-31",
+        "note":       "SVB collapse, high-vol chop; CISD historically strong here",
+    },
+    "selloff_2024": {
+        "label":      "Aug 2024 Selloff",
+        "start_date": "2024-07-15",
+        "end_date":   "2024-09-15",
+        "note":       "Sharp selloff + recovery; high directional volatility",
+    },
+    "oos_2021": {
+        "label":      "2021 OOS Control",
+        "start_date": "2021-01-01",
+        "end_date":   "2021-12-31",
+        "note":       "Out-of-sample year; structural uptrend with low volatility",
+    },
+}
+
+# Symbol → data file, tick_size, full contract ID for backtesting
+SYMBOL_CONFIG = {
+    "MNQ": {
+        "data":       "data/NQ_continuous_5min.csv",
+        "tick_size":  0.25,
+        "contract":   "CON.F.US.MNQ.M26",
+    },
+    "MES": {
+        "data":       "data/ES_continuous_5min.csv",
+        "tick_size":  0.25,
+        "contract":   "CON.F.US.MES.M26",
+    },
+}
+
+DEFAULT_MODEL         = "models/cisd_ote_hybrid_v5_1.onnx"
+DEFAULT_SYMBOL        = "MNQ"
+DEFAULT_ENTRY_CONF    = 0.70
+DEFAULT_RISK_AMOUNT   = 200.0
+DEFAULT_HIGH_CONF_MULT = 2.0
+DEFAULT_MAX_CONTRACTS = 5
+DEFAULT_MAX_LOSS      = 400.0
+DEFAULT_PROFIT_TARGET = 6000.0
+DEFAULT_MIN_STOP_ATR  = 0.5
+DEFAULT_MIN_STOP_PTS  = 1.0
+
+
+# ── Build command ─────────────────────────────────────────────────────────────
+
+def build_command(scenario_key: str, args) -> list[str]:
+    sc = SCENARIOS[scenario_key]
+    sym_cfg = SYMBOL_CONFIG[args.symbol]
+
+    cmd = [
+        sys.executable, "algoTrader.py",
+        "--backtest",
+        "--backtest_data",        sym_cfg["data"],
+        "--contract",             sym_cfg["contract"],
+        "--tick_size",            str(sym_cfg["tick_size"]),
+        "--start-date",           sc["start_date"],
+        "--end-date",             sc["end_date"],
+        "--strategy",             "cisd-ote",
+        "--model",                args.model,
+        "--entry_conf",           str(args.entry_conf),
+        "--risk_amount",          str(args.risk_amount),
+        "--max_contracts",        str(args.max_contracts),
+        "--high_conf_multiplier", str(args.high_conf_mult),
+        "--max_loss",             str(args.max_loss),
+        "--profit_target",        str(args.profit_target),
+        "--min_stop_atr",         str(args.min_stop_atr),
+        "--min_stop_pts",         str(args.min_stop_pts),
+        "--quiet",
+    ]
+    return cmd
+
+
+# ── Run one scenario ──────────────────────────────────────────────────────────
+
+def run_scenario(scenario_key: str, args, log_dir: str) -> dict:
+    sc = SCENARIOS[scenario_key]
+    log_path = os.path.join(log_dir, f"{scenario_key}.txt")
+    cmd = build_command(scenario_key, args)
+
+    t0 = time.time()
+    with open(log_path, "w") as fh:
+        proc = subprocess.run(cmd, stdout=fh, stderr=subprocess.STDOUT, cwd=os.path.dirname(os.path.abspath(__file__)))
+    elapsed = time.time() - t0
+
+    output = open(log_path).read()
+    return {
+        "key":      scenario_key,
+        "label":    sc["label"],
+        "note":     sc["note"],
+        "elapsed":  elapsed,
+        "returncode": proc.returncode,
+        "output":   output,
+        "log_path": log_path,
+    }
+
+
+# ── Extract summary lines from bot output ─────────────────────────────────────
+
+def extract_summary(output: str) -> list[str]:
+    lines = output.splitlines()
+    summary_lines = []
+    in_summary = False
+    for line in lines:
+        if "SIMULATION RESULTS" in line or "BACKTEST SUMMARY" in line:
+            in_summary = True
+        if in_summary:
+            summary_lines.append(line)
+            # Stop after the closing separator that follows the stats block
+            if summary_lines and line.startswith("===") and len(summary_lines) > 3:
+                break
+    return summary_lines
+
+
+# ── Print results ─────────────────────────────────────────────────────────────
+
+def print_results(results: list[dict], args) -> None:
+    width = 70
+    print()
+    print("═" * width)
+    print(f"  BACKTEST RESULTS — {args.symbol}  |  model: {os.path.basename(args.model)}")
+    print(f"  entry_conf={args.entry_conf}  risk=${args.risk_amount}  max_contracts={args.max_contracts}")
+    print(f"  max_loss=${args.max_loss}  profit_target=${args.profit_target}  min_stop_atr={args.min_stop_atr}")
+    print("═" * width)
+
+    for r in results:
+        marker = "✓" if r["returncode"] == 0 else "✗"
+        print(f"\n{marker} {r['label']} ({r['key']})  [{r['elapsed']:.1f}s]")
+        print(f"  {r['note']}")
+        print(f"  {r['start_date']} → {r['end_date']}")
+        print()
+        for line in extract_summary(r["output"]):
+            print(f"  {line}")
+        if r["returncode"] != 0:
+            print(f"  ⚠ Process exited {r['returncode']} — see {r['log_path']}")
+
+    print()
+    print("═" * width)
+    print(f"  Full logs: {os.path.dirname(results[0]['log_path'])}/")
+    print("═" * width)
+
+
+def attach_dates(results: list[dict], args) -> list[dict]:
+    for r in results:
+        sc = SCENARIOS[r["key"]]
+        r["start_date"] = sc["start_date"]
+        r["end_date"] = sc["end_date"]
+    return results
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Run predefined backtest scenarios against algoTrader.py",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--scenario",   type=str,  default=None,
+                        help="Key of a single scenario to run (omit for all)")
+    parser.add_argument("--list",       action="store_true",
+                        help="List available scenarios and exit")
+    parser.add_argument("--parallel",   action="store_true",
+                        help="Run scenarios in parallel (default: sequential)")
+    parser.add_argument("--symbol",     type=str,  default=DEFAULT_SYMBOL,
+                        choices=list(SYMBOL_CONFIG.keys()),
+                        help=f"Trading symbol (default: {DEFAULT_SYMBOL})")
+    parser.add_argument("--model",      type=str,  default=DEFAULT_MODEL,
+                        help=f"ONNX model path (default: {DEFAULT_MODEL})")
+    parser.add_argument("--entry_conf", type=float, default=DEFAULT_ENTRY_CONF,
+                        help=f"Entry confidence threshold (default: {DEFAULT_ENTRY_CONF})")
+    parser.add_argument("--risk_amount", type=float, default=DEFAULT_RISK_AMOUNT,
+                        help=f"Risk per trade in $ (default: {DEFAULT_RISK_AMOUNT})")
+    parser.add_argument("--max_contracts", type=int, default=DEFAULT_MAX_CONTRACTS,
+                        help=f"Max contracts per trade (default: {DEFAULT_MAX_CONTRACTS})")
+    parser.add_argument("--high_conf_mult", type=float, default=DEFAULT_HIGH_CONF_MULT,
+                        help=f"High-confidence size multiplier (default: {DEFAULT_HIGH_CONF_MULT})")
+    parser.add_argument("--max_loss", type=float, default=DEFAULT_MAX_LOSS,
+                        help=f"Max loss limit in $ (default: {DEFAULT_MAX_LOSS})")
+    parser.add_argument("--profit_target", type=float, default=DEFAULT_PROFIT_TARGET,
+                        help=f"Profit target in $ (default: {DEFAULT_PROFIT_TARGET})")
+    parser.add_argument("--min_stop_atr", type=float, default=DEFAULT_MIN_STOP_ATR,
+                        help=f"Min stop ATR multiplier (default: {DEFAULT_MIN_STOP_ATR})")
+    parser.add_argument("--min_stop_pts", type=float, default=DEFAULT_MIN_STOP_PTS,
+                        help=f"Min stop floor in points (default: {DEFAULT_MIN_STOP_PTS})")
+    args = parser.parse_args()
+
+    if args.list:
+        print("\nAvailable scenarios:")
+        for key, sc in SCENARIOS.items():
+            print(f"  {key:<18}  {sc['start_date']} → {sc['end_date']}  {sc['label']}")
+            print(f"  {'':18}  {sc['note']}")
+        print()
+        return
+
+    keys_to_run = [args.scenario] if args.scenario else list(SCENARIOS.keys())
+    for k in keys_to_run:
+        if k not in SCENARIOS:
+            print(f"Unknown scenario '{k}'. Use --list to see options.")
+            sys.exit(1)
+
+    # Create log dir
+    run_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backtest_logs", run_ts)
+    os.makedirs(log_dir, exist_ok=True)
+
+    print(f"Running {len(keys_to_run)} scenario(s) — logs → {log_dir}/")
+    if args.parallel:
+        print("Mode: parallel")
+    else:
+        print("Mode: sequential")
+    print()
+
+    results = []
+
+    if args.parallel:
+        with ThreadPoolExecutor(max_workers=len(keys_to_run)) as ex:
+            futures = {ex.submit(run_scenario, k, args, log_dir): k for k in keys_to_run}
+            for fut in as_completed(futures):
+                r = fut.result()
+                marker = "✓" if r["returncode"] == 0 else "✗"
+                print(f"  {marker} Finished: {r['label']}  ({r['elapsed']:.1f}s)")
+                results.append(r)
+        results.sort(key=lambda r: keys_to_run.index(r["key"]))
+    else:
+        for k in keys_to_run:
+            sc = SCENARIOS[k]
+            print(f"  → {sc['label']} ({sc['start_date']} → {sc['end_date']}) ...", flush=True)
+            r = run_scenario(k, args, log_dir)
+            marker = "✓" if r["returncode"] == 0 else "✗"
+            print(f"     {marker} done ({r['elapsed']:.1f}s)")
+            results.append(r)
+
+    results = attach_dates(results, args)
+    print_results(results, args)
+
+
+if __name__ == "__main__":
+    main()
