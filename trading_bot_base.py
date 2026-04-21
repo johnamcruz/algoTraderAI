@@ -31,7 +31,7 @@ class TradingBot(ABC):
         high_conf_multiplier=1.0,
         max_contracts=15,
         min_stop_pts=1.0,
-        min_stop_atr_mult=0.0,
+        min_stop_atr_mult=0.5,
     ):
         """Initialize the trading bot base."""
         self.contract = contract
