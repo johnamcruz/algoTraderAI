@@ -49,6 +49,9 @@ class SimulationBot(TradingBot):
         risk_amount=None,
         high_conf_multiplier=1.0,
         max_contracts=15,
+        min_stop_pts=1.0,
+        min_stop_atr_mult=0.5,
+        breakeven_on_1r=False,
     ):
         """
         Initialize the simulation bot.
@@ -82,8 +85,11 @@ class SimulationBot(TradingBot):
             risk_amount=risk_amount,
             high_conf_multiplier=high_conf_multiplier,
             max_contracts=max_contracts,
+            min_stop_pts=min_stop_pts,
+            min_stop_atr_mult=min_stop_atr_mult,
+            breakeven_on_1r=breakeven_on_1r,
         )
-        
+
         # Simulation-specific attributes
         self.csv_path = csv_path
         self.tick_size = tick_size

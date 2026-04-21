@@ -42,6 +42,9 @@ class RealTimeBot(TradingBot):
         risk_amount=None,
         high_conf_multiplier=1.0,
         max_contracts=15,
+        min_stop_pts=1.0,
+        min_stop_atr_mult=0.5,
+        breakeven_on_1r=False,
     ):
         """
         Initialize the real-time trading bot.
@@ -75,8 +78,11 @@ class RealTimeBot(TradingBot):
             risk_amount=risk_amount,
             high_conf_multiplier=high_conf_multiplier,
             max_contracts=max_contracts,
+            min_stop_pts=min_stop_pts,
+            min_stop_atr_mult=min_stop_atr_mult,
+            breakeven_on_1r=breakeven_on_1r,
         )
-        
+
         # Real-time specific attributes
         self.hub_url = f"{market_hub}?access_token={token}"
         self.base_url = base_url
