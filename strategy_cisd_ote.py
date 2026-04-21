@@ -202,6 +202,19 @@ class CISDOTEStrategy(BaseStrategy):
                 self._latest_vty_regime = val
 
         # ── Run incremental CISD detector on latest bar ──
+        # On the first call with historical data, warm up the CISD state by
+        # processing each prior bar individually so zone patterns from prefilled
+        # history are visible (live mode prefills 200 bars without calling add_features).
+        if self._bar_count == 0 and n > 1:
+            logging.info(f"⏳ CISD warmup: processing {n - 1} historical bars...")
+            for warmup_i in range(n - 1):
+                self._update_cisd_detector(df.iloc[:warmup_i + 1], warmup_i)
+                self._bar_count += 1
+            logging.info(
+                f"✅ CISD warmup done — {len(self._active_zones)} active zone(s), "
+                f"{len(self._pivot_highs)} pivot highs, {len(self._pivot_lows)} pivot lows"
+            )
+
         self._update_cisd_detector(df, self._bar_count)
 
         # ── Build 28-element CISD feature vector for latest bar ──
