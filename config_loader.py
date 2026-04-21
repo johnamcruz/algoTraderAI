@@ -26,6 +26,9 @@ DEFAULTS = {
     'pivot_lookback':       8,
     'min_vty_regime':       0.75,
     'enable_trailing_stop': False,
+    'breakeven_on_1r':      False,
+    'min_stop_pts':         1.0,
+    'min_stop_atr':         0.5,
 }
 
 
