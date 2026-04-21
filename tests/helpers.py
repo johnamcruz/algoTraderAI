@@ -47,9 +47,6 @@ class MockStrategy:
     def load_model(self):
         pass
 
-    def load_scaler(self):
-        pass
-
 
 class ConcreteBot(TradingBot):
     """Concrete TradingBot for unit testing (MNQ specs, $0.50/tick, 0.25 tick size)."""

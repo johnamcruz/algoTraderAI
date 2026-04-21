@@ -25,37 +25,35 @@ class StrategyFactory:
         cls,
         strategy_name: str,
         model_path: str,
-        scaler_path: str,
         contract_symbol: str,
         **kwargs
     ) -> BaseStrategy:
         """
         Create a strategy instance.
-        
+
         Args:
-            strategy_name: Name of the strategy ('squeeze_v3', 'pivot_reversal', etc.)
+            strategy_name: Name of the strategy
             model_path: Path to ONNX model file
-            scaler_path: Path to pickled scaler file
             contract_symbol: Trading symbol (ES, NQ, YM, RTY)
             **kwargs: Additional strategy-specific parameters
-            
+
         Returns:
             Strategy instance
-            
+
         Raises:
             ValueError: If strategy name is not recognized
         """
         strategy_name = strategy_name.lower()
-        
+
         if strategy_name not in cls.STRATEGIES:
             available = ', '.join(cls.STRATEGIES.keys())
             raise ValueError(
                 f"Unknown strategy: '{strategy_name}'. "
                 f"Available strategies: {available}"
             )
-        
+
         strategy_class = cls.STRATEGIES[strategy_name]
-        return strategy_class(model_path, scaler_path, contract_symbol, **kwargs)
+        return strategy_class(model_path, contract_symbol, **kwargs)
     
     @classmethod
     def list_strategies(cls) -> list:

@@ -78,7 +78,6 @@ class CISDOTEStrategy(BaseStrategy):
     Usage:
       strategy = CISDOTEStrategy(
           model_path='cisd_ote_hybrid_v5_1_F4.onnx',
-          scaler_path='',           # no scaler needed
           contract_symbol='MNQ',
       )
     """
@@ -86,13 +85,12 @@ class CISDOTEStrategy(BaseStrategy):
     def __init__(
         self,
         model_path: str,
-        scaler_path: str,
         contract_symbol: str,
         session_start_hour: int = SESSION_START_HOUR,
         session_end_hour: int = SESSION_END_HOUR,
         min_vty_regime: float = 0.75,
     ):
-        super().__init__(model_path, scaler_path, contract_symbol)
+        super().__init__(model_path, contract_symbol)
         self._session_start_hour = session_start_hour
         self._session_end_hour = session_end_hour
 
@@ -240,11 +238,6 @@ class CISDOTEStrategy(BaseStrategy):
         logging.info(f"  ✅ ONNX loaded: {os.path.basename(self.model_path)}")
         logging.info(f"     Inputs:  {inputs}")
         logging.info(f"     Outputs: {outputs}")
-
-    def load_scaler(self):
-        """No scaler needed — FFM features are pre-normalized."""
-        self.scaler = None
-        logging.info("  ✅ No scaler required for CISD+OTE v5.1")
 
     def predict(self, df: pd.DataFrame) -> Tuple[int, float]:
         """

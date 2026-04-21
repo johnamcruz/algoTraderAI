@@ -38,21 +38,16 @@ def main():
 Available Strategies: {', '.join(StrategyFactory.list_strategies())}
 
 Example Usage (Live Trading):
-  python %(prog)s --account ACC123 --contract CON.F.US.RTY.Z25 --size 1 \\
-                  --username USER --apikey KEY --timeframe 5 \\
-                  --strategy squeeze_v3 \\
-                  --model models/squeeze_v3_model.onnx \\
-                  --scaler models/squeeze_v3_scalers.pkl \\
-                  --entry_conf 0.55 --adx_thresh 25 --stop_atr 2.0 --target_atr 3.0
+  python %(prog)s --account ACC123 --contract CON.F.US.MES.M26 --username USER --apikey KEY \\
+                  --strategy cisd-ote --model models/cisd_ote_hybrid_v5_1.onnx \\
+                  --risk_amount 300 --entry_conf 0.70 --high_conf_multiplier 2.0
 
 Example Usage (Backtesting):
   python %(prog)s --backtest --backtest_data data/historical.csv \\
-                  --contract RTY --size 1 --timeframe 5 \\
-                  --strategy squeeze_v3 \\
-                  --model models/squeeze_v3_model.onnx \\
-                  --scaler models/squeeze_v3_scalers.pkl \\
-                  --entry_conf 0.55 --adx_thresh 25 --stop_atr 2.0 --target_atr 3.0 \\
-                  --tick_size 0.1 --profit_target 6000 --max_loss 3000
+                  --contract MES --timeframe 5 \\
+                  --strategy cisd-ote --model models/cisd_ote_hybrid_v5_1.onnx \\
+                  --risk_amount 300 --entry_conf 0.70 \\
+                  --tick_size 0.25 --profit_target 6000 --max_loss 3000
 """
     )
 
@@ -111,8 +106,6 @@ Example Usage (Backtesting):
                         help='Strategy to use')
     parser.add_argument('--model', type=str, default=None,
                         help='Path to the ONNX model file (.onnx)')
-    parser.add_argument('--scaler', type=str, default=None,
-                        help='Path to the pickled scaler file (.pkl)')
     
     # Trading Parameters
     parser.add_argument('--entry_conf', type=float, default=None,
@@ -215,7 +208,7 @@ def run_backtesting(config):
         strategy = StrategyFactory.create_strategy(
             strategy_name=config["strategy"],
             model_path=config["model"],
-            scaler_path=config["scaler"],
+
             contract_symbol=config["contract"],
             **strategy_kwargs
         )
@@ -288,7 +281,7 @@ def run_live_trading(config):
         strategy = StrategyFactory.create_strategy(
             strategy_name=config["strategy"],
             model_path=config["model"],
-            scaler_path=config["scaler"],
+
             contract_symbol=None,
             **strategy_kwargs
         )
