@@ -147,13 +147,18 @@ class BaseStrategy(ABC):
 
     def get_sequence_length(self) -> int:
         """
-        Returns the number of historical bars needed for prediction.
-        Override this if your strategy needs a different sequence length.
-        
-        Returns:
-            Number of bars needed
+        Returns the ONNX model input window length (bars per inference).
+        Override per strategy to match the model's expected sequence dimension.
         """
         return 60
+
+    def get_warmup_length(self) -> int:
+        """
+        Returns the number of historical bars the bot should prefill before
+        going live. Must be >= get_sequence_length(). Override per strategy
+        when indicators need a longer lookback than the model sequence.
+        """
+        return max(200, self.get_sequence_length())
     
     def validate_features(self, df: pd.DataFrame) -> bool:
         """
