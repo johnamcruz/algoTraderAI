@@ -1,5 +1,7 @@
 # AI Algo Trading Bot
 
+![Python Tests](https://github.com/johnamcruz/algoTraderAI/actions/workflows/tests.yml/badge.svg)
+
 ## Overview
 
 A Python algorithmic trading bot for futures markets (NQ, ES, RTY, etc.) via the TopstepX/ProjectX platform. Uses a **CISD+OTE** (Change in State of Delivery + Optimal Trade Entry) AI strategy for entry signals, with dynamic risk-based position sizing.
