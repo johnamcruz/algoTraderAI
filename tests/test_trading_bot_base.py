@@ -167,6 +167,102 @@ class TestCheckExitConditions:
         assert bot._check_exit_conditions(98.0) == (None, None)
 
 
+class TestBreakeven:
+    """_check_and_set_breakeven: moves stop to entry once 1R profit is reached."""
+
+    def _long(self, bot, entry=100.0, stop=95.0, target=110.0):
+        bot.in_position = True
+        bot.position_type = "LONG"
+        bot.entry_price = entry
+        bot.stop_loss = stop
+        bot.profit_target = target
+        bot.breakeven_set = False
+        bot.enable_trailing_stop = True
+
+    def _short(self, bot, entry=100.0, stop=105.0, target=90.0):
+        bot.in_position = True
+        bot.position_type = "SHORT"
+        bot.entry_price = entry
+        bot.stop_loss = stop
+        bot.profit_target = target
+        bot.breakeven_set = False
+        bot.enable_trailing_stop = True
+
+    # ── Disabled ──────────────────────────────────────────────────────────────
+
+    def test_disabled_when_flag_off(self, bot):
+        self._long(bot)
+        bot.enable_trailing_stop = False
+        triggered = bot._check_and_set_breakeven(110.0)
+        assert triggered is False
+        assert bot.stop_loss == pytest.approx(95.0)  # unchanged
+
+    # ── LONG ──────────────────────────────────────────────────────────────────
+
+    def test_long_not_triggered_below_1r(self, bot):
+        # entry=100, stop=95 → stop_dist=5 → 1R at 105
+        self._long(bot)
+        triggered = bot._check_and_set_breakeven(104.99)
+        assert triggered is False
+        assert bot.stop_loss == pytest.approx(95.0)
+
+    def test_long_triggered_exactly_at_1r(self, bot):
+        self._long(bot)
+        triggered = bot._check_and_set_breakeven(105.0)
+        assert triggered is True
+        assert bot.stop_loss == pytest.approx(100.0)  # moved to entry
+        assert bot.breakeven_set is True
+
+    def test_long_triggered_above_1r(self, bot):
+        self._long(bot)
+        triggered = bot._check_and_set_breakeven(107.0)
+        assert triggered is True
+        assert bot.stop_loss == pytest.approx(100.0)
+
+    def test_long_only_triggers_once(self, bot):
+        self._long(bot)
+        bot._check_and_set_breakeven(106.0)   # triggers
+        bot.stop_loss = 100.0                  # already moved
+        triggered = bot._check_and_set_breakeven(108.0)  # should not fire again
+        assert triggered is False
+
+    # ── SHORT ─────────────────────────────────────────────────────────────────
+
+    def test_short_not_triggered_above_1r(self, bot):
+        # entry=100, stop=105 → stop_dist=5 → 1R at 95
+        self._short(bot)
+        triggered = bot._check_and_set_breakeven(95.01)
+        assert triggered is False
+        assert bot.stop_loss == pytest.approx(105.0)
+
+    def test_short_triggered_exactly_at_1r(self, bot):
+        self._short(bot)
+        triggered = bot._check_and_set_breakeven(95.0)
+        assert triggered is True
+        assert bot.stop_loss == pytest.approx(100.0)
+        assert bot.breakeven_set is True
+
+    def test_short_triggered_below_1r(self, bot):
+        self._short(bot)
+        triggered = bot._check_and_set_breakeven(92.0)
+        assert triggered is True
+        assert bot.stop_loss == pytest.approx(100.0)
+
+    # ── Edge cases ─────────────────────────────────────────────────────────────
+
+    def test_no_position_is_noop(self, bot):
+        bot.in_position = False
+        bot.enable_trailing_stop = True
+        assert bot._check_and_set_breakeven(110.0) is False
+
+    def test_breakeven_resets_with_position_state(self, bot):
+        self._long(bot)
+        bot._check_and_set_breakeven(106.0)
+        assert bot.breakeven_set is True
+        bot._reset_position_state()
+        assert bot.breakeven_set is False
+
+
 class TestUpdateMfe:
     """_update_mfe: tracks peak unrealized gain in points."""
 

@@ -355,7 +355,7 @@ class RealTimeBot(TradingBot):
             "size": size,
             "stopLossBracket": {
                 "ticks": stop_ticks,
-                "type": 5 if self.enable_trailing_stop else 4
+                "type": 4  # stop market; break-even logic is handled by the bot
             },
             "takeProfitBracket": {
                 "ticks": take_profit_ticks,
@@ -379,6 +379,18 @@ class RealTimeBot(TradingBot):
         except Exception as e:
             logging.exception(f"❌ Could not place order: {e}.")
             return None
+
+    async def _on_breakeven_triggered(self):
+        """
+        Called once when stop is moved to break-even on the live bot.
+        Internal stop_loss is already updated. A broker-side stop order
+        modification (cancel old stop + place new at entry price) should be
+        added here once the TopstepX order-modify API is integrated.
+        """
+        logging.info(
+            f"💡 Break-even live — internal stop moved to {self.entry_price:.2f}. "
+            f"Manually update the stop order on TopstepX if auto-modification is not wired."
+        )
 
     # =========================================================
     # BAR CLOSER WATCHER
@@ -456,6 +468,8 @@ class RealTimeBot(TradingBot):
             # Check exits if in position (for sim bot compatibility)
             if self.in_position:
                 self._update_mfe(price)
+                if self._check_and_set_breakeven(price):
+                    await self._on_breakeven_triggered()
                 exit_price, exit_reason = self._check_exit_conditions(price)
 
                 if exit_reason:

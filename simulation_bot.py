@@ -390,9 +390,10 @@ class SimulationBot(TradingBot):
             # Skip exit check if we just entered this bar
             # ========================================
             if self.in_position and not self.just_entered_this_bar:
-                # Update MFE with the most favorable intrabar price before checking exits
+                # Update MFE and check break-even with the most favorable intrabar price
                 favorable_price = high if self.position_type == 'LONG' else low
                 self._update_mfe(favorable_price)
+                self._check_and_set_breakeven(favorable_price)
 
                 # ── Gap-open check: if bar opens past stop/target, fill at open ──
                 exit_price, exit_reason = None, None
