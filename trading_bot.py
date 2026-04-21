@@ -455,8 +455,9 @@ class RealTimeBot(TradingBot):
             
             # Check exits if in position (for sim bot compatibility)
             if self.in_position:
+                self._update_mfe(price)
                 exit_price, exit_reason = self._check_exit_conditions(price)
-                
+
                 if exit_reason:
                     pnl = self._calculate_pnl(exit_price)
                     self._log_exit(exit_price, exit_reason, pnl)

@@ -281,21 +281,25 @@ class SimulationBot(TradingBot):
     def _log_exit(self, exit_price, exit_reason, pnl):
         """Override base class to show timestamp and P&L details."""
         pnl_dollars = self._points_to_dollars(pnl)
-        
+        target_dist = abs(self.profit_target - self.entry_price) if (self.profit_target and self.entry_price) else 0
+        mfe_pct = f" ({self.mfe_pts / target_dist * 100:.0f}% of target)" if target_dist else ""
+
         print("\n" + "="*70)
         print(f"🛑 EXIT {self.position_type} - {exit_reason}")
         print(f"   Time:       {self.current_timestamp}")
         print(f"   Entry:      {self.entry_price:.2f}")
         print(f"   Exit:       {exit_price:.2f}")
+        print(f"   MFE:        +{self.mfe_pts:.2f}pts{mfe_pct}")
         print(f"   P&L Points: {pnl:+.2f}")
         print(f"   P&L $:      ${pnl_dollars:+,.2f}")
         print(f"   Total P&L:  ${self.total_pnl_dollars:+,.2f}")
         if self.mll is not None:
             print(f"   MLL: ${self.mll:,.2f}")
         print("="*70 + "\n")
-        
+
         logging.info(f"EXIT {self.position_type} @ {exit_price:.2f} ({exit_reason}) | "
                     f"Time: {self.current_timestamp} | Entry: {self.entry_price:.2f} | "
+                    f"MFE: +{self.mfe_pts:.2f}pts{mfe_pct} | "
                     f"P&L: {pnl:.2f} points (${pnl_dollars:,.2f})")
 
     async def _process_bar(self, bar_data, bar_index, total_bars):
@@ -386,6 +390,10 @@ class SimulationBot(TradingBot):
             # Skip exit check if we just entered this bar
             # ========================================
             if self.in_position and not self.just_entered_this_bar:
+                # Update MFE with the most favorable intrabar price before checking exits
+                favorable_price = high if self.position_type == 'LONG' else low
+                self._update_mfe(favorable_price)
+
                 # ── Gap-open check: if bar opens past stop/target, fill at open ──
                 exit_price, exit_reason = None, None
                 if self.position_type == 'LONG':
@@ -459,6 +467,7 @@ class SimulationBot(TradingBot):
                         'reason': exit_reason,
                         'pnl_points': pnl_points,
                         'pnl_dollars': pnl_dollars,
+                        'mfe_pts': self.mfe_pts,
                         'total_pnl_dollars': self.total_pnl_dollars
                     }
                     self.trades_log.append(trade_info)
