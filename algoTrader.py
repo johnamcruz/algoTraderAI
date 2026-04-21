@@ -134,8 +134,9 @@ Example Usage (Backtesting):
     parser.add_argument('--min_stop_pts', type=float, default=None,
                         help='Minimum stop distance in points — signals with tighter stops are skipped (default: 1.0)')
     parser.add_argument('--min_stop_atr', type=float, default=None,
-                        help='Dynamic minimum stop as a multiple of ATR14 (e.g. 0.5 = stop must be ≥ 0.5×ATR). '
-                             'Effective minimum is max(--min_stop_pts, --min_stop_atr × ATR). 0=disabled.')
+                        help='Dynamic minimum stop as a multiple of ATR14 (default: 0.5). '
+                             'Stop must be ≥ this × ATR14; effective floor is max(--min_stop_pts, mult×ATR). '
+                             'Calibrated for MES/MNQ/MGC on 5-min bars. Set 0 to disable.')
     # Strategy-specific parameters
     parser.add_argument('--pivot_lookback', type=int, default=None,
                         help='Pivot lookback period (for pivot_reversal strategy)')
@@ -240,7 +241,7 @@ def run_backtesting(config):
             high_conf_multiplier=config.get("high_conf_multiplier", 1.0),
             max_contracts=config.get("max_contracts", 15),
             min_stop_pts=config.get("min_stop_pts", 1.0),
-            min_stop_atr_mult=config.get("min_stop_atr", 0.0),
+            min_stop_atr_mult=config.get("min_stop_atr", 0.5),
             breakeven_on_1r=config.get("breakeven_on_1r", False),
         )
 
@@ -314,7 +315,7 @@ def run_live_trading(config):
             high_conf_multiplier=config.get("high_conf_multiplier", 1.0),
             max_contracts=config.get("max_contracts", 15),
             min_stop_pts=config.get("min_stop_pts", 1.0),
-            min_stop_atr_mult=config.get("min_stop_atr", 0.0),
+            min_stop_atr_mult=config.get("min_stop_atr", 0.5),
             breakeven_on_1r=config.get("breakeven_on_1r", False),
         )
 
