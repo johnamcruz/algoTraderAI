@@ -425,7 +425,13 @@ class RealTimeBot(TradingBot):
             return None
 
     async def _on_breakeven_triggered(self):
-        """Cancel the broker stop bracket and place a new stop at entry price."""
+        """Place a new stop at entry price, then cancel the old bracket stop.
+
+        New stop is placed first so there is never a window with zero stop protection.
+        If placement fails the old bracket remains active and we abort.
+        If the cancel of the old bracket fails after a successful placement we log a
+        warning — two stops is safe; zero stops is not.
+        """
         if not self.stop_bracket_order_id:
             logging.warning(
                 f"⚠️ Breakeven triggered but stop bracket ID unknown — "
@@ -434,27 +440,10 @@ class RealTimeBot(TradingBot):
             return
 
         headers = {'Authorization': f'Bearer {self.token}'}
-
-        # Cancel existing stop bracket
-        try:
-            r = requests.post(
-                f"{self.base_url}/Order/cancel",
-                headers=headers,
-                json={"accountId": self.account, "orderId": self.stop_bracket_order_id},
-                timeout=10
-            )
-            r.raise_for_status()
-            result = r.json()
-            if not result.get('success'):
-                logging.error(f"❌ Stop cancel failed: {result.get('errorMessage')}")
-                return
-            logging.info(f"✅ Stop bracket {self.stop_bracket_order_id} cancelled")
-        except Exception as e:
-            logging.error(f"❌ Error cancelling stop bracket: {e}")
-            return
-
-        # Place new standalone stop at entry price (breakeven)
+        old_bracket_id = self.stop_bracket_order_id
         stop_side = 1 if self.position_type == 'LONG' else 0
+
+        # Step 1: Place new standalone stop at entry price FIRST
         try:
             r = requests.post(
                 f"{self.base_url}/Order/place",
@@ -471,16 +460,41 @@ class RealTimeBot(TradingBot):
             )
             r.raise_for_status()
             result = r.json()
-            if result.get('success'):
-                new_id = result.get('orderId')
-                self.stop_bracket_order_id = new_id
-                logging.info(
-                    f"✅ Breakeven stop placed @ {self.entry_price:.2f} (order {new_id})"
+            if not result.get('success'):
+                logging.error(
+                    f"❌ Breakeven stop placement failed: {result.get('errorMessage')} "
+                    f"— old stop {old_bracket_id} remains active"
+                )
+                return
+            new_id = result.get('orderId')
+            self.stop_bracket_order_id = new_id
+            logging.info(f"✅ Breakeven stop placed @ {self.entry_price:.2f} (order {new_id})")
+        except Exception as e:
+            logging.error(f"❌ Error placing breakeven stop: {e} — old stop {old_bracket_id} remains active")
+            return
+
+        # Step 2: Cancel old bracket stop now that new stop is live
+        try:
+            r = requests.post(
+                f"{self.base_url}/Order/cancel",
+                headers=headers,
+                json={"accountId": self.account, "orderId": old_bracket_id},
+                timeout=10
+            )
+            r.raise_for_status()
+            result = r.json()
+            if not result.get('success'):
+                logging.warning(
+                    f"⚠️ Old stop bracket {old_bracket_id} cancel failed "
+                    f"(new stop {self.stop_bracket_order_id} still active): {result.get('errorMessage')}"
                 )
             else:
-                logging.error(f"❌ Breakeven stop placement failed: {result.get('errorMessage')}")
+                logging.info(f"✅ Old stop bracket {old_bracket_id} cancelled")
         except Exception as e:
-            logging.error(f"❌ Error placing breakeven stop: {e}")
+            logging.warning(
+                f"⚠️ Error cancelling old stop bracket {old_bracket_id} "
+                f"(new stop {self.stop_bracket_order_id} still active): {e}"
+            )
 
     # =========================================================
     # BAR CLOSER WATCHER
