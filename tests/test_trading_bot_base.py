@@ -335,7 +335,10 @@ class TestResetPositionState:
         bot.profit_target = 110.0
         bot.stop_orderId = "abc"
         bot.limit_orderId = "def"
+        bot.stop_bracket_order_id = 99999
+        bot.position_size = 3
         bot.mfe_pts = 7.5
+        bot.breakeven_set = True
 
         bot._reset_position_state()
 
@@ -346,7 +349,17 @@ class TestResetPositionState:
         assert bot.profit_target is None
         assert bot.stop_orderId is None
         assert bot.limit_orderId is None
+        assert bot.stop_bracket_order_id is None
+        assert bot.position_size is None
         assert bot.mfe_pts == pytest.approx(0.0)
+        assert bot.breakeven_set is False
+
+    def test_new_trade_starts_with_clean_bracket_state(self, bot):
+        bot.stop_bracket_order_id = 12345
+        bot.position_size = 2
+        bot._reset_position_state()
+        assert bot.stop_bracket_order_id is None
+        assert bot.position_size is None
 
 
 class TestWarmupLength:

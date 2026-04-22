@@ -53,6 +53,8 @@ class TradingBot(ABC):
         self.profit_target = None
         self.stop_orderId = None
         self.limit_orderId = None
+        self.stop_bracket_order_id = None
+        self.position_size = None
         self.entry_timestamp = None
         self.mfe_pts: float = 0.0       # peak unrealized gain in points this trade
         self.breakeven_set: bool = False # True once stop has been moved to entry
@@ -171,6 +173,8 @@ class TradingBot(ABC):
         self.profit_target = None
         self.stop_orderId = None
         self.limit_orderId = None
+        self.stop_bracket_order_id = None
+        self.position_size = None
         self.entry_timestamp = None
         self.mfe_pts = 0.0
         self.breakeven_set = False

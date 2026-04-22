@@ -3,7 +3,7 @@
 import asyncio
 import pytest
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, AsyncMock, patch
 from tests.helpers import MockStrategy
 
 
@@ -299,3 +299,248 @@ class TestStaleTick:
         run(live_bot.handle_trade(self._tick("2025-01-01T09:40:00+00:00", 105.0)))
 
         assert live_bot.current_bar["open"] == pytest.approx(105.0)
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _ok(data):
+    """Build a mock requests.Response with the given JSON body."""
+    m = MagicMock()
+    m.raise_for_status.return_value = None
+    m.json.return_value = data
+    return m
+
+
+def _place_ok(order_id=2000):
+    return _ok({"success": True, "orderId": order_id, "errorCode": 0, "errorMessage": None})
+
+
+def _search_ok(stop_id=2001, limit_id=2002, contract="CON.F.US.MNQ.Z25", stop_price=95.0, limit_price=110.0):
+    return _ok({
+        "success": True,
+        "orders": [
+            {"id": stop_id,  "contractId": contract, "type": 4, "side": 1,
+             "stopPrice": stop_price,  "limitPrice": None,        "status": 1},
+            {"id": limit_id, "contractId": contract, "type": 1, "side": 1,
+             "stopPrice": None,        "limitPrice": limit_price, "status": 1},
+        ]
+    })
+
+
+def _cancel_ok():
+    return _ok({"success": True, "errorCode": 0, "errorMessage": None})
+
+
+def _fail(msg="some error"):
+    return _ok({"success": False, "errorCode": 1, "errorMessage": msg})
+
+
+# ── _fetch_stop_bracket_order_id ──────────────────────────────────────────────
+
+class TestFetchStopBracketOrderId:
+    """_fetch_stop_bracket_order_id: finds and returns the stop bracket order ID."""
+
+    def test_returns_stop_id_when_found(self, live_bot):
+        with patch("trading_bot.requests.post", return_value=_search_ok(stop_id=9001)):
+            result = live_bot._fetch_stop_bracket_order_id()
+        assert result == 9001
+
+    def test_returns_none_when_no_stop_order(self, live_bot):
+        # Only a limit (take-profit) order, no stop
+        resp = _ok({
+            "success": True,
+            "orders": [
+                {"id": 9002, "contractId": "CON.F.US.MNQ.Z25", "type": 1,
+                 "side": 1, "stopPrice": None, "limitPrice": 110.0, "status": 1}
+            ]
+        })
+        with patch("trading_bot.requests.post", return_value=resp):
+            result = live_bot._fetch_stop_bracket_order_id()
+        assert result is None
+
+    def test_returns_none_on_api_error(self, live_bot):
+        with patch("trading_bot.requests.post", return_value=_fail("searchOpen failed")):
+            result = live_bot._fetch_stop_bracket_order_id()
+        assert result is None
+
+    def test_returns_none_on_request_exception(self, live_bot):
+        with patch("trading_bot.requests.post", side_effect=ConnectionError("timeout")):
+            result = live_bot._fetch_stop_bracket_order_id()
+        assert result is None
+
+    def test_ignores_stop_orders_from_other_contracts(self, live_bot):
+        # Stop order belongs to a different contract — should be filtered out
+        resp = _ok({
+            "success": True,
+            "orders": [
+                {"id": 9003, "contractId": "CON.F.US.MES.Z25", "type": 4,
+                 "side": 1, "stopPrice": 95.0, "limitPrice": None, "status": 1}
+            ]
+        })
+        with patch("trading_bot.requests.post", return_value=resp):
+            result = live_bot._fetch_stop_bracket_order_id()
+        assert result is None
+
+    def test_returns_first_stop_when_multiple_present(self, live_bot):
+        resp = _ok({
+            "success": True,
+            "orders": [
+                {"id": 9010, "contractId": "CON.F.US.MNQ.Z25", "type": 4,
+                 "side": 1, "stopPrice": 95.0, "limitPrice": None, "status": 1},
+                {"id": 9011, "contractId": "CON.F.US.MNQ.Z25", "type": 4,
+                 "side": 1, "stopPrice": 94.0, "limitPrice": None, "status": 1},
+            ]
+        })
+        with patch("trading_bot.requests.post", return_value=resp):
+            result = live_bot._fetch_stop_bracket_order_id()
+        assert result == 9010
+
+
+# ── _on_breakeven_triggered ───────────────────────────────────────────────────
+
+class TestOnBreakevenTriggered:
+    """_on_breakeven_triggered: cancels stop bracket, places new stop at entry."""
+
+    def _setup_long(self, bot, bracket_id=5000, entry=100.0, size=2):
+        bot.in_position = True
+        bot.position_type = "LONG"
+        bot.entry_price = entry
+        bot.stop_loss = entry  # already moved by _check_and_set_breakeven
+        bot.stop_bracket_order_id = bracket_id
+        bot.position_size = size
+
+    def _setup_short(self, bot, bracket_id=5000, entry=100.0, size=1):
+        bot.in_position = True
+        bot.position_type = "SHORT"
+        bot.entry_price = entry
+        bot.stop_loss = entry
+        bot.stop_bracket_order_id = bracket_id
+        bot.position_size = size
+
+    def test_no_op_when_no_bracket_id(self, live_bot):
+        live_bot.stop_bracket_order_id = None
+        live_bot.entry_price = 100.0
+        with patch("trading_bot.requests.post") as mock_post:
+            run(live_bot._on_breakeven_triggered())
+        mock_post.assert_not_called()
+
+    def test_long_cancels_stop_then_places_sell_stop(self, live_bot):
+        self._setup_long(live_bot, bracket_id=5001, entry=100.0, size=1)
+        with patch("trading_bot.requests.post", side_effect=[_cancel_ok(), _place_ok(order_id=5999)]) as mock_post:
+            run(live_bot._on_breakeven_triggered())
+
+        cancel_call = mock_post.call_args_list[0]
+        place_call  = mock_post.call_args_list[1]
+        assert cancel_call[1]["json"] == {"accountId": "ACC1", "orderId": 5001}
+        place_json = place_call[1]["json"]
+        assert place_json["type"] == 4       # stop order
+        assert place_json["side"] == 1       # sell (exit a long)
+        assert place_json["stopPrice"] == pytest.approx(100.0)
+        assert place_json["size"] == 1
+
+    def test_short_places_buy_stop(self, live_bot):
+        self._setup_short(live_bot, bracket_id=5002, entry=200.0, size=1)
+        with patch("trading_bot.requests.post", side_effect=[_cancel_ok(), _place_ok(order_id=6000)]):
+            run(live_bot._on_breakeven_triggered())
+
+        # Second call is the new stop placement
+        with patch("trading_bot.requests.post", side_effect=[_cancel_ok(), _place_ok(order_id=6000)]) as mock_post:
+            run(live_bot._on_breakeven_triggered())
+        place_json = mock_post.call_args_list[1][1]["json"]
+        assert place_json["side"] == 0       # buy (exit a short)
+
+    def test_updates_bracket_id_after_new_stop_placed(self, live_bot):
+        self._setup_long(live_bot, bracket_id=5003, entry=100.0)
+        with patch("trading_bot.requests.post", side_effect=[_cancel_ok(), _place_ok(order_id=7777)]):
+            run(live_bot._on_breakeven_triggered())
+        assert live_bot.stop_bracket_order_id == 7777
+
+    def test_stops_if_cancel_fails(self, live_bot):
+        self._setup_long(live_bot, bracket_id=5004, entry=100.0)
+        with patch("trading_bot.requests.post", side_effect=[_fail("cancel rejected"), _place_ok()]) as mock_post:
+            run(live_bot._on_breakeven_triggered())
+        assert mock_post.call_count == 1   # no second call to place
+
+    def test_stops_if_cancel_raises_exception(self, live_bot):
+        self._setup_long(live_bot, bracket_id=5005, entry=100.0)
+        with patch("trading_bot.requests.post", side_effect=[ConnectionError("timeout"), _place_ok()]) as mock_post:
+            run(live_bot._on_breakeven_triggered())
+        assert mock_post.call_count == 1
+
+    def test_does_not_update_bracket_id_if_place_fails(self, live_bot):
+        original_id = 5006
+        self._setup_long(live_bot, bracket_id=original_id, entry=100.0)
+        with patch("trading_bot.requests.post", side_effect=[_cancel_ok(), _fail("place rejected")]):
+            run(live_bot._on_breakeven_triggered())
+        # ID should stay as the old one since the new place failed
+        assert live_bot.stop_bracket_order_id == original_id
+
+
+# ── _place_order: position state ──────────────────────────────────────────────
+
+class TestPlaceOrderSetsState:
+    """_place_order sets position state and fetches stop bracket ID on success."""
+
+    def _run_place(self, bot, side=0, close=100.0, stop=95.0, target=110.0, size=2):
+        with patch("trading_bot.requests.post", side_effect=[_place_ok(2000), _search_ok(stop_id=2001)]), \
+             patch("asyncio.sleep", new=AsyncMock()):
+            return run(bot._place_order(
+                side=side, close_price=close, stop_loss=stop,
+                profit_target=target, stop_ticks=-20, take_profit_ticks=40, size=size
+            ))
+
+    def test_sets_in_position_true(self, live_bot):
+        self._run_place(live_bot)
+        assert live_bot.in_position is True
+
+    def test_sets_long_position_type(self, live_bot):
+        self._run_place(live_bot, side=0)
+        assert live_bot.position_type == "LONG"
+
+    def test_sets_short_position_type(self, live_bot):
+        self._run_place(live_bot, side=1)
+        assert live_bot.position_type == "SHORT"
+
+    def test_sets_entry_price_to_close_price(self, live_bot):
+        self._run_place(live_bot, close=123.45)
+        assert live_bot.entry_price == pytest.approx(123.45)
+
+    def test_sets_stop_loss(self, live_bot):
+        self._run_place(live_bot, stop=95.0)
+        assert live_bot.stop_loss == pytest.approx(95.0)
+
+    def test_sets_profit_target(self, live_bot):
+        self._run_place(live_bot, target=110.0)
+        assert live_bot.profit_target == pytest.approx(110.0)
+
+    def test_sets_position_size(self, live_bot):
+        self._run_place(live_bot, size=3)
+        assert live_bot.position_size == 3
+
+    def test_stores_stop_bracket_id(self, live_bot):
+        self._run_place(live_bot)
+        assert live_bot.stop_bracket_order_id == 2001
+
+    def test_returns_order_id(self, live_bot):
+        result = self._run_place(live_bot)
+        assert result == 2000
+
+    def test_no_state_set_on_api_failure(self, live_bot):
+        with patch("trading_bot.requests.post", return_value=_fail("order rejected")), \
+             patch("asyncio.sleep", new=AsyncMock()):
+            run(live_bot._place_order(
+                side=0, close_price=100.0, stop_loss=95.0,
+                profit_target=110.0, stop_ticks=-20, take_profit_ticks=40, size=1
+            ))
+        assert live_bot.in_position is False
+        assert live_bot.entry_price is None
+        assert live_bot.stop_bracket_order_id is None
+
+    def test_returns_none_on_api_failure(self, live_bot):
+        with patch("trading_bot.requests.post", return_value=_fail()), \
+             patch("asyncio.sleep", new=AsyncMock()):
+            result = run(live_bot._place_order(
+                side=0, close_price=100.0, stop_loss=95.0,
+                profit_target=110.0, stop_ticks=-20, take_profit_ticks=40, size=1
+            ))
+        assert result is None
