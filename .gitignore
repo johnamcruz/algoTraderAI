@@ -217,3 +217,12 @@ start_bots.sh
 
 # Bot logs
 logs/
+
+# Backtest logs
+backtest_logs/
+
+# Claude Code memory
+.claude/
+
+# Large data files
+data/
