@@ -470,6 +470,50 @@ class TestOnBreakevenTriggered:
         assert body["stopPrice"] == pytest.approx(200.0)
         assert body["orderId"]   == 5005
 
+    def test_uses_correct_account_id(self, live_bot):
+        self._setup(live_bot, bracket_id=5006, entry=100.0)
+        with patch("trading_bot.requests.post", return_value=_modify_ok()) as mock_post:
+            run(live_bot._on_breakeven_triggered())
+        body = mock_post.call_args[1]["json"]
+        assert body["accountId"] == live_bot.account
+
+    def test_posts_to_order_modify_url(self, live_bot):
+        self._setup(live_bot, bracket_id=5007, entry=100.0)
+        with patch("trading_bot.requests.post", return_value=_modify_ok()) as mock_post:
+            run(live_bot._on_breakeven_triggered())
+        url = mock_post.call_args[0][0]
+        assert url.endswith("/Order/modify")
+
+    def test_http_error_is_handled_gracefully(self, live_bot):
+        """4xx/5xx from raise_for_status should be caught — no crash, ID preserved."""
+        import requests as req
+        self._setup(live_bot, bracket_id=5008, entry=100.0)
+        err_response = MagicMock()
+        err_response.raise_for_status.side_effect = req.HTTPError("503")
+        with patch("trading_bot.requests.post", return_value=err_response):
+            run(live_bot._on_breakeven_triggered())   # must not raise
+        assert live_bot.stop_bracket_order_id == 5008
+
+    def test_fractional_entry_price_preserved(self, live_bot):
+        """Futures prices like 7168.75 must not be rounded or truncated."""
+        self._setup(live_bot, bracket_id=5009, entry=7168.75, size=3)
+        with patch("trading_bot.requests.post", return_value=_modify_ok()) as mock_post:
+            run(live_bot._on_breakeven_triggered())
+        body = mock_post.call_args[1]["json"]
+        assert body["stopPrice"] == pytest.approx(7168.75)
+
+    def test_large_position_size_passed_correctly(self, live_bot):
+        self._setup(live_bot, bracket_id=5010, entry=100.0, size=15)
+        with patch("trading_bot.requests.post", return_value=_modify_ok()) as mock_post:
+            run(live_bot._on_breakeven_triggered())
+        assert mock_post.call_args[1]["json"]["size"] == 15
+
+    def test_does_not_raise_when_position_size_is_none(self, live_bot):
+        """Graceful handling if position_size was never set."""
+        self._setup(live_bot, bracket_id=5011, entry=100.0, size=None)
+        with patch("trading_bot.requests.post", return_value=_modify_ok()):
+            run(live_bot._on_breakeven_triggered())   # must not raise
+
 
 # ── _place_order: position state ──────────────────────────────────────────────
 
