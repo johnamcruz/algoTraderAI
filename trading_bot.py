@@ -424,30 +424,25 @@ class RealTimeBot(TradingBot):
             logging.error(f"❌ Error in searchOpen: {e}")
             return None
 
-    async def _on_breakeven_triggered(self):
-        """Move the bracket stop to entry price via a single Order/modify call.
+    def _modify_order(self, order_id: int, stop_price: float, size: int) -> bool:
+        """Move an existing order's stop price via Order/modify.
 
-        Order/modify works on OCO bracket stops (confirmed via live API test) even
-        though it is not documented. The OCO linkage is preserved — if the stop fires
-        the TP auto-cancels as normal. No cancel + re-place needed.
+        Works on OCO bracket stops (confirmed via live API test) even though
+        not documented. OCO linkage is preserved. Returns True on success.
+
+        Kept separate from _on_breakeven_triggered so future features
+        (e.g. trailing stop adjustments) can reuse the same API call.
         """
-        if not self.stop_bracket_order_id:
-            logging.warning(
-                f"⚠️ Breakeven triggered but stop bracket ID unknown — "
-                f"broker stop NOT moved to {self.entry_price:.2f}"
-            )
-            return
-
         headers = {'Authorization': f'Bearer {self.token}'}
         try:
             r = requests.post(
                 f"{self.base_url}/Order/modify",
                 headers=headers,
                 json={
-                    "accountId": self.account,
-                    "orderId":   self.stop_bracket_order_id,
-                    "size":      self.position_size,
-                    "stopPrice": self.entry_price,
+                    "accountId":  self.account,
+                    "orderId":    order_id,
+                    "size":       size,
+                    "stopPrice":  stop_price,
                     "limitPrice": None,
                     "trailPrice": None,
                 },
@@ -456,17 +451,30 @@ class RealTimeBot(TradingBot):
             r.raise_for_status()
             result = r.json()
             if result.get('success'):
-                logging.info(
-                    f"✅ Breakeven stop moved to {self.entry_price:.2f} "
-                    f"(order {self.stop_bracket_order_id})"
-                )
-            else:
-                logging.error(
-                    f"❌ Breakeven modify failed: {result.get('errorMessage')} "
-                    f"— stop remains at original price"
-                )
+                logging.info(f"✅ Order {order_id} stop moved to {stop_price:.2f}")
+                return True
+            logging.error(
+                f"❌ Order/modify failed for order {order_id}: {result.get('errorMessage')}"
+            )
+            return False
         except Exception as e:
-            logging.error(f"❌ Error modifying breakeven stop: {e}")
+            logging.error(f"❌ Error calling Order/modify for order {order_id}: {e}")
+            return False
+
+    async def _on_breakeven_triggered(self):
+        """Move the bracket stop to entry price once 1R profit is reached."""
+        if not self.stop_bracket_order_id:
+            logging.warning(
+                f"⚠️ Breakeven triggered but stop bracket ID unknown — "
+                f"broker stop NOT moved to {self.entry_price:.2f}"
+            )
+            return
+
+        self._modify_order(
+            order_id=self.stop_bracket_order_id,
+            stop_price=self.entry_price,
+            size=self.position_size,
+        )
 
     # =========================================================
     # BAR CLOSER WATCHER
