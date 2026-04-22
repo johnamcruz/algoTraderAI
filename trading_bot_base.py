@@ -26,7 +26,7 @@ class TradingBot(ABC):
         stop_pts=None,
         target_pts=None,
         enable_trailing_stop=False,
-        breakeven_on_1r=False,
+        breakeven_on_1r=True,
         risk_amount=None,
         high_conf_multiplier=1.0,
         max_contracts=15,

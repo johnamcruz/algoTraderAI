@@ -262,6 +262,53 @@ class TestBreakeven:
         bot._reset_position_state()
         assert bot.breakeven_set is False
 
+    def test_short_only_triggers_once(self, bot):
+        self._short(bot)
+        bot._check_and_set_breakeven(92.0)    # triggers
+        bot.stop_loss = 100.0
+        triggered = bot._check_and_set_breakeven(88.0)   # must not fire again
+        assert triggered is False
+
+    def test_stop_dist_zero_is_noop(self, bot):
+        """stop == entry → division-by-zero guard → no trigger."""
+        self._long(bot, entry=100.0, stop=100.0, target=110.0)
+        triggered = bot._check_and_set_breakeven(110.0)
+        assert triggered is False
+        assert bot.stop_loss == pytest.approx(100.0)
+
+    def test_entry_price_none_is_noop(self, bot):
+        self._long(bot)
+        bot.entry_price = None
+        assert bot._check_and_set_breakeven(110.0) is False
+
+    def test_stop_loss_none_is_noop(self, bot):
+        self._long(bot)
+        bot.stop_loss = None
+        assert bot._check_and_set_breakeven(110.0) is False
+
+    def test_unknown_position_type_is_noop(self, bot):
+        self._long(bot)
+        bot.position_type = "FLAT"
+        assert bot._check_and_set_breakeven(110.0) is False
+
+    def test_long_stop_moved_to_entry_not_below(self, bot):
+        """Stop must land exactly at entry, not above or below."""
+        self._long(bot, entry=7168.75, stop=7163.27, target=7179.23)
+        bot._check_and_set_breakeven(7174.23)   # entry + stop_dist
+        assert bot.stop_loss == pytest.approx(7168.75)
+
+    def test_short_stop_moved_to_entry_not_above(self, bot):
+        self._short(bot, entry=4750.0, stop=4760.0, target=4740.0)
+        bot._check_and_set_breakeven(4740.0)    # entry - stop_dist
+        assert bot.stop_loss == pytest.approx(4750.0)
+
+    def test_1r_threshold_is_stop_distance_not_target(self, bot):
+        """1R = stop distance, even when target is larger (e.g. 3:1 RR)."""
+        # entry=100, stop=95 (5pt), target=120 (20pt) → 1R triggers at 105, not 120
+        self._long(bot, entry=100.0, stop=95.0, target=120.0)
+        assert bot._check_and_set_breakeven(104.99) is False
+        assert bot._check_and_set_breakeven(105.0)  is True
+
 
 class TestUpdateMfe:
     """_update_mfe: tracks peak unrealized gain in points."""
