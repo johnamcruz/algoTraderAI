@@ -402,11 +402,67 @@ def _modify_ok():
     return _ok({"success": True, "errorCode": 0, "errorMessage": None})
 
 
-class TestOnBreakevenTriggered:
-    """_on_breakeven_triggered: moves bracket stop to entry price via Order/modify.
+# ── _modify_order ─────────────────────────────────────────────────────────────
 
-    Single API call — OCO linkage is preserved, no cancel + re-place needed.
-    Confirmed working on live bracket stops (undocumented but functional).
+class TestModifyOrder:
+    """_modify_order: sends Order/modify and returns True/False.
+
+    Reusable primitive for any stop-price update (breakeven, trailing stop, etc).
+    """
+
+    def test_posts_to_order_modify_url(self, live_bot):
+        with patch("trading_bot.requests.post", return_value=_modify_ok()) as mock_post:
+            live_bot._modify_order(order_id=99, stop_price=100.0, size=1)
+        url = mock_post.call_args[0][0]
+        assert url.endswith("/Order/modify")
+
+    def test_request_body_fields(self, live_bot):
+        with patch("trading_bot.requests.post", return_value=_modify_ok()) as mock_post:
+            live_bot._modify_order(order_id=42, stop_price=7168.75, size=3)
+        body = mock_post.call_args[1]["json"]
+        assert body["accountId"]  == live_bot.account
+        assert body["orderId"]    == 42
+        assert body["stopPrice"]  == pytest.approx(7168.75)
+        assert body["size"]       == 3
+        assert body["limitPrice"] is None
+        assert body["trailPrice"] is None
+
+    def test_returns_true_on_success(self, live_bot):
+        with patch("trading_bot.requests.post", return_value=_modify_ok()):
+            assert live_bot._modify_order(99, 100.0, 1) is True
+
+    def test_returns_false_on_api_failure(self, live_bot):
+        with patch("trading_bot.requests.post", return_value=_fail("invalid stop price")):
+            assert live_bot._modify_order(99, 100.0, 1) is False
+
+    def test_returns_false_on_exception(self, live_bot):
+        with patch("trading_bot.requests.post", side_effect=ConnectionError("timeout")):
+            assert live_bot._modify_order(99, 100.0, 1) is False
+
+    def test_http_error_is_handled_gracefully(self, live_bot):
+        import requests as req
+        err_response = MagicMock()
+        err_response.raise_for_status.side_effect = req.HTTPError("503")
+        with patch("trading_bot.requests.post", return_value=err_response):
+            assert live_bot._modify_order(99, 100.0, 1) is False   # no crash
+
+    def test_fractional_stop_price_preserved(self, live_bot):
+        with patch("trading_bot.requests.post", return_value=_modify_ok()) as mock_post:
+            live_bot._modify_order(99, 7168.75, 1)
+        assert mock_post.call_args[1]["json"]["stopPrice"] == pytest.approx(7168.75)
+
+    def test_large_size_passed_correctly(self, live_bot):
+        with patch("trading_bot.requests.post", return_value=_modify_ok()) as mock_post:
+            live_bot._modify_order(99, 100.0, 15)
+        assert mock_post.call_args[1]["json"]["size"] == 15
+
+
+# ── _on_breakeven_triggered ───────────────────────────────────────────────────
+
+class TestOnBreakevenTriggered:
+    """_on_breakeven_triggered: delegates to _modify_order with entry price.
+
+    Guard logic (no bracket ID) lives here; API details are tested in TestModifyOrder.
     """
 
     def _setup(self, bot, bracket_id=5000, entry=100.0, size=2,
@@ -425,93 +481,51 @@ class TestOnBreakevenTriggered:
             run(live_bot._on_breakeven_triggered())
         mock_post.assert_not_called()
 
-    def test_sends_single_modify_call(self, live_bot):
-        self._setup(live_bot, bracket_id=5001, entry=100.0, size=1)
-        with patch("trading_bot.requests.post", return_value=_modify_ok()) as mock_post:
-            run(live_bot._on_breakeven_triggered())
-        assert mock_post.call_count == 1
-
-    def test_modify_targets_correct_order_and_price(self, live_bot):
+    def test_calls_modify_order_with_entry_price(self, live_bot):
         self._setup(live_bot, bracket_id=5001, entry=100.0, size=2)
-        with patch("trading_bot.requests.post", return_value=_modify_ok()) as mock_post:
+        with patch.object(live_bot, "_modify_order", return_value=True) as mock_mod:
             run(live_bot._on_breakeven_triggered())
-        body = mock_post.call_args[1]["json"]
-        assert body["orderId"]   == 5001
-        assert body["stopPrice"] == pytest.approx(100.0)
-        assert body["size"]      == 2
-        assert body["limitPrice"] is None
-        assert body["trailPrice"] is None
+        mock_mod.assert_called_once_with(
+            order_id=5001, stop_price=100.0, size=2
+        )
 
     def test_bracket_id_unchanged_after_modify(self, live_bot):
-        """Order/modify keeps the same order ID — bracket_id must not change."""
         self._setup(live_bot, bracket_id=5002, entry=150.0)
-        with patch("trading_bot.requests.post", return_value=_modify_ok()):
+        with patch.object(live_bot, "_modify_order", return_value=True):
             run(live_bot._on_breakeven_triggered())
         assert live_bot.stop_bracket_order_id == 5002
 
-    def test_logs_error_and_preserves_id_on_modify_failure(self, live_bot):
-        self._setup(live_bot, bracket_id=5003, entry=100.0)
-        with patch("trading_bot.requests.post", return_value=_fail("invalid stop price")):
+    def test_no_op_skips_modify_entirely(self, live_bot):
+        live_bot.stop_bracket_order_id = None
+        live_bot.entry_price = 100.0
+        with patch.object(live_bot, "_modify_order") as mock_mod:
             run(live_bot._on_breakeven_triggered())
-        assert live_bot.stop_bracket_order_id == 5003   # unchanged
+        mock_mod.assert_not_called()
 
-    def test_logs_error_and_preserves_id_on_exception(self, live_bot):
-        self._setup(live_bot, bracket_id=5004, entry=100.0)
-        with patch("trading_bot.requests.post", side_effect=ConnectionError("timeout")):
-            run(live_bot._on_breakeven_triggered())
-        assert live_bot.stop_bracket_order_id == 5004
+    def test_modify_failure_does_not_raise(self, live_bot):
+        self._setup(live_bot, bracket_id=5003, entry=100.0)
+        with patch.object(live_bot, "_modify_order", return_value=False):
+            run(live_bot._on_breakeven_triggered())   # must not raise
 
     def test_works_for_short_position(self, live_bot):
-        self._setup(live_bot, bracket_id=5005, entry=200.0, size=1,
+        self._setup(live_bot, bracket_id=5004, entry=200.0, size=1,
                     position_type="SHORT")
-        with patch("trading_bot.requests.post", return_value=_modify_ok()) as mock_post:
+        with patch.object(live_bot, "_modify_order", return_value=True) as mock_mod:
             run(live_bot._on_breakeven_triggered())
-        body = mock_post.call_args[1]["json"]
-        assert body["stopPrice"] == pytest.approx(200.0)
-        assert body["orderId"]   == 5005
+        mock_mod.assert_called_once_with(
+            order_id=5004, stop_price=200.0, size=1
+        )
 
-    def test_uses_correct_account_id(self, live_bot):
-        self._setup(live_bot, bracket_id=5006, entry=100.0)
-        with patch("trading_bot.requests.post", return_value=_modify_ok()) as mock_post:
+    def test_fractional_entry_price_forwarded(self, live_bot):
+        self._setup(live_bot, bracket_id=5005, entry=7168.75, size=3)
+        with patch.object(live_bot, "_modify_order", return_value=True) as mock_mod:
             run(live_bot._on_breakeven_triggered())
-        body = mock_post.call_args[1]["json"]
-        assert body["accountId"] == live_bot.account
-
-    def test_posts_to_order_modify_url(self, live_bot):
-        self._setup(live_bot, bracket_id=5007, entry=100.0)
-        with patch("trading_bot.requests.post", return_value=_modify_ok()) as mock_post:
-            run(live_bot._on_breakeven_triggered())
-        url = mock_post.call_args[0][0]
-        assert url.endswith("/Order/modify")
-
-    def test_http_error_is_handled_gracefully(self, live_bot):
-        """4xx/5xx from raise_for_status should be caught — no crash, ID preserved."""
-        import requests as req
-        self._setup(live_bot, bracket_id=5008, entry=100.0)
-        err_response = MagicMock()
-        err_response.raise_for_status.side_effect = req.HTTPError("503")
-        with patch("trading_bot.requests.post", return_value=err_response):
-            run(live_bot._on_breakeven_triggered())   # must not raise
-        assert live_bot.stop_bracket_order_id == 5008
-
-    def test_fractional_entry_price_preserved(self, live_bot):
-        """Futures prices like 7168.75 must not be rounded or truncated."""
-        self._setup(live_bot, bracket_id=5009, entry=7168.75, size=3)
-        with patch("trading_bot.requests.post", return_value=_modify_ok()) as mock_post:
-            run(live_bot._on_breakeven_triggered())
-        body = mock_post.call_args[1]["json"]
-        assert body["stopPrice"] == pytest.approx(7168.75)
-
-    def test_large_position_size_passed_correctly(self, live_bot):
-        self._setup(live_bot, bracket_id=5010, entry=100.0, size=15)
-        with patch("trading_bot.requests.post", return_value=_modify_ok()) as mock_post:
-            run(live_bot._on_breakeven_triggered())
-        assert mock_post.call_args[1]["json"]["size"] == 15
+        _, kwargs = mock_mod.call_args
+        assert kwargs["stop_price"] == pytest.approx(7168.75)
 
     def test_does_not_raise_when_position_size_is_none(self, live_bot):
-        """Graceful handling if position_size was never set."""
-        self._setup(live_bot, bracket_id=5011, entry=100.0, size=None)
-        with patch("trading_bot.requests.post", return_value=_modify_ok()):
+        self._setup(live_bot, bracket_id=5006, entry=100.0, size=None)
+        with patch.object(live_bot, "_modify_order", return_value=True):
             run(live_bot._on_breakeven_triggered())   # must not raise
 
 
