@@ -374,10 +374,23 @@ class RealTimeBot(TradingBot):
             response = requests.post(order_url, headers=headers, json=payload, timeout=10)
             response.raise_for_status()
             data = response.json()
-            logging.debug(data)            
+            logging.debug(data)
             if data.get('success') and data.get('orderId'):
                 order_id = data.get('orderId')
                 logging.info(f"✅ Order placed successfully: {order_id}")
+
+                # Set position state so tick-level breakeven checks fire
+                self.in_position = True
+                self.position_type = 'LONG' if side == 0 else 'SHORT'
+                self.entry_price = close_price
+                self.stop_loss = stop_loss
+                self.profit_target = profit_target
+                self.position_size = size
+
+                # Give broker time to create bracket orders, then store stop ID
+                await asyncio.sleep(2.0)
+                self.stop_bracket_order_id = self._fetch_stop_bracket_order_id()
+
                 return order_id
             else:
                 logging.exception(f"❌ Order failed: {data.get('errorMessage')}")
@@ -386,17 +399,88 @@ class RealTimeBot(TradingBot):
             logging.exception(f"❌ Could not place order: {e}.")
             return None
 
+    def _fetch_stop_bracket_order_id(self):
+        """Search open orders and return the stop bracket order ID for our contract."""
+        try:
+            r = requests.post(
+                f"{self.base_url}/Order/searchOpen",
+                headers={'Authorization': f'Bearer {self.token}'},
+                json={"accountId": self.account},
+                timeout=10
+            )
+            r.raise_for_status()
+            data = r.json()
+            if not data.get('success'):
+                logging.error(f"❌ searchOpen failed: {data.get('errorMessage')}")
+                return None
+            for order in data.get('orders', []):
+                if order.get('contractId') == self.contract and order.get('type') == 4:
+                    oid = order['id']
+                    logging.info(f"📌 Stop bracket order ID: {oid} @ stopPrice={order.get('stopPrice')}")
+                    return oid
+            logging.warning("⚠️ No stop bracket order found after entry")
+            return None
+        except Exception as e:
+            logging.error(f"❌ Error in searchOpen: {e}")
+            return None
+
     async def _on_breakeven_triggered(self):
-        """
-        Called once when stop is moved to break-even on the live bot.
-        Internal stop_loss is already updated. A broker-side stop order
-        modification (cancel old stop + place new at entry price) should be
-        added here once the TopstepX order-modify API is integrated.
-        """
-        logging.info(
-            f"💡 Break-even live — internal stop moved to {self.entry_price:.2f}. "
-            f"Manually update the stop order on TopstepX if auto-modification is not wired."
-        )
+        """Cancel the broker stop bracket and place a new stop at entry price."""
+        if not self.stop_bracket_order_id:
+            logging.warning(
+                f"⚠️ Breakeven triggered but stop bracket ID unknown — "
+                f"broker stop NOT moved to {self.entry_price:.2f}"
+            )
+            return
+
+        headers = {'Authorization': f'Bearer {self.token}'}
+
+        # Cancel existing stop bracket
+        try:
+            r = requests.post(
+                f"{self.base_url}/Order/cancel",
+                headers=headers,
+                json={"accountId": self.account, "orderId": self.stop_bracket_order_id},
+                timeout=10
+            )
+            r.raise_for_status()
+            result = r.json()
+            if not result.get('success'):
+                logging.error(f"❌ Stop cancel failed: {result.get('errorMessage')}")
+                return
+            logging.info(f"✅ Stop bracket {self.stop_bracket_order_id} cancelled")
+        except Exception as e:
+            logging.error(f"❌ Error cancelling stop bracket: {e}")
+            return
+
+        # Place new standalone stop at entry price (breakeven)
+        stop_side = 1 if self.position_type == 'LONG' else 0
+        try:
+            r = requests.post(
+                f"{self.base_url}/Order/place",
+                headers=headers,
+                json={
+                    "accountId": self.account,
+                    "contractId": self.contract,
+                    "type": 4,
+                    "side": stop_side,
+                    "size": self.position_size,
+                    "stopPrice": self.entry_price,
+                },
+                timeout=10
+            )
+            r.raise_for_status()
+            result = r.json()
+            if result.get('success'):
+                new_id = result.get('orderId')
+                self.stop_bracket_order_id = new_id
+                logging.info(
+                    f"✅ Breakeven stop placed @ {self.entry_price:.2f} (order {new_id})"
+                )
+            else:
+                logging.error(f"❌ Breakeven stop placement failed: {result.get('errorMessage')}")
+        except Exception as e:
+            logging.error(f"❌ Error placing breakeven stop: {e}")
 
     # =========================================================
     # BAR CLOSER WATCHER
