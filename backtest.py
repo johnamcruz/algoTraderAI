@@ -55,9 +55,9 @@ SCENARIOS = {
     },
     "recent_120d": {
         "label":      "Last 120 Days",
-        "start_date": "2025-12-22",
-        "end_date":   "2026-04-21",
-        "note":       "Most recent 120-day window; previously profitable at 0.70",
+        "start_date": "2025-06-27",
+        "end_date":   "2025-10-24",
+        "note":       "Most recent 120-day window in data; previously profitable at 0.70",
     },
 }
 
@@ -85,7 +85,7 @@ DEFAULT_MAX_LOSS      = 400.0
 DEFAULT_PROFIT_TARGET = 6000.0
 DEFAULT_MIN_STOP_ATR      = 0.5
 DEFAULT_MIN_STOP_PTS      = 1.0
-DEFAULT_MIN_ENTRY_DISTANCE = 0.0
+DEFAULT_MIN_ENTRY_DISTANCE = 3.0
 
 
 # ── Build command ─────────────────────────────────────────────────────────────
@@ -230,7 +230,7 @@ def main():
     parser.add_argument("--min_stop_pts", type=float, default=DEFAULT_MIN_STOP_PTS,
                         help=f"Min stop floor in points (default: {DEFAULT_MIN_STOP_PTS})")
     parser.add_argument("--min_entry_distance", type=float, default=DEFAULT_MIN_ENTRY_DISTANCE,
-                        help=f"OTE depth gate: min entry_distance_pct (default: {DEFAULT_MIN_ENTRY_DISTANCE}, 3.0=recommended)")
+                        help=f"OTE depth gate: min entry_distance_pct (default: {DEFAULT_MIN_ENTRY_DISTANCE})")
     args = parser.parse_args()
 
     if args.list:

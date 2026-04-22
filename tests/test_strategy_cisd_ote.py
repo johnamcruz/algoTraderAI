@@ -20,7 +20,7 @@ def strategy():
     s._session_end_hour      = SESSION_END_HOUR      # 16
     s._min_vty_regime        = 0.75
     s._latest_vty_regime     = 1.0    # healthy regime by default
-    s._min_entry_distance    = 0.0    # disabled by default
+    s._min_entry_distance    = 0.0    # disabled in fixture so gate tests control it explicitly
     s._latest_signal_meta    = {}
     s._active_zones          = []
     s._latest_zone_bullish   = 0.0
