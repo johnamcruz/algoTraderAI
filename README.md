@@ -4,15 +4,21 @@
 
 ## Overview
 
-A Python algorithmic trading bot for futures markets (NQ, ES, RTY, etc.) via the TopstepX/ProjectX platform. Uses a **CISD+OTE** (Change in State of Delivery + Optimal Trade Entry) AI strategy for entry signals, with dynamic risk-based position sizing.
+A Python algorithmic trading bot for futures markets (MNQ, MES, MGC) via the TopstepX/ProjectX platform. Uses a **CISD+OTE** (Change in State of Delivery + Optimal Trade Entry) AI strategy for entry signals, with dynamic risk-based position sizing.
+
+**Active model:** `cisd_ote_hybrid_v5_1.onnx`
 
 ### Key Features
 
-- 🧠 **CISD+OTE Strategy** — Zone-based AI entries using ICT concepts (liquidity sweeps, displacement, OTE retracements)
+- 🧠 **CISD+OTE Strategy v5.1** — Zone-based AI entries using ICT concepts (liquidity sweeps, displacement, OTE retracements). Trained on ES, NQ, RTY, YM, GC across London+NY session (7am–4pm ET).
 - 📊 **Real-time Data Processing** — Live tick aggregation and bar generation (1, 3, or 5 minute bars)
 - 💰 **Risk-Based Position Sizing** — Size contracts dynamically from a dollar risk budget; skip signals that exceed it
 - 🔬 **Backtesting Mode** — Replay historical CSV data with realistic gap-open fills and wick-based exit simulation
+- 🚦 **OTE Depth Gate** — Filters shallow zone touches; only enters when price has penetrated deep enough into the OTE zone (`entry_distance_pct >= 3.0` default)
+- 📈 **Volatility Regime Gate** — Skips entries when market volatility is abnormally low (`vty_regime >= 0.75` default)
+- 📋 **Per-Trade Signal Analysis** — Logs feature averages for winners vs losers after each backtest run
 - ⚙️ **YAML Configuration** — Manage live and backtest configs via file; CLI args override
+- 🔄 **Backtest Runner** — `backtest.py` runs predefined market-regime scenarios (bear, recovery, banking crisis, selloff, OOS) in parallel
 
 ---
 
@@ -31,13 +37,14 @@ A Python algorithmic trading bot for futures markets (NQ, ES, RTY, etc.) via the
 ```
 algoTrader.py              # Entry point — arg parsing, mode dispatch
 ├── trading_bot.py         # Live bot: SignalR, tick aggregation, order execution
-├── simulation_bot.py      # Backtest bot: CSV replay, P&L tracking
+├── simulation_bot.py      # Backtest bot: CSV replay, P&L tracking, signal analysis
 ├── trading_bot_base.py    # Shared logic: AI prediction loop, sizing, exits
-├── strategy_cisd_ote.py   # CISD+OTE strategy: features, model, entry logic
+├── strategy_cisd_ote.py   # CISD+OTE strategy: features, model, entry/filter logic
 ├── strategy_base.py       # Abstract base class for strategies
 ├── strategy_factory.py    # Strategy registry
 ├── bot_utils.py           # Auth, logging, tick value/size lookups
-└── config_loader.py       # YAML config loading and validation
+├── config_loader.py       # YAML config loading and validation
+└── backtest.py            # Scenario backtest runner (parallel, multi-symbol)
 ```
 
 ---
@@ -65,30 +72,62 @@ pip install onnxruntime pandas pandas-ta signalrcore requests numpy scikit-learn
 
 ### Prepare Model Files
 
-Place your trained model and scaler in the `models/` folder:
+Place your trained model in the `models/` folder:
 
 ```
 models/
-├── cisd_ote_hybrid_v5_1.onnx
-└── cisd_ote_hybrid_v5_1_scaler.pkl   # (if applicable)
+└── cisd_ote_hybrid_v5_1.onnx     # active model
 ```
 
 ---
 
 ## Usage
 
-### Backtesting
+### Backtest Runner (Recommended)
+
+`backtest.py` runs predefined market-regime scenarios against historical data:
+
+```bash
+# Run all scenarios (MNQ default)
+python3 backtest.py --parallel
+
+# Run a single scenario
+python3 backtest.py --scenario banking_2023
+
+# Run on a different symbol
+python3 backtest.py --symbol MGC --parallel
+
+# Override entry confidence
+python3 backtest.py --entry_conf 0.80 --parallel
+
+# List available scenarios
+python3 backtest.py --list
+```
+
+**Available scenarios:**
+
+| Key | Period | Description |
+|-----|--------|-------------|
+| `bear_2022` | 2022-01-01 → 2022-10-15 | Persistent downtrend |
+| `recovery_2023` | 2023-01-01 → 2023-12-31 | Post-rate-hike rebound + AI hype |
+| `banking_2023` | 2023-03-01 → 2023-05-31 | SVB collapse, high-vol chop |
+| `selloff_2024` | 2024-07-15 → 2024-09-15 | Sharp selloff + recovery |
+| `oos_2021` | 2021-01-01 → 2021-12-31 | Out-of-sample control year |
+| `recent_120d` | 2025-06-27 → 2025-10-24 | Most recent 120-day window |
+
+**Supported symbols:** `MNQ`, `MES`, `MGC`
+
+### Direct Backtesting
 
 ```bash
 python algoTrader.py \
     --backtest \
     --backtest_data data/NQ_continuous_5min.csv \
-    --contract CON.F.US.ENQ.Z25 \
+    --contract CON.F.US.MNQ.M26 \
     --strategy cisd-ote \
     --model models/cisd_ote_hybrid_v5_1.onnx \
     --entry_conf 0.70 \
-    --risk_amount 300 \
-    --simulation-days 10
+    --risk_amount 300
 ```
 
 ### Live Trading
@@ -96,7 +135,7 @@ python algoTrader.py \
 ```bash
 python algoTrader.py \
     --account TS001234SIM \
-    --contract CON.F.US.ENQ.Z25 \
+    --contract CON.F.US.MNQ.M26 \
     --username YourUsername \
     --apikey YourApiKey \
     --timeframe 5 \
@@ -109,24 +148,23 @@ python algoTrader.py \
 ### YAML Config (Recommended for Live)
 
 ```yaml
-# configs/cisd_ote_nq.yaml
+# configs/cisd_ote_mnq.yaml
 username: "YourUsername"
 apikey: "YourApiKey"
 account: "TS001234SIM"
-contract: "CON.F.US.ENQ.Z25"
+contract: "CON.F.US.MNQ.M26"
 timeframe: 5
 
 strategy: "cisd-ote"
 model: "models/cisd_ote_hybrid_v5_1.onnx"
 
 entry_conf: 0.70
-adx_thresh: 0
 risk_amount: 300
-high_conf_multiplier: 2.0   # extend profit target to 4R at ≥90% confidence (risk unchanged)
+high_conf_multiplier: 2.0   # extend profit target to 4R at ≥90% confidence
 ```
 
 ```bash
-python algoTrader.py --config configs/cisd_ote_nq.yaml
+python algoTrader.py --config configs/cisd_ote_mnq.yaml
 ```
 
 ---
@@ -139,10 +177,9 @@ python algoTrader.py --config configs/cisd_ote_nq.yaml
 |----------|-------------|---------|
 | `--strategy` | Strategy name (`cisd-ote`) | `supertrend` |
 | `--model` | Path to ONNX model | — |
-| `--contract` | Contract ID (e.g. `CON.F.US.ENQ.Z25`) | — |
+| `--contract` | Contract ID (e.g. `CON.F.US.MNQ.M26`) | — |
 | `--timeframe` | Bar timeframe in minutes (1, 3, 5) | `5` |
 | `--entry_conf` | Min AI confidence to enter (0.0–1.0) | `0.9` |
-| `--adx_thresh` | Min ADX for entry (0 = disabled) | `0` |
 
 ### Risk & Sizing
 
@@ -150,9 +187,19 @@ python algoTrader.py --config configs/cisd_ote_nq.yaml
 |----------|-------------|---------|
 | `--risk_amount` | Max dollars to risk per trade (dynamic sizing) | None |
 | `--size` | Fixed contract count (used when `--risk_amount` not set) | `1` |
-| `--high_conf_multiplier` | Extend profit target by this factor at ≥90% confidence (risk unchanged) | `1.0` |
-| `--stop_pts` | Stop loss in points (optional; strategy provides its own) | None |
-| `--target_pts` | Profit target in points (optional; strategy provides its own) | None |
+| `--max_contracts` | Cap on contracts per trade | `15` |
+| `--high_conf_multiplier` | Extend profit target at ≥90% confidence (risk unchanged) | `1.0` |
+| `--max_loss` | Stop bot when cumulative loss hits this (dollars) | `3000` |
+| `--profit_target` | Stop bot when cumulative P&L reaches this (dollars) | `6000` |
+| `--min_stop_atr` | Minimum stop size as ATR multiple (prevents micro stops) | `0.5` |
+| `--min_stop_pts` | Minimum stop size in points (floor) | `1.0` |
+
+### Entry Filters (CISD+OTE)
+
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `--min_vty_regime` | Regime gate: skip entries when `atr14/atr_ma50` is below this (0.0 = off) | `0.75` |
+| `--min_entry_distance` | OTE depth gate: skip signals where price hasn't penetrated deep enough into zone (0.0 = off) | `3.0` |
 
 ### Backtesting
 
@@ -160,12 +207,8 @@ python algoTrader.py --config configs/cisd_ote_nq.yaml
 |----------|-------------|---------|
 | `--backtest` | Run in backtesting mode | — |
 | `--backtest_data` | Path to OHLCV CSV file | — |
-| `--start-date` | Start date for backtest (`YYYY-MM-DD`); overrides `--simulation-days` | None |
-| `--end-date` | End date for backtest (`YYYY-MM-DD`); defaults to end of CSV | None |
-| `--simulation-days` | Limit backtest to last N days of data | None |
-| `--profit_target` | Stop sim when cumulative P&L reaches this (dollars) | `6000` |
-| `--max_loss` | Stop sim when cumulative loss hits this (dollars) | `3000` |
-| `--min_vty_regime` | Regime gate: skip entries when `atr14/atr_ma50` is below this (0.0 = off) | `0.75` |
+| `--start-date` | Start date (`YYYY-MM-DD`) | None |
+| `--end-date` | End date (`YYYY-MM-DD`) | None |
 
 ### Live Only
 
@@ -174,25 +217,47 @@ python algoTrader.py --config configs/cisd_ote_nq.yaml
 | `--account` | TopstepX account ID |
 | `--username` | TopstepX username |
 | `--apikey` | TopstepX API key |
-| `--market_hub` | MarketHub URL (default: TopstepX) |
-| `--base_url` | Base API URL (default: TopstepX) |
 
 ---
 
-## CISD+OTE Strategy
+## CISD+OTE Strategy v5.1
 
 **Concept:** Detects ICT-style liquidity events and enters in the direction of institutional order flow.
 
 1. **CISD** — Identifies a Change in State of Delivery: a prior high/low is swept (liquidity grab), followed by a strong displacement candle closing back through the level
-2. **OTE Zone** — Marks the 62–79% Fibonacci retracement of the displacement leg as the optimal entry zone
-3. **AI Filter** — An ONNX classifier confirms the setup using ~30 price-action and market-structure features
-4. **Entry** — Triggers when price retraces into the OTE zone and AI confidence exceeds `entry_conf`
-5. **Stop/Target** — Zone boundaries define the stop; target is 2R by default, extended to 4R on ≥90% confidence signals (via `high_conf_multiplier`)
+2. **OTE Zone** — Marks the 61.8–78.6% Fibonacci retracement of the displacement leg as the optimal entry zone
+3. **AI Filter** — An ONNX classifier (`cisd_ote_hybrid_v5_1.onnx`) confirms the setup using 28 CISD features + 256-dim FFM backbone embeddings
+4. **Entry Gates** — Three layered filters before entry is allowed:
+   - Session gate: 7am–4pm ET only (London open through RTH close — matches training distribution)
+   - Volatility regime gate: `vty_regime >= 0.75` (blocks entries in abnormally quiet markets)
+   - OTE depth gate: `entry_distance_pct >= 3.0` (filters shallow zone touches; winners average 3.9–4.5 vs losers 2.1–2.9)
+5. **Stop/Target** — Zone boundaries define the stop; target is 2R by default, extended to 4R on ≥90% confidence signals
+
+**Model training details (v5.1):**
+- Trained on ES, NQ, RTY, YM, GC (full-size) + micro equivalents (10 instruments)
+- Session window: 7am–4pm ET (London open + full RTH)
+- `in_optimal_session` feature marks 9–11am ET as 1.0 (NY prime window encoded as feature, not hard gate)
+- Walk-forward folds F1–F4; ONNX exported from F4 (train end: 2025-01-01)
+- 2-class output: 0=noise, 1=signal (direction from `zone_is_bullish` feature)
 
 **Zone lifecycle:**
-- A zone is consumed (signal fired) when price enters it — it won't re-trigger
+- A zone is consumed when price enters it — it won't re-trigger
 - A stop-loss clears all active zones (start fresh)
-- Pending entries are cancelled if the bar opens more than one stop-distance away from the signal close (zone no longer valid after a large gap)
+- Pending entries are cancelled if the bar opens more than one stop-distance away (gap invalidation)
+
+---
+
+## Multi-Ticker Setup
+
+The strategy is designed to run simultaneously across uncorrelated instruments:
+
+| Ticker | Contract | Data | Notes |
+|--------|----------|------|-------|
+| MNQ | `CON.F.US.MNQ.M26` | `NQ_continuous_5min.csv` | Primary — highest signal quality |
+| MES | `CON.F.US.MES.M26` | `ES_continuous_5min.csv` | Correlated to MNQ — adds trade frequency |
+| MGC | `CON.F.US.MGC.M26` | `GC_continuous_5min.csv` | Uncorrelated to equities — genuine diversification |
+
+Run each ticker in a separate terminal or process. All three use the same model.
 
 ---
 
@@ -207,48 +272,29 @@ contracts = floor(risk_amount / (stop_ticks × tick_value))
 ```
 
 - If even 1 contract exceeds the budget, the signal is skipped
-- The CISD+OTE strategy provides its own stop (zone boundary) — no need to set `--stop_pts`
-- At ≥90% confidence, `--high_conf_multiplier` extends the profit target (e.g. `2.0` doubles the target from 2R → 4R); risk per trade is always `risk_amount` regardless of confidence
-
-### Fixed Sizing
-
-Omit `--risk_amount` and pass `--size N` to always trade N contracts.
+- `--min_stop_atr` and `--min_stop_pts` prevent unrealistically tight stops from inflating size
+- At ≥90% confidence, `--high_conf_multiplier` extends the profit target (e.g. `2.0` → 4R); risk per trade is always `risk_amount`
 
 ### Gap Risk
 
-Sizing targets the stop level. If a bar opens beyond the stop (gap), the exit fills at the open price — the actual loss may exceed the risk budget. This is realistic market behavior.
+Sizing targets the stop level. If a bar opens beyond the stop (gap), the exit fills at open — actual loss may exceed the risk budget. This is realistic market behavior.
 
 ---
 
-## Backtesting Details
+## Per-Trade Signal Analysis
 
-### CSV Format
+After each backtest, a winners-vs-losers feature table is printed:
 
 ```
-time,open,high,low,close,volume
-2025-10-01 09:30:00,20000.00,20015.50,19995.25,20010.00,12345
+Feature                   Winners     Losers      Delta
+--------------------------------------------------------
+signal_prob                0.7888     0.7566    +0.0322
+entry_distance_pct         4.3413     1.7738    +2.5675
+vty_regime                 1.2528     1.3659    -0.1131
+...
 ```
 
-- `time` column can be Unix timestamps (seconds) or datetime strings
-- `volume` is optional (defaults to 0 if missing)
-
-### Simulation Logic
-
-1. Bar N closes → strategy generates signal
-2. Bar N+1 opens → pending entry fills at open (or is cancelled if gap > stop)
-3. Same bar: check gap-open exit first, then intrabar wick (high/low) exit
-4. No same-bar entry+exit (entry bar is protected)
-
-### Tick Values
-
-Tick sizes and values are auto-detected from the contract ID — no `--tick_size` needed:
-
-| Symbol | Tick Size | Tick Value | Point Value |
-|--------|-----------|------------|-------------|
-| ENQ (NQ) | 0.25 | $5.00 | $20/pt |
-| EP (ES) | 0.25 | $12.50 | $50/pt |
-| MNQ | 0.25 | $0.50 | $2/pt |
-| MES | 0.25 | $1.25 | $5/pt |
+This was used to identify `entry_distance_pct` as the most reliable separator between winning and losing trades, leading to the OTE depth gate (`--min_entry_distance 3.0`).
 
 ---
 
@@ -256,65 +302,34 @@ Tick sizes and values are auto-detected from the contract ID — no `--tick_size
 
 ```bash
 # Tail logs
-tail -f bot_log.log
+tail -f logs/bot_MNQ_YYYYMMDD.log
 
 # Filter entries/exits
-grep "ENTRY\|EXIT" bot_log.log
+grep "ENTRY\|EXIT" logs/bot_MNQ_YYYYMMDD.log
 
 # Check errors
-grep "ERROR" bot_log.log
+grep "ERROR" logs/bot_MNQ_YYYYMMDD.log
 ```
-
-Enable verbose output with `--debug`.
-
----
-
-## Troubleshooting
-
-**No trades executing**
-- Lower `--entry_conf` (try 0.65–0.70)
-- Ensure sufficient history in the CSV (200+ bars before first signal)
-- Check logs for "warming up" messages
-
-**Scaler/model errors**
-- Verify the `.onnx` file path is correct
-- Check logs for feature validation failures (`❌ Feature validation failed`)
-
-**Connection issues (live)**
-- Verify API credentials and account ID
-- Confirm TopstepX services are operational
 
 ---
 
 ## Known Issues & Limitations
 
-These are understood behavioral limitations from backtesting across multiple market regimes. They are logged here for awareness — not all are fixable without model retraining.
+### Session Gate Is a Hard Boundary
 
-### Gap-Through-Stop Risk (All Regimes)
+The model was trained exclusively on 7am–4pm ET data. Out-of-session signals will produce unreliable confidence scores — the model has never seen overnight bars as entry candidates. Do not disable the session gate.
 
-The bot sizes to the stop level, but if a bar opens beyond the stop (e.g. after a macro event), the fill is at the open price and the actual loss can be 3–6× the intended risk budget. This is not a bug — it reflects real market behavior. Macro events (CPI, FOMC, NFP) are the primary cause.
+### Gap-Through-Stop Risk
 
-**Workaround:** Avoid trading on known macro calendar days. There is currently no automatic macro filter.
-
-### 2023 Recovery — Regime Transition Risk
-
-The January 2023 opening days (first week of the recovery from the 2022 bear) produce consistent losses across all parameter configurations. The model fires valid-looking CISD setups but direction is ambiguous during the first days of a new trend regime. A single gap-through on Jan 5 (-125 pts, ~3× intended risk) typically triggers MLL.
-
-**Root cause:** The model was trained on setup quality (1:1 RR hit), not regime transition detection. It cannot distinguish "valid CISD in a trending market" from "valid CISD at the start of an uncertain new trend."
-
-**Workaround:** Consider reducing position size or sitting out the first 1–2 weeks after a sustained bear market ends.
+The bot sizes to the stop level, but macro events (CPI, FOMC, NFP) can gap through the stop. Actual loss in these cases may be 3–6× the intended risk budget. Avoid trading on known macro calendar days.
 
 ### 2021 Out-of-Sample — Low-Vol Grind
 
-Full-year 2021 shows elevated trade counts and losing outcomes (40+ trades, MLL hit) despite the `vty_regime` gate. This is partly expected — 2021 data was seen during model training (F1 fold begins at 2022-01-01), so overfitting to that period is likely. Additionally, the 2021 NQ bull was a slow grind with periodic vol spikes that pass the `vty_regime` filter but don't produce clean CISD displacement.
+2021 (OOS control year) shows elevated trade counts and losing outcomes with the gate at `min_entry_distance=3.0` (30 trades, ~27% win rate). This reflects the model's weakness in low-volatility structural uptrends where displacement moves lack follow-through. The `vty_regime` gate reduces damage but doesn't eliminate it.
 
-**Root cause:** In-sample data + low-momentum trend that doesn't suit the strategy's displacement-based entries.
+### Bear Markets — Model Over-Fires on Bounces
 
-**Status:** Treated as a known training artifact. Not a concern for live trading in current market conditions.
-
-### vty_regime Gate Threshold (0.75 Default)
-
-The `--min_vty_regime 0.75` default was selected via backtesting across 4 market regimes (2021, 2022, 2023, 2024). It was the only threshold that turned the 2024 selloff profitable and kept 2022 clean. However, it does not help 2023 and does not eliminate 2021 losses. It can be disabled with `--min_vty_regime 0.0` if needed.
+In persistent downtrends (2022), the model fires bullish CISD setups on every pullback bounce. The OTE depth gate (`min_entry_distance=3.0`) significantly improves this (167 → 53 trades, 37% → 47% win rate, -$313 → +$3,568) but the bear regime is still the weakest period.
 
 ---
 
