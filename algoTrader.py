@@ -174,7 +174,8 @@ Example Usage (Backtesting):
     os.makedirs("logs", exist_ok=True)
     contract = config.get('contract', 'unknown')
     symbol = contract.split('.')[-2] if '.' in contract else contract
-    log_file = f"logs/bot_{symbol}_{datetime.now().strftime('%Y%m%d')}.log"
+    mode = "backtest" if config.get('backtest') else "live"
+    log_file = f"logs/bot_{symbol}_{mode}_{datetime.now().strftime('%Y%m%d')}.log"
     setup_logging(level=log_level, log_file=log_file)
     logging.info("--- Log Start ---")
     logging.info(f"Logging level set to: {'DEBUG' if args.debug else 'INFO'}")
