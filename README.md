@@ -327,10 +327,6 @@ The bot sizes to the stop level, but macro events (CPI, FOMC, NFP) can gap throu
 
 2021 (OOS control year) shows elevated trade counts and losing outcomes with the gate at `min_entry_distance=3.0` (30 trades, ~27% win rate). This reflects the model's weakness in low-volatility structural uptrends where displacement moves lack follow-through. The `vty_regime` gate reduces damage but doesn't eliminate it.
 
-### Bear Markets — Model Over-Fires on Bounces
-
-In persistent downtrends (2022), the model fires bullish CISD setups on every pullback bounce. The OTE depth gate (`min_entry_distance=3.0`) significantly improves this (167 → 53 trades, 37% → 47% win rate, -$313 → +$3,568) but the bear regime is still the weakest period.
-
 ---
 
 ## License & Warranty
