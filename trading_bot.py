@@ -425,12 +425,11 @@ class RealTimeBot(TradingBot):
             return None
 
     async def _on_breakeven_triggered(self):
-        """Place a new stop at entry price, then cancel the old bracket stop.
+        """Move the bracket stop to entry price via a single Order/modify call.
 
-        New stop is placed first so there is never a window with zero stop protection.
-        If placement fails the old bracket remains active and we abort.
-        If the cancel of the old bracket fails after a successful placement we log a
-        warning — two stops is safe; zero stops is not.
+        Order/modify works on OCO bracket stops (confirmed via live API test) even
+        though it is not documented. The OCO linkage is preserved — if the stop fires
+        the TP auto-cancels as normal. No cancel + re-place needed.
         """
         if not self.stop_bracket_order_id:
             logging.warning(
@@ -440,61 +439,34 @@ class RealTimeBot(TradingBot):
             return
 
         headers = {'Authorization': f'Bearer {self.token}'}
-        old_bracket_id = self.stop_bracket_order_id
-        stop_side = 1 if self.position_type == 'LONG' else 0
-
-        # Step 1: Place new standalone stop at entry price FIRST
         try:
             r = requests.post(
-                f"{self.base_url}/Order/place",
+                f"{self.base_url}/Order/modify",
                 headers=headers,
                 json={
                     "accountId": self.account,
-                    "contractId": self.contract,
-                    "type": 4,
-                    "side": stop_side,
-                    "size": self.position_size,
+                    "orderId":   self.stop_bracket_order_id,
+                    "size":      self.position_size,
                     "stopPrice": self.entry_price,
+                    "limitPrice": None,
+                    "trailPrice": None,
                 },
                 timeout=10
             )
             r.raise_for_status()
             result = r.json()
-            if not result.get('success'):
-                logging.error(
-                    f"❌ Breakeven stop placement failed: {result.get('errorMessage')} "
-                    f"— old stop {old_bracket_id} remains active"
-                )
-                return
-            new_id = result.get('orderId')
-            self.stop_bracket_order_id = new_id
-            logging.info(f"✅ Breakeven stop placed @ {self.entry_price:.2f} (order {new_id})")
-        except Exception as e:
-            logging.error(f"❌ Error placing breakeven stop: {e} — old stop {old_bracket_id} remains active")
-            return
-
-        # Step 2: Cancel old bracket stop now that new stop is live
-        try:
-            r = requests.post(
-                f"{self.base_url}/Order/cancel",
-                headers=headers,
-                json={"accountId": self.account, "orderId": old_bracket_id},
-                timeout=10
-            )
-            r.raise_for_status()
-            result = r.json()
-            if not result.get('success'):
-                logging.warning(
-                    f"⚠️ Old stop bracket {old_bracket_id} cancel failed "
-                    f"(new stop {self.stop_bracket_order_id} still active): {result.get('errorMessage')}"
+            if result.get('success'):
+                logging.info(
+                    f"✅ Breakeven stop moved to {self.entry_price:.2f} "
+                    f"(order {self.stop_bracket_order_id})"
                 )
             else:
-                logging.info(f"✅ Old stop bracket {old_bracket_id} cancelled")
+                logging.error(
+                    f"❌ Breakeven modify failed: {result.get('errorMessage')} "
+                    f"— stop remains at original price"
+                )
         except Exception as e:
-            logging.warning(
-                f"⚠️ Error cancelling old stop bracket {old_bracket_id} "
-                f"(new stop {self.stop_bracket_order_id} still active): {e}"
-            )
+            logging.error(f"❌ Error modifying breakeven stop: {e}")
 
     # =========================================================
     # BAR CLOSER WATCHER

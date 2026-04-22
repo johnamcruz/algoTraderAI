@@ -398,25 +398,21 @@ class TestFetchStopBracketOrderId:
 
 # ── _on_breakeven_triggered ───────────────────────────────────────────────────
 
-class TestOnBreakevenTriggered:
-    """_on_breakeven_triggered: places new stop first, then cancels old bracket.
+def _modify_ok():
+    return _ok({"success": True, "errorCode": 0, "errorMessage": None})
 
-    Place-before-cancel ensures zero-gap stop coverage:
-      - If placement fails  → abort, old bracket stays active (safe)
-      - If cancel fails     → warn, new stop already live (two stops briefly, safe)
+
+class TestOnBreakevenTriggered:
+    """_on_breakeven_triggered: moves bracket stop to entry price via Order/modify.
+
+    Single API call — OCO linkage is preserved, no cancel + re-place needed.
+    Confirmed working on live bracket stops (undocumented but functional).
     """
 
-    def _setup_long(self, bot, bracket_id=5000, entry=100.0, size=2):
+    def _setup(self, bot, bracket_id=5000, entry=100.0, size=2,
+               position_type="LONG"):
         bot.in_position = True
-        bot.position_type = "LONG"
-        bot.entry_price = entry
-        bot.stop_loss = entry  # already moved by _check_and_set_breakeven
-        bot.stop_bracket_order_id = bracket_id
-        bot.position_size = size
-
-    def _setup_short(self, bot, bracket_id=5000, entry=100.0, size=1):
-        bot.in_position = True
-        bot.position_type = "SHORT"
+        bot.position_type = position_type
         bot.entry_price = entry
         bot.stop_loss = entry
         bot.stop_bracket_order_id = bracket_id
@@ -429,62 +425,50 @@ class TestOnBreakevenTriggered:
             run(live_bot._on_breakeven_triggered())
         mock_post.assert_not_called()
 
-    def test_long_places_new_stop_then_cancels_old(self, live_bot):
-        self._setup_long(live_bot, bracket_id=5001, entry=100.0, size=1)
-        with patch("trading_bot.requests.post", side_effect=[_place_ok(order_id=5999), _cancel_ok()]) as mock_post:
-            run(live_bot._on_breakeven_triggered())
-
-        place_call  = mock_post.call_args_list[0]
-        cancel_call = mock_post.call_args_list[1]
-        place_json = place_call[1]["json"]
-        assert place_json["type"] == 4                        # stop order
-        assert place_json["side"] == 1                        # sell (exit a long)
-        assert place_json["stopPrice"] == pytest.approx(100.0)
-        assert place_json["size"] == 1
-        assert cancel_call[1]["json"] == {"accountId": "ACC1", "orderId": 5001}
-
-    def test_short_places_buy_stop(self, live_bot):
-        self._setup_short(live_bot, bracket_id=5002, entry=200.0, size=1)
-        with patch("trading_bot.requests.post", side_effect=[_place_ok(order_id=6000), _cancel_ok()]) as mock_post:
-            run(live_bot._on_breakeven_triggered())
-        place_json = mock_post.call_args_list[0][1]["json"]
-        assert place_json["side"] == 0       # buy (exit a short)
-
-    def test_updates_bracket_id_after_new_stop_placed(self, live_bot):
-        self._setup_long(live_bot, bracket_id=5003, entry=100.0)
-        with patch("trading_bot.requests.post", side_effect=[_place_ok(order_id=7777), _cancel_ok()]):
-            run(live_bot._on_breakeven_triggered())
-        assert live_bot.stop_bracket_order_id == 7777
-
-    def test_aborts_without_cancel_if_place_fails(self, live_bot):
-        """If new stop placement fails, old bracket is left intact — no cancel call."""
-        self._setup_long(live_bot, bracket_id=5004, entry=100.0)
-        with patch("trading_bot.requests.post", side_effect=[_fail("place rejected")]) as mock_post:
-            run(live_bot._on_breakeven_triggered())
-        assert mock_post.call_count == 1          # only the place attempt
-        assert live_bot.stop_bracket_order_id == 5004  # old ID preserved
-
-    def test_aborts_without_cancel_if_place_raises(self, live_bot):
-        """If placement raises, old bracket is left intact — no cancel call."""
-        self._setup_long(live_bot, bracket_id=5005, entry=100.0)
-        with patch("trading_bot.requests.post", side_effect=[ConnectionError("timeout")]) as mock_post:
+    def test_sends_single_modify_call(self, live_bot):
+        self._setup(live_bot, bracket_id=5001, entry=100.0, size=1)
+        with patch("trading_bot.requests.post", return_value=_modify_ok()) as mock_post:
             run(live_bot._on_breakeven_triggered())
         assert mock_post.call_count == 1
-        assert live_bot.stop_bracket_order_id == 5005
 
-    def test_keeps_new_bracket_id_when_cancel_fails(self, live_bot):
-        """If cancel of old stop fails, new stop is already live — ID reflects new stop."""
-        self._setup_long(live_bot, bracket_id=5006, entry=100.0)
-        with patch("trading_bot.requests.post", side_effect=[_place_ok(order_id=8888), _fail("cancel rejected")]):
+    def test_modify_targets_correct_order_and_price(self, live_bot):
+        self._setup(live_bot, bracket_id=5001, entry=100.0, size=2)
+        with patch("trading_bot.requests.post", return_value=_modify_ok()) as mock_post:
             run(live_bot._on_breakeven_triggered())
-        assert live_bot.stop_bracket_order_id == 8888  # new stop is active
+        body = mock_post.call_args[1]["json"]
+        assert body["orderId"]   == 5001
+        assert body["stopPrice"] == pytest.approx(100.0)
+        assert body["size"]      == 2
+        assert body["limitPrice"] is None
+        assert body["trailPrice"] is None
 
-    def test_keeps_new_bracket_id_when_cancel_raises(self, live_bot):
-        """If cancel raises, new stop is already live — ID reflects new stop."""
-        self._setup_long(live_bot, bracket_id=5007, entry=100.0)
-        with patch("trading_bot.requests.post", side_effect=[_place_ok(order_id=9999), ConnectionError("timeout")]):
+    def test_bracket_id_unchanged_after_modify(self, live_bot):
+        """Order/modify keeps the same order ID — bracket_id must not change."""
+        self._setup(live_bot, bracket_id=5002, entry=150.0)
+        with patch("trading_bot.requests.post", return_value=_modify_ok()):
             run(live_bot._on_breakeven_triggered())
-        assert live_bot.stop_bracket_order_id == 9999
+        assert live_bot.stop_bracket_order_id == 5002
+
+    def test_logs_error_and_preserves_id_on_modify_failure(self, live_bot):
+        self._setup(live_bot, bracket_id=5003, entry=100.0)
+        with patch("trading_bot.requests.post", return_value=_fail("invalid stop price")):
+            run(live_bot._on_breakeven_triggered())
+        assert live_bot.stop_bracket_order_id == 5003   # unchanged
+
+    def test_logs_error_and_preserves_id_on_exception(self, live_bot):
+        self._setup(live_bot, bracket_id=5004, entry=100.0)
+        with patch("trading_bot.requests.post", side_effect=ConnectionError("timeout")):
+            run(live_bot._on_breakeven_triggered())
+        assert live_bot.stop_bracket_order_id == 5004
+
+    def test_works_for_short_position(self, live_bot):
+        self._setup(live_bot, bracket_id=5005, entry=200.0, size=1,
+                    position_type="SHORT")
+        with patch("trading_bot.requests.post", return_value=_modify_ok()) as mock_post:
+            run(live_bot._on_breakeven_triggered())
+        body = mock_post.call_args[1]["json"]
+        assert body["stopPrice"] == pytest.approx(200.0)
+        assert body["orderId"]   == 5005
 
 
 # ── _place_order: position state ──────────────────────────────────────────────
