@@ -44,7 +44,7 @@ class RealTimeBot(TradingBot):
         max_contracts=15,
         min_stop_pts=1.0,
         min_stop_atr_mult=0.5,
-        breakeven_on_1r=False,
+        breakeven_on_1r=True,
     ):
         """
         Initialize the real-time trading bot.
