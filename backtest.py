@@ -73,6 +73,11 @@ SYMBOL_CONFIG = {
         "tick_size":  0.25,
         "contract":   "CON.F.US.MES.M26",
     },
+    "MGC": {
+        "data":       "data/GC_continuous_5min.csv",
+        "tick_size":  0.10,
+        "contract":   "CON.F.US.MGC.M26",
+    },
 }
 
 DEFAULT_MODEL         = "models/cisd_ote_hybrid_v5_1.onnx"
@@ -209,7 +214,7 @@ def main():
     parser.add_argument("--parallel",   action="store_true",
                         help="Run scenarios in parallel (default: sequential)")
     parser.add_argument("--symbol",     type=str,  default=DEFAULT_SYMBOL,
-                        choices=list(SYMBOL_CONFIG.keys()),
+                        choices=["MNQ", "MES", "MGC"],
                         help=f"Trading symbol (default: {DEFAULT_SYMBOL})")
     parser.add_argument("--model",      type=str,  default=DEFAULT_MODEL,
                         help=f"ONNX model path (default: {DEFAULT_MODEL})")
