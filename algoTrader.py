@@ -137,6 +137,10 @@ Example Usage (Backtesting):
                         help='(cisd-ote) Regime gate: skip trades when vty_regime (atr14/atr_ma50) '
                              'is below this value (0.0=disabled, 0.8=block when vol is 20%% below '
                              'its 50-bar average). Persistent across sustained low-vol periods.')
+    parser.add_argument('--min_entry_distance', type=float, default=None,
+                        help='(cisd-ote) OTE depth gate: skip signals where entry_distance_pct is '
+                             'below this value (0.0=disabled, 3.0=recommended). Filters shallow '
+                             'zone touches; winners avg 3.9-4.5 vs losers 2.1-2.9 in backtests.')
     
     args = parser.parse_args()
 
@@ -203,7 +207,8 @@ def run_backtesting(config):
         if config['strategy'] == '3min_pivot_reversal' or config['strategy'] == '5min_pivot_reversal':
             strategy_kwargs['pivot_lookback'] = config.get("pivot_lookback", 8)
         if config['strategy'] == 'cisd-ote':
-            strategy_kwargs['min_vty_regime'] = config.get('min_vty_regime', 0.75)
+            strategy_kwargs['min_vty_regime']     = config.get('min_vty_regime', 0.75)
+            strategy_kwargs['min_entry_distance'] = config.get('min_entry_distance', 0.0)
 
         strategy = StrategyFactory.create_strategy(
             strategy_name=config["strategy"],
@@ -276,7 +281,8 @@ def run_live_trading(config):
         if config['strategy'] == '3min_pivot_reversal' or config['strategy'] == '5min_pivot_reversal':
             strategy_kwargs['pivot_lookback'] = config.get("pivot_lookback", 8)
         if config['strategy'] == 'cisd-ote':
-            strategy_kwargs['min_vty_regime'] = config.get('min_vty_regime', 0.75)
+            strategy_kwargs['min_vty_regime']     = config.get('min_vty_regime', 0.75)
+            strategy_kwargs['min_entry_distance'] = config.get('min_entry_distance', 0.0)
 
         strategy = StrategyFactory.create_strategy(
             strategy_name=config["strategy"],

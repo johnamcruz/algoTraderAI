@@ -16,13 +16,15 @@ from strategy_cisd_ote import CISDOTEStrategy, SESSION_START_HOUR, SESSION_END_H
 def strategy():
     """Instantiate strategy without loading ONNX model."""
     s = CISDOTEStrategy.__new__(CISDOTEStrategy)
-    s._session_start_hour = SESSION_START_HOUR   # 7
-    s._session_end_hour   = SESSION_END_HOUR      # 16
-    s._min_vty_regime     = 0.75
-    s._latest_vty_regime  = 1.0    # healthy regime by default
-    s._active_zones       = []
-    s._latest_zone_bullish = 0.0
-    s._latest_cisd_features = None
+    s._session_start_hour    = SESSION_START_HOUR   # 7
+    s._session_end_hour      = SESSION_END_HOUR      # 16
+    s._min_vty_regime        = 0.75
+    s._latest_vty_regime     = 1.0    # healthy regime by default
+    s._min_entry_distance    = 0.0    # disabled by default
+    s._latest_signal_meta    = {}
+    s._active_zones          = []
+    s._latest_zone_bullish   = 0.0
+    s._latest_cisd_features  = None
     return s
 
 
@@ -121,6 +123,55 @@ class TestEntryGate:
     def test_confidence_below_threshold_ignores_regime(self, strategy):
         """Regime gate is never reached when confidence fails first."""
         strategy._latest_vty_regime = 0.10
+        ok, direction = self._enter(strategy, confidence=0.50, entry_conf=0.70)
+        assert ok is False
+
+    # ── OTE depth gate (min_entry_distance) ──────────────────────────────────
+
+    def test_ote_depth_gate_blocks_shallow_touch(self, strategy):
+        strategy._min_entry_distance = 3.0
+        strategy._latest_signal_meta = {'entry_distance_pct': 1.77}
+        ok, direction = self._enter(strategy, prediction=1, confidence=0.90)
+        assert ok is False
+        assert direction is None
+
+    def test_ote_depth_gate_passes_deep_touch(self, strategy):
+        strategy._min_entry_distance = 3.0
+        strategy._latest_signal_meta = {'entry_distance_pct': 4.34}
+        ok, direction = self._enter(strategy, prediction=1, confidence=0.90)
+        assert ok is True
+        assert direction == 'LONG'
+
+    def test_ote_depth_gate_passes_exactly_at_threshold(self, strategy):
+        strategy._min_entry_distance = 3.0
+        strategy._latest_signal_meta = {'entry_distance_pct': 3.0}
+        ok, direction = self._enter(strategy, prediction=1, confidence=0.90)
+        assert ok is True
+
+    def test_ote_depth_gate_disabled_when_zero(self, strategy):
+        strategy._min_entry_distance = 0.0
+        strategy._latest_signal_meta = {'entry_distance_pct': 0.5}  # would fail if enabled
+        ok, direction = self._enter(strategy, prediction=1, confidence=0.90)
+        assert ok is True
+
+    def test_ote_depth_gate_missing_meta_uses_zero(self, strategy):
+        """Empty signal_meta defaults entry_distance_pct to 0.0 — gate blocks it."""
+        strategy._min_entry_distance = 3.0
+        strategy._latest_signal_meta = {}
+        ok, direction = self._enter(strategy, prediction=1, confidence=0.90)
+        assert ok is False
+
+    def test_ote_depth_gate_short_signal(self, strategy):
+        strategy._min_entry_distance = 3.0
+        strategy._latest_signal_meta = {'entry_distance_pct': 4.0}
+        ok, direction = self._enter(strategy, prediction=2, confidence=0.90)
+        assert ok is True
+        assert direction == 'SHORT'
+
+    def test_ote_depth_gate_checked_after_confidence(self, strategy):
+        """Confidence gate fires first — depth never checked on low confidence."""
+        strategy._min_entry_distance = 3.0
+        strategy._latest_signal_meta = {'entry_distance_pct': 5.0}
         ok, direction = self._enter(strategy, confidence=0.50, entry_conf=0.70)
         assert ok is False
 

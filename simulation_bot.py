@@ -104,6 +104,7 @@ class SimulationBot(TradingBot):
         
         # Pending entry system (sim bot only)
         self.pending_entry = None
+        self._current_signal_meta = {}
         self.current_trade_size = size
         
         # Track if we just entered this bar (prevents same-bar exit)
@@ -217,15 +218,21 @@ class SimulationBot(TradingBot):
         """
         direction = 'LONG' if side == 0 else 'SHORT'
 
+        # Snapshot signal diagnostics from strategy at the moment of signal
+        signal_meta = {}
+        if hasattr(self.strategy, '_latest_signal_meta'):
+            signal_meta = dict(self.strategy._latest_signal_meta)
+
         # Store for next bar entry
         self.pending_entry = {
-            'direction': direction,
-            'reference_price': close_price,
-            'stop_loss': stop_loss,
-            'profit_target': profit_target,
-            'stop_ticks': stop_ticks,
+            'direction':         direction,
+            'reference_price':   close_price,
+            'stop_loss':         stop_loss,
+            'profit_target':     profit_target,
+            'stop_ticks':        stop_ticks,
             'take_profit_ticks': take_profit_ticks,
-            'size': size,
+            'size':              size,
+            'signal_meta':       signal_meta,
         }
         
         # Log the pending order
@@ -382,12 +389,13 @@ class SimulationBot(TradingBot):
                 self.profit_target = profit_target
                 self.entry_timestamp = timestamp
                 self.current_trade_size = self.pending_entry.get('size', self.size)
-                
+                self._current_signal_meta = self.pending_entry.get('signal_meta', {})
+
                 # Mark that we just entered this bar (prevents same-bar exit)
                 self.just_entered_this_bar = True
-                
+
                 self._log_entry(direction, entry_price, stop_loss, profit_target)
-                
+
                 # Clear pending entry
                 self.pending_entry = None
             
@@ -466,16 +474,17 @@ class SimulationBot(TradingBot):
                         self.losing_trades += 1
 
                     trade_info = {
-                        'entry_timestamp': self.entry_timestamp,
-                        'exit_timestamp': timestamp,
-                        'type': self.position_type,
-                        'entry': self.entry_price,
-                        'exit': exit_price,
-                        'reason': exit_reason,
-                        'pnl_points': pnl_points,
-                        'pnl_dollars': pnl_dollars,
-                        'mfe_pts': self.mfe_pts,
-                        'total_pnl_dollars': self.total_pnl_dollars
+                        'entry_timestamp':  self.entry_timestamp,
+                        'exit_timestamp':   timestamp,
+                        'type':             self.position_type,
+                        'entry':            self.entry_price,
+                        'exit':             exit_price,
+                        'reason':           exit_reason,
+                        'pnl_points':       pnl_points,
+                        'pnl_dollars':      pnl_dollars,
+                        'mfe_pts':          self.mfe_pts,
+                        'total_pnl_dollars': self.total_pnl_dollars,
+                        'signal_meta':      dict(self._current_signal_meta),
                     }
                     self.trades_log.append(trade_info)
 
@@ -565,6 +574,29 @@ class SimulationBot(TradingBot):
         
         print("="*60 + "\n")
         
+        # Signal feature analysis: winners vs losers
+        trades_with_meta = [t for t in self.trades_log if t.get('signal_meta')]
+        if trades_with_meta:
+            winners = [t for t in trades_with_meta if t['pnl_points'] > 0]
+            losers  = [t for t in trades_with_meta if t['pnl_points'] <= 0]
+            meta_keys = list(trades_with_meta[0]['signal_meta'].keys())
+
+            def avg(trades, key):
+                vals = [t['signal_meta'].get(key, 0) for t in trades]
+                return sum(vals) / len(vals) if vals else 0.0
+
+            print("\n📊 SIGNAL FEATURE ANALYSIS (winners vs losers):")
+            print("-"*60)
+            header = f"  {'Feature':<22} {'Winners':>10} {'Losers':>10} {'Delta':>10}"
+            print(header)
+            print("  " + "-"*56)
+            for key in meta_keys:
+                w = avg(winners, key)
+                l = avg(losers,  key)
+                print(f"  {key:<22} {w:>10.4f} {l:>10.4f} {w-l:>+10.4f}")
+            print(f"  {'trade_count':<22} {len(winners):>10} {len(losers):>10}")
+            print("-"*60)
+
         # Print individual trades
         if self.trades_log:
             print("\n📋 TRADE LOG:")
@@ -579,6 +611,11 @@ class SimulationBot(TradingBot):
                 print(f"  Reason: {trade['reason']}")
                 print(f"  P&L: {trade['pnl_points']:.2f} points (${trade['pnl_dollars']:,.2f})")
                 print(f"  Cumulative P&L: ${trade['total_pnl_dollars']:,.2f}")
+                if trade.get('signal_meta'):
+                    m = trade['signal_meta']
+                    print(f"  Signal: prob={m.get('signal_prob','?')} rr={m.get('risk_rr','?')} "
+                          f"confluence={m.get('confluence_score','?')} "
+                          f"htf={m.get('htf_trend','?')} aligned={m.get('trend_alignment','?')}")
 
     async def run(self):
         """Run the simulation."""
