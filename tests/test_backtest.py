@@ -20,6 +20,7 @@ from backtest import (
     DEFAULT_PROFIT_TARGET,
     DEFAULT_MIN_STOP_ATR,
     DEFAULT_MIN_STOP_PTS,
+    DEFAULT_MIN_ENTRY_DISTANCE,
     DEFAULT_HIGH_CONF_MULT,
     DEFAULT_MODEL,
     DEFAULT_SYMBOL,
@@ -43,6 +44,7 @@ def _default_args(**overrides):
         profit_target=DEFAULT_PROFIT_TARGET,
         min_stop_atr=DEFAULT_MIN_STOP_ATR,
         min_stop_pts=DEFAULT_MIN_STOP_PTS,
+        min_entry_distance=DEFAULT_MIN_ENTRY_DISTANCE,
     )
     base.update(overrides)
     return argparse.Namespace(**base)
@@ -162,6 +164,11 @@ class TestBuildCommand:
         idx = cmd.index("--profit_target")
         assert cmd[idx + 1] == "6000.0"
 
+    def test_min_entry_distance_passed(self):
+        cmd = build_command("bear_2022", _default_args(min_entry_distance=3.0))
+        idx = cmd.index("--min_entry_distance")
+        assert cmd[idx + 1] == "3.0"
+
     def test_quiet_flag_present(self):
         cmd = build_command("bear_2022", _default_args())
         assert "--quiet" in cmd
@@ -264,3 +271,6 @@ class TestDefaults:
 
     def test_default_symbol_is_mnq(self):
         assert DEFAULT_SYMBOL == "MNQ"
+
+    def test_default_min_entry_distance(self):
+        assert DEFAULT_MIN_ENTRY_DISTANCE == 0.0

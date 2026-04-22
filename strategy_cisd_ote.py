@@ -89,6 +89,7 @@ class CISDOTEStrategy(BaseStrategy):
         session_start_hour: int = SESSION_START_HOUR,
         session_end_hour: int = SESSION_END_HOUR,
         min_vty_regime: float = 0.75,
+        min_entry_distance: float = 0.0,
     ):
         super().__init__(model_path, contract_symbol)
         self._session_start_hour = session_start_hour
@@ -99,6 +100,11 @@ class CISDOTEStrategy(BaseStrategy):
         # 0.0 = disabled, 0.8 = block when current ATR >20% below its 50-bar average.
         self._min_vty_regime = min_vty_regime
         self._latest_vty_regime: float = 1.0  # neutral until first bar computed
+
+        # OTE depth gate — block signals where price hasn't penetrated deep enough into zone
+        # entry_distance_pct = (price vs zone centre) / zone height; higher = deeper in zone
+        # 0.0 = disabled, 3.0 = recommended based on backtest feature analysis
+        self._min_entry_distance = min_entry_distance
 
         # CISD zone tracker state
         self._active_zones: deque = deque(maxlen=20)
@@ -119,6 +125,9 @@ class CISDOTEStrategy(BaseStrategy):
         self._latest_zone_bullish: float = 0.0
         self._latest_risk_rr: float = 0.0
 
+        # Per-signal diagnostics captured at inference time (for backtest analysis)
+        self._latest_signal_meta: dict = {}
+
         logging.info("=" * 65)
         logging.info("🎯 CISD+OTE Strategy v5.1 — FFM Hybrid Transformer")
         logging.info("=" * 65)
@@ -130,6 +139,8 @@ class CISDOTEStrategy(BaseStrategy):
         logging.info(f"  Direction: zone_is_bullish feature (CISD idx 4)")
         if min_vty_regime > 0.0:
             logging.info(f"  Regime gate: block when vty_regime < {min_vty_regime} (atr14/atr_ma50)")
+        if min_entry_distance > 0.0:
+            logging.info(f"  OTE depth gate: block when entry_distance_pct < {min_entry_distance}")
         logging.info("=" * 65)
 
     # ── BaseStrategy interface ────────────────────────────────────
@@ -336,6 +347,21 @@ class CISDOTEStrategy(BaseStrategy):
             else:
                 prediction = 0   # No active zone
 
+            # Capture per-signal diagnostics for backtest analysis
+            cisd = self._latest_cisd_features
+            self._latest_signal_meta = {
+                'signal_prob':        round(signal_prob, 4),
+                'risk_rr':            round(self._latest_risk_rr, 4),
+                'htf_trend':          round(float(cisd[7]),  4) if cisd is not None else 0.0,
+                'trend_alignment':    round(float(cisd[8]),  4) if cisd is not None else 0.0,
+                'confluence_score':   round(float(cisd[17]), 4) if cisd is not None else 0.0,
+                'in_optimal_session': round(float(cisd[19]), 4) if cisd is not None else 0.0,
+                'entry_distance_pct': round(float(cisd[20]), 4) if cisd is not None else 0.0,
+                'vty_regime':         round(self._latest_vty_regime, 4),
+                'str_structure':      round(float(df['str_structure_state'].iloc[-1]), 4)
+                                      if 'str_structure_state' in df.columns else 0.0,
+            }
+
             logging.debug(
                 f"  CISD+OTE | signal_prob={signal_prob:.3f} "
                 f"conf={confidence:.3f} dir={'BUY' if prediction==1 else 'SELL' if prediction==2 else 'NONE'}"
@@ -388,6 +414,16 @@ class CISDOTEStrategy(BaseStrategy):
                 f"< {self._min_vty_regime} — skipping"
             )
             return False, None
+
+        # OTE depth gate — skip when price hasn't penetrated deep enough into the zone
+        if self._min_entry_distance > 0.0:
+            entry_dist = self._latest_signal_meta.get('entry_distance_pct', 0.0)
+            if entry_dist < self._min_entry_distance:
+                logging.info(
+                    f"🚫 OTE depth gate: entry_distance_pct={entry_dist:.3f} "
+                    f"< {self._min_entry_distance} — skipping"
+                )
+                return False, None
 
         if prediction == 1:
             logging.info(f"✅ CISD+OTE BUY  | signal_prob={confidence:.3f} vty_regime={self._latest_vty_regime:.3f}")
