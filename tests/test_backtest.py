@@ -273,4 +273,4 @@ class TestDefaults:
         assert DEFAULT_SYMBOL == "MNQ"
 
     def test_default_min_entry_distance(self):
-        assert DEFAULT_MIN_ENTRY_DISTANCE == 0.0
+        assert DEFAULT_MIN_ENTRY_DISTANCE == 3.0
