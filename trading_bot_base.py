@@ -242,8 +242,10 @@ class TradingBot(ABC):
 
             # Display prediction on every bar regardless of session
             pred_labels = {0: "HOLD", 1: "BUY", 2: "SELL"}
-            print(f"🤖 AI: {pred_labels[prediction]} (Conf: {confidence:.2%})")
-            logging.info(f"AI: {pred_labels[prediction]} (Conf: {confidence:.2%}) ADX: {latest_bar.get('adx', 0):.1f}")
+            zone_count = getattr(self.strategy, 'active_zone_count', None)
+            zone_str = f" zones={zone_count}" if zone_count is not None else ""
+            print(f"🤖 AI: {pred_labels[prediction]} (Conf: {confidence:.2%}){zone_str}")
+            logging.info(f"AI: {pred_labels[prediction]} (Conf: {confidence:.2%}) ADX: {latest_bar.get('adx', 0):.1f}{zone_str}")
 
             # Let the strategy veto entries outside its allowed trading window
             if not self.strategy.is_trading_allowed(bar_time):

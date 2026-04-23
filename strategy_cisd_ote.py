@@ -153,6 +153,10 @@ class CISDOTEStrategy(BaseStrategy):
         """200 bars needed for stable ATR, pivot detection, and P/D midpoint."""
         return 200
 
+    @property
+    def active_zone_count(self) -> int:
+        return len(self._active_zones)
+
     def _on_new_bar(self, df: pd.DataFrame, bar_idx: int) -> None:
         """Incremental CISD zone detection — called once per bar by the base warmup loop."""
         self._update_cisd_detector(df, bar_idx)
@@ -816,6 +820,12 @@ class CISDOTEStrategy(BaseStrategy):
 
         if cisd_zone is not None:
             self._active_zones.appendleft(cisd_zone)
+            direction = "BULL" if cisd_zone['is_bullish'] else "BEAR"
+            logging.info(
+                f"🟢 New CISD zone: {direction} | "
+                f"top={cisd_zone['fib_top']:.2f} bot={cisd_zone['fib_bot']:.2f} | "
+                f"total active={len(self._active_zones)}"
+            )
 
         # ── Update active zones ──
         current_close = c_arr[bar]
