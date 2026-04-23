@@ -241,7 +241,7 @@ def run_backtesting(config):
             max_contracts=config.get("max_contracts", 15),
             min_stop_pts=config.get("min_stop_pts", 1.0),
             min_stop_atr_mult=config.get("min_stop_atr", 0.5),
-            breakeven_on_1r=config.get("breakeven_on_1r", True),
+            breakeven_on_1r=config.get("breakeven_on_1r", False),
         )
 
         if quiet:
@@ -316,7 +316,7 @@ def run_live_trading(config):
             max_contracts=config.get("max_contracts", 15),
             min_stop_pts=config.get("min_stop_pts", 1.0),
             min_stop_atr_mult=config.get("min_stop_atr", 0.5),
-            breakeven_on_1r=config.get("breakeven_on_1r", True),
+            breakeven_on_1r=config.get("breakeven_on_1r", False),
         )
 
         asyncio.run(bot.run())
