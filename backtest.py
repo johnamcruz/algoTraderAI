@@ -120,6 +120,8 @@ def build_command(scenario_key: str, args) -> list[str]:
         "--min_entry_distance",   str(args.min_entry_distance),
         "--quiet",
     ]
+    if args.no_breakeven:
+        cmd.append("--no-breakeven_on_1r")
     return cmd
 
 
@@ -173,6 +175,8 @@ def print_results(results: list[dict], args) -> None:
     print(f"  BACKTEST RESULTS — {args.symbol}  |  model: {os.path.basename(args.model)}")
     print(f"  entry_conf={args.entry_conf}  risk=${args.risk_amount}  max_contracts={args.max_contracts}")
     print(f"  max_loss=${args.max_loss}  profit_target=${args.profit_target}  min_stop_atr={args.min_stop_atr}")
+    be_label = "OFF" if args.no_breakeven else "ON"
+    print(f"  breakeven_on_1r={be_label}")
     print("═" * width)
 
     for r in results:
@@ -236,6 +240,8 @@ def main():
                         help=f"Min stop floor in points (default: {DEFAULT_MIN_STOP_PTS})")
     parser.add_argument("--min_entry_distance", type=float, default=DEFAULT_MIN_ENTRY_DISTANCE,
                         help=f"OTE depth gate: min entry_distance_pct (default: {DEFAULT_MIN_ENTRY_DISTANCE})")
+    parser.add_argument("--no-breakeven", action="store_true", dest="no_breakeven", default=False,
+                        help="Disable breakeven-on-1R (default: enabled). Use to compare against baseline.")
     args = parser.parse_args()
 
     if args.list:
