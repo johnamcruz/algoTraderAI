@@ -45,8 +45,8 @@ def _default_args(**overrides):
         min_stop_atr=DEFAULT_MIN_STOP_ATR,
         min_stop_pts=DEFAULT_MIN_STOP_PTS,
         min_entry_distance=DEFAULT_MIN_ENTRY_DISTANCE,
+        min_vty_regime=0.75,
         breakeven=False,
-        no_breakeven=False,
     )
     base.update(overrides)
     return argparse.Namespace(**base)

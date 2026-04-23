@@ -91,6 +91,7 @@ DEFAULT_PROFIT_TARGET = 6000.0
 DEFAULT_MIN_STOP_ATR      = 0.5
 DEFAULT_MIN_STOP_PTS      = 1.0
 DEFAULT_MIN_ENTRY_DISTANCE = 3.0
+DEFAULT_MIN_VTY_REGIME    = 0.75
 
 
 # ── Build command ─────────────────────────────────────────────────────────────
@@ -118,12 +119,11 @@ def build_command(scenario_key: str, args) -> list[str]:
         "--min_stop_atr",         str(args.min_stop_atr),
         "--min_stop_pts",         str(args.min_stop_pts),
         "--min_entry_distance",   str(args.min_entry_distance),
+        "--min_vty_regime",       str(args.min_vty_regime),
         "--quiet",
     ]
     if args.breakeven:
         cmd.append("--breakeven_on_1r")
-    elif args.no_breakeven:
-        cmd.append("--no-breakeven_on_1r")
     return cmd
 
 
@@ -177,8 +177,7 @@ def print_results(results: list[dict], args) -> None:
     print(f"  BACKTEST RESULTS — {args.symbol}  |  model: {os.path.basename(args.model)}")
     print(f"  entry_conf={args.entry_conf}  risk=${args.risk_amount}  max_contracts={args.max_contracts}")
     print(f"  max_loss=${args.max_loss}  profit_target=${args.profit_target}  min_stop_atr={args.min_stop_atr}")
-    be_label = "ON" if args.breakeven else "OFF"
-    print(f"  breakeven_on_1r={be_label}")
+    print(f"  min_vty_regime={args.min_vty_regime}  breakeven={'ON' if args.breakeven else 'OFF'}")
     print("═" * width)
 
     for r in results:
@@ -242,10 +241,10 @@ def main():
                         help=f"Min stop floor in points (default: {DEFAULT_MIN_STOP_PTS})")
     parser.add_argument("--min_entry_distance", type=float, default=DEFAULT_MIN_ENTRY_DISTANCE,
                         help=f"OTE depth gate: min entry_distance_pct (default: {DEFAULT_MIN_ENTRY_DISTANCE})")
-    parser.add_argument("--breakeven", action="store_true", dest="breakeven", default=False,
-                        help="Enable breakeven-on-1R (default: off).")
-    parser.add_argument("--no-breakeven", action="store_true", dest="no_breakeven", default=False,
-                        help="Explicitly disable breakeven-on-1R (for clarity in comparison runs).")
+    parser.add_argument("--min_vty_regime", type=float, default=DEFAULT_MIN_VTY_REGIME,
+                        help=f"Volatility regime gate: min atr14/atr_ma50 ratio (default: {DEFAULT_MIN_VTY_REGIME})")
+    parser.add_argument("--breakeven", action="store_true", default=False,
+                        help="Enable breakeven-on-1R (default: off)")
     args = parser.parse_args()
 
     if args.list:
