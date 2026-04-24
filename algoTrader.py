@@ -142,6 +142,10 @@ Example Usage (Backtesting):
                         help='(cisd-ote) OTE depth gate: skip signals where entry_distance_pct is '
                              'below this value (0.0=disabled, 3.0=recommended). Filters shallow '
                              'zone touches; winners avg 3.9-4.5 vs losers 2.1-2.9 in backtests.')
+    parser.add_argument('--min_risk_rr', type=float, default=None,
+                        help='(cisd-ote7) RR gate: skip trades when model predicted_rr is below '
+                             'this value (0.0=disabled, 2.0=recommended). F4 calibration: '
+                             'predict>=2.0 gives 81%% 3R hit rate on val signals.')
     args = parser.parse_args()
 
     # Load configuration first so we know the contract for the log filename
@@ -210,6 +214,8 @@ def run_backtesting(config):
         if config['strategy'] == 'cisd-ote':
             strategy_kwargs['min_vty_regime']     = config.get('min_vty_regime', 0.75)
             strategy_kwargs['min_entry_distance'] = config.get('min_entry_distance', 3.0)
+        if config['strategy'] == 'cisd-ote7':
+            strategy_kwargs['min_risk_rr'] = config.get('min_risk_rr', 2.0)
 
         strategy = StrategyFactory.create_strategy(
             strategy_name=config["strategy"],
@@ -284,6 +290,8 @@ def run_live_trading(config):
         if config['strategy'] == 'cisd-ote':
             strategy_kwargs['min_vty_regime']     = config.get('min_vty_regime', 0.75)
             strategy_kwargs['min_entry_distance'] = config.get('min_entry_distance', 3.0)
+        if config['strategy'] == 'cisd-ote7':
+            strategy_kwargs['min_risk_rr'] = config.get('min_risk_rr', 2.0)
 
         strategy = StrategyFactory.create_strategy(
             strategy_name=config["strategy"],

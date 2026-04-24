@@ -32,6 +32,7 @@ def strategy():
     """Instantiate v7 strategy without loading ONNX model."""
     s = CISDOTEStrategyV7.__new__(CISDOTEStrategyV7)
     s._instrument           = 'NQ'
+    s._min_risk_rr          = 0.0
     s._active_zones         = deque(maxlen=20)
     s._latest_cisd_features = None
     s._latest_zone_bullish  = 0.0
@@ -119,8 +120,29 @@ class TestEntryGate:
         assert ok is False
         assert direction is None
 
-    def test_no_regime_gate_in_v7(self, strategy):
-        """v7 has no volatility regime filter — high confidence always passes."""
+    def test_rr_gate_disabled_by_default(self, strategy):
+        """min_risk_rr=0.0 (default) — low predicted RR never blocks entry."""
+        strategy._min_risk_rr = 0.0
+        strategy._latest_risk_rr = 0.0
+        ok, _ = self._enter(strategy, prediction=1, confidence=0.95)
+        assert ok is True
+
+    def test_rr_gate_blocks_low_rr(self, strategy):
+        strategy._min_risk_rr = 2.0
+        strategy._latest_risk_rr = 1.5
+        ok, direction = self._enter(strategy, prediction=1, confidence=0.95)
+        assert ok is False
+        assert direction is None
+
+    def test_rr_gate_passes_at_threshold(self, strategy):
+        strategy._min_risk_rr = 2.0
+        strategy._latest_risk_rr = 2.0
+        ok, _ = self._enter(strategy, prediction=1, confidence=0.95)
+        assert ok is True
+
+    def test_rr_gate_passes_above_threshold(self, strategy):
+        strategy._min_risk_rr = 2.0
+        strategy._latest_risk_rr = 3.5
         ok, _ = self._enter(strategy, prediction=1, confidence=0.95)
         assert ok is True
 
@@ -147,18 +169,41 @@ class TestStopTargetPts:
         stop, _ = strategy.get_stop_target_pts(None, 'LONG', 98.0)
         assert stop == pytest.approx(3.0)   # 98 - 95
 
-    def test_long_target_uses_risk_rr(self, strategy):
+    def test_long_target_snaps_1_5r_tier(self, strategy):
+        """predict=1.7 snaps down to 1.5R tier."""
+        strategy._latest_risk_rr = 1.7
+        strategy._active_zones.appendleft(_zone(fib_bot=95.0, fib_top=100.0))
+        stop, target = strategy.get_stop_target_pts(None, 'LONG', 98.0)
+        assert target == pytest.approx(stop * 1.5)
+
+    def test_long_target_snaps_to_tier(self, strategy):
+        """predict=2.5 snaps down to 2R tier."""
         strategy._latest_risk_rr = 2.5
         strategy._active_zones.appendleft(_zone(fib_bot=95.0, fib_top=100.0))
         stop, target = strategy.get_stop_target_pts(None, 'LONG', 98.0)
-        assert target == pytest.approx(stop * 2.5)
+        assert target == pytest.approx(stop * 2.0)
+
+    def test_long_target_snaps_3r_tier(self, strategy):
+        """predict=3.7 snaps down to 3R tier."""
+        strategy._latest_risk_rr = 3.7
+        strategy._active_zones.appendleft(_zone(fib_bot=95.0, fib_top=100.0))
+        stop, target = strategy.get_stop_target_pts(None, 'LONG', 98.0)
+        assert target == pytest.approx(stop * 3.0)
+
+    def test_long_target_snaps_4r_tier(self, strategy):
+        """predict=4.5 snaps to 4R tier."""
+        strategy._latest_risk_rr = 4.5
+        strategy._active_zones.appendleft(_zone(fib_bot=95.0, fib_top=100.0))
+        stop, target = strategy.get_stop_target_pts(None, 'LONG', 98.0)
+        assert target == pytest.approx(stop * 4.0)
 
     def test_short_stop_is_distance_to_fib_top(self, strategy):
         strategy._active_zones.appendleft(_zone(fib_bot=95.0, fib_top=100.0, is_bullish=False))
         stop, _ = strategy.get_stop_target_pts(None, 'SHORT', 97.0)
         assert stop == pytest.approx(3.0)   # 100 - 97
 
-    def test_short_target_uses_risk_rr(self, strategy):
+    def test_short_target_snaps_to_tier(self, strategy):
+        """predict=3.0 snaps exactly to 3R tier."""
         strategy._latest_risk_rr = 3.0
         strategy._active_zones.appendleft(_zone(fib_bot=95.0, fib_top=100.0, is_bullish=False))
         stop, target = strategy.get_stop_target_pts(None, 'SHORT', 97.0)

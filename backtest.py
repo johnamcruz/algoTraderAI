@@ -92,6 +92,7 @@ DEFAULT_MIN_STOP_ATR      = 0.5
 DEFAULT_MIN_STOP_PTS      = 1.0
 DEFAULT_MIN_ENTRY_DISTANCE = 3.0
 DEFAULT_MIN_VTY_REGIME    = 0.75
+DEFAULT_MIN_RISK_RR       = 2.0
 
 
 # ── Build command ─────────────────────────────────────────────────────────────
@@ -108,7 +109,7 @@ def build_command(scenario_key: str, args) -> list[str]:
         "--tick_size",            str(sym_cfg["tick_size"]),
         "--start-date",           sc["start_date"],
         "--end-date",             sc["end_date"],
-        "--strategy",             "cisd-ote",
+        "--strategy",             args.strategy,
         "--model",                args.model,
         "--entry_conf",           str(args.entry_conf),
         "--risk_amount",          str(args.risk_amount),
@@ -120,6 +121,7 @@ def build_command(scenario_key: str, args) -> list[str]:
         "--min_stop_pts",         str(args.min_stop_pts),
         "--min_entry_distance",   str(args.min_entry_distance),
         "--min_vty_regime",       str(args.min_vty_regime),
+        "--min_risk_rr",          str(args.min_risk_rr),
         "--quiet",
     ]
     if args.breakeven:
@@ -174,10 +176,10 @@ def print_results(results: list[dict], args) -> None:
     width = 70
     print()
     print("═" * width)
-    print(f"  BACKTEST RESULTS — {args.symbol}  |  model: {os.path.basename(args.model)}")
+    print(f"  BACKTEST RESULTS — {args.symbol}  |  strategy: {args.strategy}  |  model: {os.path.basename(args.model)}")
     print(f"  entry_conf={args.entry_conf}  risk=${args.risk_amount}  max_contracts={args.max_contracts}")
     print(f"  max_loss=${args.max_loss}  profit_target=${args.profit_target}  min_stop_atr={args.min_stop_atr}")
-    print(f"  min_vty_regime={args.min_vty_regime}  breakeven={'ON' if args.breakeven else 'OFF'}")
+    print(f"  min_vty_regime={args.min_vty_regime}  min_risk_rr={args.min_risk_rr}  breakeven={'ON' if args.breakeven else 'OFF'}")
     print("═" * width)
 
     for r in results:
@@ -221,6 +223,9 @@ def main():
     parser.add_argument("--symbol",     type=str,  default=DEFAULT_SYMBOL,
                         choices=["MNQ", "MES", "MGC"],
                         help=f"Trading symbol (default: {DEFAULT_SYMBOL})")
+    parser.add_argument("--strategy",   type=str,  default="cisd-ote",
+                        choices=["cisd-ote", "cisd-ote7"],
+                        help="Strategy to backtest (default: cisd-ote)")
     parser.add_argument("--model",      type=str,  default=DEFAULT_MODEL,
                         help=f"ONNX model path (default: {DEFAULT_MODEL})")
     parser.add_argument("--entry_conf", type=float, default=DEFAULT_ENTRY_CONF,
@@ -243,6 +248,8 @@ def main():
                         help=f"OTE depth gate: min entry_distance_pct (default: {DEFAULT_MIN_ENTRY_DISTANCE})")
     parser.add_argument("--min_vty_regime", type=float, default=DEFAULT_MIN_VTY_REGIME,
                         help=f"Volatility regime gate: min atr14/atr_ma50 ratio (default: {DEFAULT_MIN_VTY_REGIME})")
+    parser.add_argument("--min_risk_rr", type=float, default=DEFAULT_MIN_RISK_RR,
+                        help=f"(cisd-ote7) RR gate: min model-predicted RR to enter (default: {DEFAULT_MIN_RISK_RR}, 0=off)")
     parser.add_argument("--breakeven", action="store_true", default=False,
                         help="Enable breakeven-on-1R (default: off)")
     args = parser.parse_args()

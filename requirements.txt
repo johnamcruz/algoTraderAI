@@ -8,3 +8,4 @@ pysignalr
 python-dateutil
 pytest
 pyyaml
+futures-foundation-model @ git+https://github.com/johnamcruz/Futures-Foundation-Model.git
