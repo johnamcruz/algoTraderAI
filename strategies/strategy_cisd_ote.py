@@ -24,7 +24,7 @@ import onnxruntime
 from collections import deque
 from typing import Dict, List, Tuple, Optional
 
-from strategy_base import BaseStrategy
+from strategies.strategy_base import BaseStrategy
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 

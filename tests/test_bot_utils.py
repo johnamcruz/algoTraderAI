@@ -1,7 +1,7 @@
 """Unit tests for bot_utils helpers."""
 
 import pytest
-from bot_utils import parse_future_symbol, TICK_VALUES, TICK_SIZES
+from utils.bot_utils import parse_future_symbol, TICK_VALUES, TICK_SIZES
 
 
 class TestParseFutureSymbol:

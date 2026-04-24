@@ -5,11 +5,11 @@ Strategy Factory
 Creates strategy instances based on strategy name.
 """
 
-from strategy_base import BaseStrategy
-from strategy_cisd_ote import CISDOTEStrategy
+from strategies.strategy_base import BaseStrategy
+from strategies.strategy_cisd_ote import CISDOTEStrategy
 
 def _load_v7():
-    from strategy_cisd_ote_v7 import CISDOTEStrategyV7
+    from strategies.strategy_cisd_ote_v7 import CISDOTEStrategyV7
     return CISDOTEStrategyV7
 
 class StrategyFactory:

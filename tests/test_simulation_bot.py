@@ -4,7 +4,7 @@ import asyncio
 import pytest
 import pandas as pd
 from datetime import datetime, timezone
-from simulation_bot import SimulationBot
+from bots.simulation_bot import SimulationBot
 from tests.helpers import MockStrategy
 
 

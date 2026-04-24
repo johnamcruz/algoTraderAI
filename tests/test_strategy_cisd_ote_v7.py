@@ -18,7 +18,7 @@ _ff_stub.get_model_feature_columns = MagicMock(return_value=[])
 _ff_stub.INSTRUMENT_MAP = {'ES': 0, 'NQ': 1, 'RTY': 2, 'YM': 3, 'GC': 4}
 sys.modules.setdefault('futures_foundation', _ff_stub)
 
-from strategy_cisd_ote_v7 import (
+from strategies.strategy_cisd_ote_v7 import (
     CISDOTEStrategyV7,
     ZONE_MAX_BARS, MAX_RISK_DOLLARS, POINT_VALUES,
     OPTIMAL_START_HOUR, OPTIMAL_END_HOUR,
@@ -332,21 +332,21 @@ class TestInstrumentResolution:
     """parse_future_symbol maps micro contracts to their parent for INSTRUMENT_MAP lookup."""
 
     def test_mnq_maps_to_nq(self):
-        from bot_utils import parse_future_symbol
+        from utils.bot_utils import parse_future_symbol
         assert parse_future_symbol('MNQZ5') == 'NQ'
 
     def test_mes_maps_to_es(self):
-        from bot_utils import parse_future_symbol
+        from utils.bot_utils import parse_future_symbol
         assert parse_future_symbol('MESH5') == 'ES'
 
     def test_mgc_maps_to_gc(self):
-        from bot_utils import parse_future_symbol
+        from utils.bot_utils import parse_future_symbol
         assert parse_future_symbol('MGCZ5') == 'GC'
 
     def test_full_contract_id_nq(self):
-        from bot_utils import parse_future_symbol
+        from utils.bot_utils import parse_future_symbol
         assert parse_future_symbol('NQZ5') == 'NQ'
 
     def test_none_returns_none(self):
-        from bot_utils import parse_future_symbol
+        from utils.bot_utils import parse_future_symbol
         assert parse_future_symbol(None) is None

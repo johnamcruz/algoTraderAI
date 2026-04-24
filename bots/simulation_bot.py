@@ -15,9 +15,9 @@ trading operations to evaluate strategy performance. It:
 import logging
 import pandas as pd
 from datetime import datetime
-from strategy_base import BaseStrategy
-from trading_bot_base import TradingBot
-from bot_utils import TICK_VALUES, TICK_SIZES
+from strategies.strategy_base import BaseStrategy
+from bots.trading_bot_base import TradingBot
+from utils.bot_utils import TICK_VALUES, TICK_SIZES
 
 CONTRACTS = {
     "CON.F.US.ENQ.Z25": "NQ",

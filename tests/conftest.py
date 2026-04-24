@@ -7,7 +7,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from tests.helpers import MockStrategy, ConcreteBot
-from simulation_bot import SimulationBot
+from bots.simulation_bot import SimulationBot
 
 
 @pytest.fixture
