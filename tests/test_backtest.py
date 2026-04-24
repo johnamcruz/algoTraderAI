@@ -272,7 +272,7 @@ class TestDefaults:
         assert DEFAULT_PROFIT_TARGET == 6000.0
 
     def test_default_entry_conf(self):
-        assert DEFAULT_ENTRY_CONF == 0.70
+        assert DEFAULT_ENTRY_CONF == 0.80
 
     def test_default_symbol_is_mnq(self):
         assert DEFAULT_SYMBOL == "MNQ"
