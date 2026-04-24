@@ -225,6 +225,10 @@ def run_backtesting(config):
             **strategy_kwargs
         )
 
+        # cisd-ote7 uses risk-head tier-snapping for TP — high_conf_multiplier
+        # would corrupt those calibrated targets, so it is always disabled.
+        high_conf_mult = 1.0 if config['strategy'] == 'cisd-ote7' else config.get('high_conf_multiplier', 1.0)
+
         bot = SimulationBot(
             csv_path=config["backtest_data"],
             contract=config["contract"],
@@ -243,7 +247,7 @@ def run_backtesting(config):
             start_date=config.get("start_date"),
             end_date=config.get("end_date"),
             risk_amount=config.get("risk_amount"),
-            high_conf_multiplier=config.get("high_conf_multiplier", 1.0),
+            high_conf_multiplier=high_conf_mult,
             max_contracts=config.get("max_contracts", 15),
             min_stop_pts=config.get("min_stop_pts", 1.0),
             min_stop_atr_mult=config.get("min_stop_atr", 0.5),
@@ -304,6 +308,10 @@ def run_live_trading(config):
         logging.info(f"✅ Strategy '{config['strategy']}' created successfully!")
         logging.info(f"Starting bot...")
         
+        # cisd-ote7 uses risk-head tier-snapping for TP — high_conf_multiplier
+        # would corrupt those calibrated targets, so it is always disabled.
+        high_conf_mult = 1.0 if config['strategy'] == 'cisd-ote7' else config.get('high_conf_multiplier', 1.0)
+
         # Create and run bot
         bot = RealTimeBot(
             token=jwt_token,
@@ -320,7 +328,7 @@ def run_live_trading(config):
             target_pts=config.get("target_pts"),
             enable_trailing_stop=config.get("enable_trailing_stop", False),
             risk_amount=config.get("risk_amount"),
-            high_conf_multiplier=config.get("high_conf_multiplier", 1.0),
+            high_conf_multiplier=high_conf_mult,
             max_contracts=config.get("max_contracts", 15),
             min_stop_pts=config.get("min_stop_pts", 1.0),
             min_stop_atr_mult=config.get("min_stop_atr", 0.5),
