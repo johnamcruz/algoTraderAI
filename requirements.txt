@@ -1,6 +1,6 @@
 # requirements.txt
-numpy<2.0
-pandas<2.0
+numpy>=1.26
+pandas>=2.0
 onnxruntime
 scikit-learn
 requests
