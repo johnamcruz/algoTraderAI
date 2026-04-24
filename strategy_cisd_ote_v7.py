@@ -33,7 +33,7 @@ from typing import Dict, List, Tuple, Optional
 
 from strategy_base import BaseStrategy
 from futures_foundation import derive_features, get_model_feature_columns, INSTRUMENT_MAP
-from bot_utils import parse_future_symbol
+from bot_utils import parse_future_symbol, MICRO_TO_MINI_MAP
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -81,10 +81,12 @@ class CISDOTEStrategyV7(BaseStrategy):
         self,
         model_path: str,
         contract_symbol: str,
+        min_risk_rr: float = 0.0,
     ):
         super().__init__(model_path, contract_symbol)
 
-        self._instrument = parse_future_symbol(contract_symbol) or ''
+        self._instrument = self._resolve_instrument(contract_symbol)
+        self._min_risk_rr: float = min_risk_rr
 
         # CISD zone state
         self._active_zones: deque = deque(maxlen=20)
@@ -107,9 +109,26 @@ class CISDOTEStrategyV7(BaseStrategy):
         logging.info(f"  Optimal session feature: {OPTIMAL_START_HOUR}–{OPTIMAL_END_HOUR} ET")
         logging.info(f"  Recommended threshold: 0.80 (moderate)")
         logging.info(f"  Warmup: ~300 bars")
+        if min_risk_rr > 0.0:
+            logging.info(f"  RR gate: block when predicted_rr < {min_risk_rr}")
         logging.info("=" * 65)
 
     # ── BaseStrategy interface ────────────────────────────────────────────────
+
+    @staticmethod
+    def _resolve_instrument(contract_symbol: Optional[str]) -> str:
+        """Resolve root parent symbol from any contract ID format.
+
+        Handles two formats:
+          'CON.F.US.MNQ.M26' (backtest config) → split('.')[-2] → 'MNQ' → MICRO_TO_MINI_MAP → 'NQ'
+          'MNQM26' / 'MNQZ5'  (live API name)  → parse_future_symbol → 'NQ'
+        """
+        if not contract_symbol:
+            return ''
+        if contract_symbol.count('.') >= 3:
+            root = contract_symbol.split('.')[-2].upper()
+            return MICRO_TO_MINI_MAP.get(root, root)
+        return parse_future_symbol(contract_symbol) or contract_symbol.upper()
 
     def get_sequence_length(self) -> int:
         return 96
@@ -135,7 +154,7 @@ class CISDOTEStrategyV7(BaseStrategy):
         Timestamps drive session_id buckets (0=pre-market, 1=london, 2=ny_am, 3=ny_pm)
         which must match training — derive_features handles this internally.
         """
-        self._instrument = parse_future_symbol(self.contract_symbol) or self._instrument
+        self._instrument = self._resolve_instrument(self.contract_symbol) or self._instrument
         df = df.copy()
         if len(df) < 2:
             self._latest_cisd_features = None
@@ -243,7 +262,7 @@ class CISDOTEStrategyV7(BaseStrategy):
             session_ids = sess[-seq_len:].reshape(1, seq_len)
 
             # Refresh from live contract_symbol; parse_future_symbol maps micros to parent
-            self._instrument = parse_future_symbol(self.contract_symbol) or self._instrument
+            self._instrument = self._resolve_instrument(self.contract_symbol) or self._instrument
             inst_id = INSTRUMENT_MAP.get(self._instrument, 0)
             instrument_ids = np.array([inst_id], dtype=np.int64)
 
@@ -314,11 +333,18 @@ class CISDOTEStrategyV7(BaseStrategy):
         if confidence < entry_conf:
             return False, None
 
+        if self._min_risk_rr > 0.0 and self._latest_risk_rr < self._min_risk_rr:
+            logging.info(
+                f"🚫 RR gate: predicted_rr={self._latest_risk_rr:.2f} "
+                f"< {self._min_risk_rr} — skipping"
+            )
+            return False, None
+
         if prediction == 1:
-            logging.info(f"✅ CISD+OTE v7 BUY  | conf={confidence:.3f}")
+            logging.info(f"✅ CISD+OTE v7 BUY  | conf={confidence:.3f} rr={self._latest_risk_rr:.2f}")
             return True, 'LONG'
         elif prediction == 2:
-            logging.info(f"✅ CISD+OTE v7 SELL | conf={confidence:.3f}")
+            logging.info(f"✅ CISD+OTE v7 SELL | conf={confidence:.3f} rr={self._latest_risk_rr:.2f}")
             return True, 'SHORT'
         return False, None
 
@@ -344,12 +370,25 @@ class CISDOTEStrategyV7(BaseStrategy):
         if stop_pts <= 0:
             return None, None
 
-        rr = max(self._latest_risk_rr, 1.0)
+        # Snap predicted RR to calibrated tier floor (F4 val: ≥2R→85%, ≥3R→81%, ≥4R→81%)
+        # Tiers: 1.5, 2, 3, 4 — predict ≥ tier sets TP at that tier level
+        raw_rr = self._latest_risk_rr
+        if raw_rr >= 4.0:
+            rr = 4.0
+        elif raw_rr >= 3.0:
+            rr = 3.0
+        elif raw_rr >= 2.0:
+            rr = 2.0
+        elif raw_rr >= 1.5:
+            rr = 1.5
+        else:
+            rr = max(raw_rr, 1.0)
+
         target_pts = stop_pts * rr
         logging.info(
             f"  CISD stop/target | dir={direction} entry={entry_price:.2f} "
             f"zone=[{fb:.2f}–{ft:.2f}] stop={stop_pts:.2f}pts "
-            f"target={target_pts:.2f}pts (rr={rr:.2f})"
+            f"target={target_pts:.2f}pts (predicted_rr={raw_rr:.2f} → tier={rr}R)"
         )
         return stop_pts, target_pts
 

@@ -21,6 +21,7 @@ from backtest import (
     DEFAULT_MIN_STOP_ATR,
     DEFAULT_MIN_STOP_PTS,
     DEFAULT_MIN_ENTRY_DISTANCE,
+    DEFAULT_MIN_RISK_RR,
     DEFAULT_HIGH_CONF_MULT,
     DEFAULT_MODEL,
     DEFAULT_SYMBOL,
@@ -35,6 +36,7 @@ def _default_args(**overrides):
     """Return a minimal argparse.Namespace matching backtest.py defaults."""
     base = dict(
         symbol=DEFAULT_SYMBOL,
+        strategy='cisd-ote',
         model=DEFAULT_MODEL,
         entry_conf=DEFAULT_ENTRY_CONF,
         risk_amount=DEFAULT_RISK_AMOUNT,
@@ -46,6 +48,7 @@ def _default_args(**overrides):
         min_stop_pts=DEFAULT_MIN_STOP_PTS,
         min_entry_distance=DEFAULT_MIN_ENTRY_DISTANCE,
         min_vty_regime=0.75,
+        min_risk_rr=DEFAULT_MIN_RISK_RR,
         breakeven=False,
     )
     base.update(overrides)
