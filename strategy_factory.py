@@ -7,7 +7,10 @@ Creates strategy instances based on strategy name.
 
 from strategy_base import BaseStrategy
 from strategy_cisd_ote import CISDOTEStrategy
-from strategy_cisd_ote_v7 import CISDOTEStrategyV7
+
+def _load_v7():
+    from strategy_cisd_ote_v7 import CISDOTEStrategyV7
+    return CISDOTEStrategyV7
 
 class StrategyFactory:
     """
@@ -17,7 +20,7 @@ class StrategyFactory:
     # Registry of available strategies
     STRATEGIES = {
         'cisd-ote':  CISDOTEStrategy,
-        'cisd-ote7': CISDOTEStrategyV7,
+        'cisd-ote7': _load_v7,   # lazy: futures_foundation only required when v7 is selected
     }
     
     @classmethod
@@ -53,6 +56,8 @@ class StrategyFactory:
             )
 
         strategy_class = cls.STRATEGIES[strategy_name]
+        if callable(strategy_class) and not isinstance(strategy_class, type):
+            strategy_class = strategy_class()  # resolve lazy loader
         return strategy_class(model_path, contract_symbol, **kwargs)
     
     @classmethod
