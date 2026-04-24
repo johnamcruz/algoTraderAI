@@ -528,7 +528,7 @@ class CISDOTEStrategy(BaseStrategy):
 
         # ── Volatility features ──
         df['vty_atr_14']       = atr14 / (c + eps)
-        atr_z_mean = pd.Series(atr14).rolling(100).mean().fillna(method='bfill').values
+        atr_z_mean = pd.Series(atr14).rolling(100).mean().bfill().values
         atr_z_std  = pd.Series(atr14).rolling(100).std().fillna(1.0).values
         df['vty_atr_zscore']   = (atr14 - atr_z_mean) / (atr_z_std + eps)
         range20 = pd.Series(h - l).rolling(20).mean().fillna(h[0] - l[0]).values
@@ -541,12 +541,12 @@ class CISDOTEStrategy(BaseStrategy):
         gk = 0.5 * np.log((h + eps) / (l + eps))**2 - (2*np.log(2)-1) * np.log((c + eps) / (o + eps))**2
         df['vty_garman_klass'] = pd.Series(np.sqrt(np.maximum(gk, 0))).rolling(20).mean().fillna(0).values
         df['vty_rolling_std_20'] = pd.Series(ret).rolling(20).std().fillna(0).values
-        atr_ma50 = pd.Series(atr14).rolling(50).mean().fillna(method='bfill').values
+        atr_ma50 = pd.Series(atr14).rolling(50).mean().bfill().values
         df['vty_regime']       = atr14 / (atr_ma50 + eps)
 
         # ── Volume features ──
-        vol_ma20 = pd.Series(v).rolling(20).mean().fillna(method='bfill').values
-        vol_ma60 = pd.Series(v).rolling(60).mean().fillna(method='bfill').values
+        vol_ma20 = pd.Series(v).rolling(20).mean().bfill().values
+        vol_ma60 = pd.Series(v).rolling(60).mean().bfill().values
         df['vol_ratio_20']     = v / (vol_ma20 + eps)
         df['vol_ratio_60']     = v / (vol_ma60 + eps)
         bar_delta              = np.where(c > o, v, np.where(c < o, -v, 0.0))
@@ -643,7 +643,7 @@ class CISDOTEStrategy(BaseStrategy):
         for col in feature_cols:
             if col in df.columns:
                 df[col] = pd.Series(df[col]).replace([np.inf, -np.inf], np.nan) \
-                                            .fillna(method='ffill').fillna(0).values
+                                            .ffill().fillna(0).values
                 df[col] = np.clip(df[col].values, -10.0, 10.0)
             else:
                 df[col] = 0.0
