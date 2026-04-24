@@ -7,7 +7,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from strategy_cisd_ote import CISDOTEStrategy, SESSION_START_HOUR, SESSION_END_HOUR
+from strategies.strategy_cisd_ote import CISDOTEStrategy, SESSION_START_HOUR, SESSION_END_HOUR
 
 
 # ── Fixture ───────────────────────────────────────────────────────────────────

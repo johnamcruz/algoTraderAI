@@ -31,9 +31,9 @@ import onnxruntime
 from collections import deque
 from typing import Dict, List, Tuple, Optional
 
-from strategy_base import BaseStrategy
+from strategies.strategy_base import BaseStrategy
 from futures_foundation import derive_features, get_model_feature_columns, INSTRUMENT_MAP
-from bot_utils import parse_future_symbol, MICRO_TO_MINI_MAP
+from utils.bot_utils import parse_future_symbol, MICRO_TO_MINI_MAP
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 

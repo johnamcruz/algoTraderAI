@@ -16,9 +16,9 @@ import requests
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 from pysignalr.client import SignalRClient
-from strategy_base import BaseStrategy
-from bot_utils import parse_future_symbol
-from trading_bot_base import TradingBot
+from strategies.strategy_base import BaseStrategy
+from utils.bot_utils import parse_future_symbol
+from bots.trading_bot_base import TradingBot
 
 # =========================================================
 # REAL-TIME TRADING BOT CLASS

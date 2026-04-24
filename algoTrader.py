@@ -18,11 +18,11 @@ import os
 import sys
 from datetime import datetime
 
-from bot_utils import setup_logging, authenticate, MARKET_HUB, BASE_URL
-from config_loader import load_config, merge_config_with_args, validate_config
-from strategy_factory import StrategyFactory
-from trading_bot import RealTimeBot
-from simulation_bot import SimulationBot
+from utils.bot_utils import setup_logging, authenticate, MARKET_HUB, BASE_URL
+from utils.config_loader import load_config, merge_config_with_args, validate_config
+from strategies.strategy_factory import StrategyFactory
+from bots.trading_bot import RealTimeBot
+from bots.simulation_bot import SimulationBot
 import warnings
 
 warnings.filterwarnings('ignore')

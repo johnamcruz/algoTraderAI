@@ -45,7 +45,7 @@ def warmed_strategy(ohlcv_200):
     """CISDOTEStrategy after a full 200-bar warmup (model not loaded)."""
     import logging
     logging.disable(logging.CRITICAL)
-    from strategy_cisd_ote import CISDOTEStrategy
+    from strategies.strategy_cisd_ote import CISDOTEStrategy
     s = CISDOTEStrategy(
         model_path="models/cisd_ote_hybrid_v5_1.onnx",
         contract_symbol="MNQ",
@@ -60,24 +60,24 @@ class TestImports:
     """All core modules must import cleanly — catches missing deps and syntax errors."""
 
     def test_strategy_base_imports(self):
-        from strategy_base import BaseStrategy
+        from strategies.strategy_base import BaseStrategy
         assert BaseStrategy
 
     def test_strategy_cisd_ote_imports(self):
-        from strategy_cisd_ote import CISDOTEStrategy
+        from strategies.strategy_cisd_ote import CISDOTEStrategy
         assert CISDOTEStrategy
 
     def test_trading_bot_base_imports(self):
-        from trading_bot_base import TradingBot
+        from bots.trading_bot_base import TradingBot
         assert TradingBot
 
     def test_trading_bot_imports(self):
-        with patch("trading_bot.SignalRClient"):
-            from trading_bot import RealTimeBot
+        with patch("bots.trading_bot.SignalRClient"):
+            from bots.trading_bot import RealTimeBot
         assert RealTimeBot
 
     def test_simulation_bot_imports(self):
-        from simulation_bot import SimulationBot
+        from bots.simulation_bot import SimulationBot
         assert SimulationBot
 
 
@@ -87,30 +87,30 @@ class TestBaseStrategyHooks:
     """_on_new_bar and _run_warmup must be present and correctly wired."""
 
     def test_base_has_on_new_bar(self):
-        from strategy_base import BaseStrategy
+        from strategies.strategy_base import BaseStrategy
         assert callable(getattr(BaseStrategy, "_on_new_bar", None))
 
     def test_base_has_run_warmup(self):
-        from strategy_base import BaseStrategy
+        from strategies.strategy_base import BaseStrategy
         assert callable(getattr(BaseStrategy, "_run_warmup", None))
 
     def test_base_bar_count_starts_at_zero(self):
-        from strategy_base import BaseStrategy
+        from strategies.strategy_base import BaseStrategy
         assert BaseStrategy.__init__.__code__.co_consts or True  # exists
         # Verify via a concrete subclass
-        from strategy_cisd_ote import CISDOTEStrategy
+        from strategies.strategy_cisd_ote import CISDOTEStrategy
         import logging
         logging.disable(logging.CRITICAL)
         s = CISDOTEStrategy(model_path="", contract_symbol="MNQ")
         assert s._bar_count == 0
 
     def test_cisd_overrides_on_new_bar(self):
-        from strategy_cisd_ote import CISDOTEStrategy
+        from strategies.strategy_cisd_ote import CISDOTEStrategy
         assert "_on_new_bar" in CISDOTEStrategy.__dict__
 
     def test_bar_count_not_set_in_cisd_init(self):
         import inspect
-        from strategy_cisd_ote import CISDOTEStrategy
+        from strategies.strategy_cisd_ote import CISDOTEStrategy
         src = inspect.getsource(CISDOTEStrategy.__init__)
         assert "_bar_count" not in src, (
             "_bar_count must live in BaseStrategy.__init__, not CISDOTEStrategy.__init__"
@@ -127,7 +127,7 @@ class TestCISDWarmup:
         assert warmed_strategy._bar_count == 200
 
     def test_ffm_features_computed(self, warmed_strategy, ohlcv_200):
-        from strategy_cisd_ote import CISDOTEStrategy
+        from strategies.strategy_cisd_ote import CISDOTEStrategy
         import logging
         logging.disable(logging.CRITICAL)
         s = CISDOTEStrategy(model_path="", contract_symbol="MNQ")
@@ -150,7 +150,7 @@ class TestCISDWarmup:
         # Build a 201-bar df and call add_features (simulates next bar close)
         import logging
         logging.disable(logging.CRITICAL)
-        from strategy_cisd_ote import CISDOTEStrategy
+        from strategies.strategy_cisd_ote import CISDOTEStrategy
         import inspect
         df201 = warmed_strategy  # we just need the fixture; use a fresh strategy
         # Fresh check: reuse ohlcv_200 concept without fixture arg conflict
@@ -159,7 +159,7 @@ class TestCISDWarmup:
     def test_incremental_bar_increments_count_by_one(self, ohlcv_200):
         import logging
         logging.disable(logging.CRITICAL)
-        from strategy_cisd_ote import CISDOTEStrategy
+        from strategies.strategy_cisd_ote import CISDOTEStrategy
         s = CISDOTEStrategy(model_path="", contract_symbol="MNQ")
         s.add_features(ohlcv_200)
         count_after_warmup = s._bar_count  # 200
@@ -185,7 +185,7 @@ class TestRunWarmupEdgeCases:
     def _fresh(self):
         import logging
         logging.disable(logging.CRITICAL)
-        from strategy_cisd_ote import CISDOTEStrategy
+        from strategies.strategy_cisd_ote import CISDOTEStrategy
         return CISDOTEStrategy(model_path="", contract_symbol="MNQ")
 
     def test_single_row_is_noop(self):
@@ -199,7 +199,7 @@ class TestRunWarmupEdgeCases:
         assert s._bar_count == 0
 
     def test_two_rows_calls_on_new_bar_once(self):
-        from strategy_base import BaseStrategy
+        from strategies.strategy_base import BaseStrategy
         calls = []
 
         class Tracker(BaseStrategy):

@@ -9,7 +9,7 @@ import pandas as pd
 from collections import deque
 from datetime import datetime, timezone
 from abc import ABC, abstractmethod
-from strategy_base import BaseStrategy
+from strategies.strategy_base import BaseStrategy
 
 
 class TradingBot(ABC):

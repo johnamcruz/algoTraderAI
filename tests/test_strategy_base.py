@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from strategy_base import BaseStrategy
+from strategies.strategy_base import BaseStrategy
 
 
 # ── Minimal concrete strategy for testing ─────────────────────────────────────

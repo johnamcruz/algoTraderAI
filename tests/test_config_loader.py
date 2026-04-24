@@ -2,7 +2,7 @@
 
 import argparse
 import pytest
-from config_loader import load_config, merge_config_with_args, validate_config
+from utils.config_loader import load_config, merge_config_with_args, validate_config
 
 
 class TestLoadConfig:
