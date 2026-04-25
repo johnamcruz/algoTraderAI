@@ -230,9 +230,9 @@ def main():
     parser.add_argument("--symbol",     type=str,  default=DEFAULT_SYMBOL,
                         choices=["MNQ", "MES", "MGC"],
                         help=f"Trading symbol (default: {DEFAULT_SYMBOL})")
-    parser.add_argument("--strategy",   type=str,  default="cisd-ote",
+    parser.add_argument("--strategy",   type=str,  default="cisd-ote7",
                         choices=["cisd-ote", "cisd-ote7"],
-                        help="Strategy to backtest (default: cisd-ote)")
+                        help="Strategy to backtest (default: cisd-ote7)")
     parser.add_argument("--model",      type=str,  default=DEFAULT_MODEL,
                         help=f"ONNX model path (default: {DEFAULT_MODEL})")
     parser.add_argument("--entry_conf", type=float, default=DEFAULT_ENTRY_CONF,
