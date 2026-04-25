@@ -39,15 +39,15 @@ Available Strategies: {', '.join(StrategyFactory.list_strategies())}
 
 Example Usage (Live Trading):
   python %(prog)s --account ACC123 --contract CON.F.US.MES.M26 --username USER --apikey KEY \\
-                  --strategy cisd-ote --model models/cisd_ote_hybrid_v5_1.onnx \\
-                  --risk_amount 300 --entry_conf 0.70 --high_conf_multiplier 2.0
+                  --strategy cisd-ote7 --model models/cisd_ote_hybrid_v7.onnx \\
+                  --risk_amount 200 --entry_conf 0.80
 
 Example Usage (Backtesting):
-  python %(prog)s --backtest --backtest_data data/historical.csv \\
-                  --contract MES --timeframe 5 \\
-                  --strategy cisd-ote --model models/cisd_ote_hybrid_v5_1.onnx \\
-                  --risk_amount 300 --entry_conf 0.70 \\
-                  --tick_size 0.25 --profit_target 6000 --max_loss 3000
+  python %(prog)s --backtest --backtest_data data/ES_continuous_5min.csv \\
+                  --contract CON.F.US.MES.M26 --timeframe 5 \\
+                  --strategy cisd-ote7 --model models/cisd_ote_hybrid_v7.onnx \\
+                  --risk_amount 200 --entry_conf 0.80 \\
+                  --tick_size 0.25 --profit_target 6000 --max_loss 400
 """
     )
 

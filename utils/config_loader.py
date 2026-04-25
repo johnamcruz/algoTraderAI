@@ -18,8 +18,8 @@ DEFAULTS = {
     'max_loss':             3000,
     'market_hub':           'https://rtc.topstepx.com/hubs/market',
     'base_url':             'https://api.topstepx.com/api',
-    'strategy':             'cisd-ote',
-    'model':                'models/cisd_ote_hybrid_v5_1.onnx',
+    'strategy':             'cisd-ote7',
+    'model':                'models/cisd_ote_hybrid_v7.onnx',
 
     'high_conf_multiplier': 1.0,
     'max_contracts':        15,
