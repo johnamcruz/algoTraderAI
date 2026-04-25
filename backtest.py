@@ -65,6 +65,12 @@ SCENARIOS = {
         "end_date":   "2025-10-24",
         "note":       "Most recent 30-day window in data",
     },
+    "recent_180d": {
+        "label":      "Last 6 Months",
+        "start_date": "2025-04-24",
+        "end_date":   "2025-10-24",
+        "note":       "Most recent 6-month window in data",
+    },
 }
 
 # Symbol → data file, tick_size, full contract ID for backtesting
