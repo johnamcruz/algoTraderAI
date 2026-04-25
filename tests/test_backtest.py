@@ -38,7 +38,7 @@ def _default_args(**overrides):
     """Return a minimal argparse.Namespace matching backtest.py defaults."""
     base = dict(
         symbol=DEFAULT_SYMBOL,
-        strategy='cisd-ote',
+        strategy='cisd-ote7',
         model=DEFAULT_MODEL,
         entry_conf=DEFAULT_ENTRY_CONF,
         risk_amount=DEFAULT_RISK_AMOUNT,
@@ -180,10 +180,10 @@ class TestBuildCommand:
         cmd = build_command("bear_2022", _default_args())
         assert "--quiet" in cmd
 
-    def test_strategy_is_cisd_ote(self):
+    def test_strategy_is_cisd_ote7(self):
         cmd = build_command("bear_2022", _default_args())
         idx = cmd.index("--strategy")
-        assert cmd[idx + 1] == "cisd-ote"
+        assert cmd[idx + 1] == "cisd-ote7"
 
     def test_all_scenarios_build_without_error(self):
         args = _default_args()
