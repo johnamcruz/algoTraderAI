@@ -39,6 +39,7 @@ def strategy():
     s._latest_risk_rr       = 2.0
     s._latest_signal_meta   = {}
     s._bar_count            = 0
+    s.skip_stats            = {'conf_gate': 0, 'rr_gate': 0, 'hold': 0}
     return s
 
 
@@ -326,7 +327,84 @@ class TestCISDFeatureVector:
         assert np.all(result >= -10.0) and np.all(result <= 10.0)
 
 
-# ── 6. Instrument resolution ─────────────────────────────────────────────────
+# ── 6. Skip stats ────────────────────────────────────────────────────────────
+
+class TestSkipStats:
+    """should_enter_trade increments skip_stats for each rejection reason."""
+
+    def test_conf_gate_increments(self, strategy):
+        strategy.skip_stats = {'conf_gate': 0, 'rr_gate': 0, 'hold': 0}
+        strategy.should_enter_trade(1, 0.60, {}, entry_conf=0.80, adx_thresh=0)
+        assert strategy.skip_stats['conf_gate'] == 1
+        assert strategy.skip_stats['rr_gate'] == 0
+
+    def test_rr_gate_increments(self, strategy):
+        strategy._min_risk_rr = 2.0
+        strategy._latest_risk_rr = 1.5
+        strategy.skip_stats = {'conf_gate': 0, 'rr_gate': 0, 'hold': 0}
+        strategy.should_enter_trade(1, 0.90, {}, entry_conf=0.80, adx_thresh=0)
+        assert strategy.skip_stats['rr_gate'] == 1
+        assert strategy.skip_stats['conf_gate'] == 0
+
+    def test_hold_prediction_increments(self, strategy):
+        strategy.skip_stats = {'conf_gate': 0, 'rr_gate': 0, 'hold': 0}
+        strategy.should_enter_trade(0, 0.90, {}, entry_conf=0.80, adx_thresh=0)
+        assert strategy.skip_stats['hold'] == 1
+
+    def test_successful_entry_does_not_increment(self, strategy):
+        strategy.skip_stats = {'conf_gate': 0, 'rr_gate': 0, 'hold': 0}
+        strategy.should_enter_trade(1, 0.90, {}, entry_conf=0.80, adx_thresh=0)
+        assert strategy.skip_stats['conf_gate'] == 0
+        assert strategy.skip_stats['rr_gate'] == 0
+        assert strategy.skip_stats['hold'] == 0
+
+    def test_stats_accumulate_across_calls(self, strategy):
+        strategy.skip_stats = {'conf_gate': 0, 'rr_gate': 0, 'hold': 0}
+        for _ in range(3):
+            strategy.should_enter_trade(1, 0.50, {}, entry_conf=0.80, adx_thresh=0)
+        assert strategy.skip_stats['conf_gate'] == 3
+
+
+# ── 7. Model compatibility ────────────────────────────────────────────────────
+
+_V5_MODEL  = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                          'models', 'cisd_ote_hybrid_v5_1.onnx')
+_V7_MODEL  = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                          'models', 'cisd_ote_hybrid_v7.onnx')
+_MODELS_AVAILABLE = os.path.exists(_V5_MODEL) and os.path.exists(_V7_MODEL)
+
+
+@pytest.mark.skipif(not _MODELS_AVAILABLE, reason="ONNX model files not present")
+class TestModelCompatibility:
+    """load_model() raises ValueError when the ONNX model is incompatible with v7 strategy."""
+
+    def _make_strategy(self, model_path):
+        """Build a bare strategy instance and call load_model()."""
+        import onnxruntime
+        s = CISDOTEStrategyV7.__new__(CISDOTEStrategyV7)
+        s.model_path = model_path
+        s.model = None
+        s.load_model()
+        return s
+
+    def test_v7_model_loads_without_error(self):
+        s = self._make_strategy(_V7_MODEL)
+        assert s.model is not None
+
+    def test_v5_model_raises_value_error(self):
+        with pytest.raises(ValueError, match="incompatible with CISDOTEStrategyV7"):
+            self._make_strategy(_V5_MODEL)
+
+    def test_v5_error_message_names_missing_inputs(self):
+        with pytest.raises(ValueError, match="features"):
+            self._make_strategy(_V5_MODEL)
+
+    def test_v5_error_message_suggests_v7_model(self):
+        with pytest.raises(ValueError, match="v7.onnx"):
+            self._make_strategy(_V5_MODEL)
+
+
+# ── 8. Instrument resolution ─────────────────────────────────────────────────
 
 class TestInstrumentResolution:
     """parse_future_symbol maps micro contracts to their parent for INSTRUMENT_MAP lookup."""

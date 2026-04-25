@@ -72,6 +72,8 @@ class TradingBot(ABC):
         self.stop_pts = stop_pts 
         self.target_pts = target_pts
         
+        self.skip_stats: dict = {'zone_too_tight': 0, 'zone_too_wide': 0, 'predict_error': 0}
+
         logging.info(f"📊 Strategy: {self.strategy.__class__.__name__}")
         atr_gate = f", MinStopATR={self.min_stop_atr_mult}×ATR" if self.min_stop_atr_mult else ""
         logging.info(f"📈 Trade Params: Entry={self.entry_conf}, ADX={self.adx_thresh}, "
@@ -323,6 +325,7 @@ class TradingBot(ABC):
                         f"⚠️ Signal skipped — zone stop too tight "
                         f"({stop_pts:.2f}pts / {stop_ticks_raw:.1f} ticks < {gate_desc})"
                     )
+                    self.skip_stats['zone_too_tight'] += 1
                     return
 
                 if direction == 'LONG':
@@ -338,6 +341,7 @@ class TradingBot(ABC):
                             f"({abs(stop_ticks)} ticks × ${self._get_tick_value():.2f}) "
                             f"exceeds risk_amount ${self.risk_amount:.0f}"
                         )
+                        self.skip_stats['zone_too_wide'] += 1
                         return
 
                     order_result = await self._place_order(
@@ -373,6 +377,7 @@ class TradingBot(ABC):
                             f"({abs(stop_ticks)} ticks × ${self._get_tick_value():.2f}) "
                             f"exceeds risk_amount ${self.risk_amount:.0f}"
                         )
+                        self.skip_stats['zone_too_wide'] += 1
                         return
 
                     order_result = await self._place_order(
@@ -396,7 +401,13 @@ class TradingBot(ABC):
                         logging.warning(f"⚠️ SHORT order rejected by broker @ {close_price:.2f} — signal not placed")
                     
         except Exception as e:
+            self.skip_stats['predict_error'] += 1
             logging.exception(f"❌ Error during AI prediction: {e}")
+            if "Required inputs" in str(e) and "missing from input feed" in str(e):
+                raise RuntimeError(
+                    f"Model/strategy input mismatch — {e}. "
+                    "Check that --model matches the strategy (e.g. cisd-ote7 requires v7.onnx)."
+                ) from e
 
     @abstractmethod
     def _get_tick_size(self):

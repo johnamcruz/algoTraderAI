@@ -571,7 +571,26 @@ class SimulationBot(TradingBot):
         
         if self.mll is not None and self.total_pnl_dollars <= -self.mll:
             print(f"🛑 MLL Hit Zero: P&L ${self.total_pnl_dollars:,.2f} (MLL: ${self.mll:,.2f})")
-        
+
+        # Aggregate skip reasons from bot + strategy
+        strat_skips = getattr(self.strategy, 'skip_stats', {})
+        bot_skips   = self.skip_stats
+        skip_rows = [
+            ("Conf gate",      strat_skips.get('conf_gate', 0)),
+            ("RR gate",        strat_skips.get('rr_gate', 0)),
+            ("Hold (no zone)", strat_skips.get('hold', 0)),
+            ("Zone too wide",  bot_skips.get('zone_too_wide', 0)),
+            ("Zone too tight", bot_skips.get('zone_too_tight', 0)),
+            ("Predict error",  bot_skips.get('predict_error', 0)),
+        ]
+        total_skips = sum(n for _, n in skip_rows)
+        if total_skips > 0:
+            print("\n--- Signal Filter Summary ---")
+            for label, count in skip_rows:
+                if count > 0:
+                    print(f"  {label:<18} {count:>5} signals skipped")
+            print(f"  {'Total skipped':<18} {total_skips:>5}")
+
         print("="*60 + "\n")
         
         # Signal feature analysis: winners vs losers
