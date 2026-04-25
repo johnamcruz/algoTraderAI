@@ -299,7 +299,7 @@ class TestDefaults:
         assert DEFAULT_MAX_CONTRACTS == 5
 
     def test_default_max_loss(self):
-        assert DEFAULT_MAX_LOSS == 400.0
+        assert DEFAULT_MAX_LOSS == 3000.0
 
     def test_default_profit_target(self):
         assert DEFAULT_PROFIT_TARGET == 12000.0
