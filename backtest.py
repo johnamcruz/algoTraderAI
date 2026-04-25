@@ -59,6 +59,12 @@ SCENARIOS = {
         "end_date":   "2025-10-24",
         "note":       "Most recent 120-day window in data; previously profitable at 0.70",
     },
+    "recent_30d": {
+        "label":      "Last 30 Days",
+        "start_date": "2025-09-24",
+        "end_date":   "2025-10-24",
+        "note":       "Most recent 30-day window in data",
+    },
 }
 
 # Symbol → data file, tick_size, full contract ID for backtesting

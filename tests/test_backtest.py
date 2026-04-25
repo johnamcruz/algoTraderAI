@@ -75,7 +75,8 @@ class TestScenarioDefinitions:
             assert start < end, f"{key}: start_date must be before end_date"
 
     def test_known_scenarios_exist(self):
-        for key in ("bear_2022", "recovery_2023", "banking_2023", "selloff_2024", "oos_2021"):
+        for key in ("bear_2022", "recovery_2023", "banking_2023", "selloff_2024", "oos_2021",
+                    "recent_120d", "recent_30d"):
             assert key in SCENARIOS, f"Expected scenario '{key}' not found"
 
     def test_bear_2022_ends_oct(self):
