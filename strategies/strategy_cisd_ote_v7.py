@@ -102,6 +102,8 @@ class CISDOTEStrategyV7(BaseStrategy):
         self._latest_risk_rr: float = 0.0
         self._latest_signal_meta: dict = {}
 
+        self.skip_stats: dict = {'conf_gate': 0, 'rr_gate': 0, 'hold': 0}
+
         logging.info("=" * 65)
         logging.info("🎯 CISD+OTE Strategy v7.0 — FFM Hybrid Transformer")
         logging.info("=" * 65)
@@ -181,6 +183,17 @@ class CISDOTEStrategyV7(BaseStrategy):
             raise FileNotFoundError(f"Model not found: {self.model_path}")
         self.model = onnxruntime.InferenceSession(
             self.model_path, providers=['CPUExecutionProvider'])
+        input_names = [i.name for i in self.model.get_inputs()]
+        expected = {'features', 'strategy_features', 'candle_types',
+                    'time_of_day', 'day_of_week', 'instrument_ids', 'session_ids'}
+        missing = expected - set(input_names)
+        if missing:
+            raise ValueError(
+                f"Model '{os.path.basename(self.model_path)}' is incompatible with "
+                f"CISDOTEStrategyV7. Missing required inputs: {sorted(missing)}. "
+                f"Model has: {sorted(input_names)}. "
+                f"Use models/cisd_ote_hybrid_v7.onnx with this strategy."
+            )
         inputs  = [(i.name, i.shape) for i in self.model.get_inputs()]
         outputs = [(o.name, o.shape) for o in self.model.get_outputs()]
         logging.info(f"  ✅ ONNX loaded: {os.path.basename(self.model_path)}")
@@ -331,6 +344,7 @@ class CISDOTEStrategyV7(BaseStrategy):
           0.90 = conservative  |  0.80 = moderate  |  0.70 = aggressive
         """
         if confidence < entry_conf:
+            self.skip_stats['conf_gate'] += 1
             return False, None
 
         if self._min_risk_rr > 0.0 and self._latest_risk_rr < self._min_risk_rr:
@@ -338,6 +352,7 @@ class CISDOTEStrategyV7(BaseStrategy):
                 f"🚫 RR gate: predicted_rr={self._latest_risk_rr:.2f} "
                 f"< {self._min_risk_rr} — skipping"
             )
+            self.skip_stats['rr_gate'] += 1
             return False, None
 
         if prediction == 1:
@@ -346,6 +361,7 @@ class CISDOTEStrategyV7(BaseStrategy):
         elif prediction == 2:
             logging.info(f"✅ CISD+OTE v7 SELL | conf={confidence:.3f} rr={self._latest_risk_rr:.2f}")
             return True, 'SHORT'
+        self.skip_stats['hold'] += 1
         return False, None
 
     def on_trade_exit(self, reason: str):

@@ -24,6 +24,8 @@ from backtest import (
     DEFAULT_MIN_RISK_RR,
     DEFAULT_HIGH_CONF_MULT,
     DEFAULT_MODEL,
+    DEFAULT_MODEL_V7,
+    STRATEGY_DEFAULT_MODEL,
     DEFAULT_SYMBOL,
     build_command,
     extract_summary,
@@ -254,6 +256,36 @@ Total P&L (Dollars): ${pnl:,.2f}
         output = self._make_output(extra=extra)
         lines = extract_summary(output)
         assert any("MLL Hit" in l for l in lines)
+
+
+# ── Strategy → model auto-selection ──────────────────────────────────────────
+
+class TestStrategyDefaultModel:
+    def test_cisd_ote7_maps_to_v7_model(self):
+        assert STRATEGY_DEFAULT_MODEL["cisd-ote7"] == DEFAULT_MODEL_V7
+
+    def test_cisd_ote_maps_to_v5_model(self):
+        assert STRATEGY_DEFAULT_MODEL["cisd-ote"] == DEFAULT_MODEL
+
+    def test_v7_model_filename_contains_v7(self):
+        assert "v7" in DEFAULT_MODEL_V7
+
+    def test_v5_model_filename_contains_v5(self):
+        assert "v5" in DEFAULT_MODEL
+
+    def test_cisd_ote7_build_uses_v7_model(self):
+        # simulate what main() does: override model when strategy is cisd-ote7
+        args = _default_args(strategy="cisd-ote7",
+                             model=STRATEGY_DEFAULT_MODEL["cisd-ote7"])
+        cmd = build_command("bear_2022", args)
+        idx = cmd.index("--model")
+        assert "v7" in cmd[idx + 1]
+
+    def test_cisd_ote_build_uses_v5_model(self):
+        args = _default_args(strategy="cisd-ote", model=DEFAULT_MODEL)
+        cmd = build_command("bear_2022", args)
+        idx = cmd.index("--model")
+        assert "v5" in cmd[idx + 1]
 
 
 # ── Defaults sanity ───────────────────────────────────────────────────────────

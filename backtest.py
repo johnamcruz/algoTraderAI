@@ -81,6 +81,13 @@ SYMBOL_CONFIG = {
 }
 
 DEFAULT_MODEL         = "models/cisd_ote_hybrid_v5_1.onnx"
+DEFAULT_MODEL_V7      = "models/cisd_ote_hybrid_v7.onnx"
+
+# Maps strategy name → default model when --model is not explicitly overridden
+STRATEGY_DEFAULT_MODEL = {
+    "cisd-ote":  DEFAULT_MODEL,
+    "cisd-ote7": DEFAULT_MODEL_V7,
+}
 DEFAULT_SYMBOL        = "MNQ"
 DEFAULT_ENTRY_CONF    = 0.80
 DEFAULT_RISK_AMOUNT   = 200.0
@@ -253,6 +260,10 @@ def main():
     parser.add_argument("--breakeven", action="store_true", default=False,
                         help="Enable breakeven-on-1R (default: off)")
     args = parser.parse_args()
+
+    # Auto-select the correct model when --model was not explicitly provided
+    if args.model == DEFAULT_MODEL and args.strategy in STRATEGY_DEFAULT_MODEL:
+        args.model = STRATEGY_DEFAULT_MODEL[args.strategy]
 
     if args.list:
         print("\nAvailable scenarios:")
