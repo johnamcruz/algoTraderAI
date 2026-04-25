@@ -14,7 +14,7 @@ DEFAULTS = {
     'entry_conf':           0.9,
     'adx_thresh':           0,
     'tick_size':            0.01,
-    'profit_target':        6000,
+    'profit_target':        12000,
     'max_loss':             3000,
     'market_hub':           'https://rtc.topstepx.com/hubs/market',
     'base_url':             'https://api.topstepx.com/api',

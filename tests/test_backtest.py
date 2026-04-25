@@ -301,7 +301,7 @@ class TestDefaults:
         assert DEFAULT_MAX_LOSS == 400.0
 
     def test_default_profit_target(self):
-        assert DEFAULT_PROFIT_TARGET == 6000.0
+        assert DEFAULT_PROFIT_TARGET == 12000.0
 
     def test_default_entry_conf(self):
         assert DEFAULT_ENTRY_CONF == 0.80
