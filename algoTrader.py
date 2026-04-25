@@ -47,7 +47,7 @@ Example Usage (Backtesting):
                   --contract CON.F.US.MES.M26 --timeframe 5 \\
                   --strategy cisd-ote7 --model models/cisd_ote_hybrid_v7.onnx \\
                   --risk_amount 200 --entry_conf 0.80 \\
-                  --tick_size 0.25 --profit_target 6000 --max_loss 400
+                  --tick_size 0.25 --profit_target 12000 --max_loss 400
 """
     )
 
