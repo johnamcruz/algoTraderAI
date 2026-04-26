@@ -12,6 +12,10 @@ def _load_v7():
     from strategies.strategy_cisd_ote_v7 import CISDOTEStrategyV7
     return CISDOTEStrategyV7
 
+def _load_st_trend_v1():
+    from strategies.strategy_st_trend_v1 import STTrendStrategyV1
+    return STTrendStrategyV1
+
 class StrategyFactory:
     """
     Factory class for creating strategy instances.
@@ -19,8 +23,9 @@ class StrategyFactory:
 
     # Registry of available strategies
     STRATEGIES = {
-        'cisd-ote':  CISDOTEStrategy,
-        'cisd-ote7': _load_v7,   # lazy: futures_foundation only required when v7 is selected
+        'cisd-ote':    CISDOTEStrategy,
+        'cisd-ote7':   _load_v7,            # lazy: futures_foundation only required when selected
+        'supertrend': _load_st_trend_v1,    # lazy: SuperTrend FFM hybrid v1
     }
     
     @classmethod
