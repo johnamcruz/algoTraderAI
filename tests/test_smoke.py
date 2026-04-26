@@ -246,7 +246,7 @@ class TestAlgoTraderStrategyKwargs:
             min_stop_atr=0.5,
             min_vty_regime=0.75,
             min_risk_rr=2.0,
-            breakeven_on_1r=False,
+            breakeven_on_2r=False,
             quiet=True,
         )
         base.update(overrides)

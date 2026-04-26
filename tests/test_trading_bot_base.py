@@ -177,7 +177,7 @@ class TestBreakeven:
         bot.stop_loss = stop
         bot.profit_target = target
         bot.breakeven_set = False
-        bot.breakeven_on_1r = True
+        bot.breakeven_on_2r = True
 
     def _short(self, bot, entry=100.0, stop=105.0, target=90.0):
         bot.in_position = True
@@ -186,65 +186,79 @@ class TestBreakeven:
         bot.stop_loss = stop
         bot.profit_target = target
         bot.breakeven_set = False
-        bot.breakeven_on_1r = True
+        bot.breakeven_on_2r = True
 
     # ── Disabled ──────────────────────────────────────────────────────────────
 
     def test_disabled_when_flag_off(self, bot):
         self._long(bot)
-        bot.breakeven_on_1r = False
+        bot.breakeven_on_2r = False
         triggered = bot._check_and_set_breakeven(110.0)
         assert triggered is False
         assert bot.stop_loss == pytest.approx(95.0)  # unchanged
 
     # ── LONG ──────────────────────────────────────────────────────────────────
 
-    def test_long_not_triggered_below_1r(self, bot):
-        # entry=100, stop=95 → stop_dist=5 → 1R at 105
+    def test_long_not_triggered_below_2r(self, bot):
+        # entry=100, stop=95 → stop_dist=5 → 2R at 110
         self._long(bot)
-        triggered = bot._check_and_set_breakeven(104.99)
+        triggered = bot._check_and_set_breakeven(109.99)
         assert triggered is False
         assert bot.stop_loss == pytest.approx(95.0)
 
-    def test_long_triggered_exactly_at_1r(self, bot):
+    def test_long_not_triggered_at_1r(self, bot):
+        # 1R (105) must no longer trigger breakeven
         self._long(bot)
         triggered = bot._check_and_set_breakeven(105.0)
+        assert triggered is False
+        assert bot.stop_loss == pytest.approx(95.0)
+
+    def test_long_triggered_exactly_at_2r(self, bot):
+        self._long(bot)
+        triggered = bot._check_and_set_breakeven(110.0)
         assert triggered is True
         assert bot.stop_loss == pytest.approx(100.0)  # moved to entry
         assert bot.breakeven_set is True
 
-    def test_long_triggered_above_1r(self, bot):
+    def test_long_triggered_above_2r(self, bot):
         self._long(bot)
-        triggered = bot._check_and_set_breakeven(107.0)
+        triggered = bot._check_and_set_breakeven(113.0)
         assert triggered is True
         assert bot.stop_loss == pytest.approx(100.0)
 
     def test_long_only_triggers_once(self, bot):
         self._long(bot)
-        bot._check_and_set_breakeven(106.0)   # triggers
+        bot._check_and_set_breakeven(111.0)   # triggers at 2R
         bot.stop_loss = 100.0                  # already moved
-        triggered = bot._check_and_set_breakeven(108.0)  # should not fire again
+        triggered = bot._check_and_set_breakeven(115.0)  # should not fire again
         assert triggered is False
 
     # ── SHORT ─────────────────────────────────────────────────────────────────
 
-    def test_short_not_triggered_above_1r(self, bot):
-        # entry=100, stop=105 → stop_dist=5 → 1R at 95
+    def test_short_not_triggered_above_2r(self, bot):
+        # entry=100, stop=105 → stop_dist=5 → 2R at 90
         self._short(bot)
-        triggered = bot._check_and_set_breakeven(95.01)
+        triggered = bot._check_and_set_breakeven(90.01)
         assert triggered is False
         assert bot.stop_loss == pytest.approx(105.0)
 
-    def test_short_triggered_exactly_at_1r(self, bot):
+    def test_short_not_triggered_at_1r(self, bot):
+        # 1R (95) must no longer trigger breakeven
         self._short(bot)
         triggered = bot._check_and_set_breakeven(95.0)
+        assert triggered is False
+        assert bot.stop_loss == pytest.approx(105.0)
+
+    def test_short_triggered_exactly_at_2r(self, bot):
+        self._short(bot)
+        triggered = bot._check_and_set_breakeven(90.0)
         assert triggered is True
         assert bot.stop_loss == pytest.approx(100.0)
         assert bot.breakeven_set is True
 
-    def test_short_triggered_below_1r(self, bot):
+    def test_short_triggered_below_2r(self, bot):
         self._short(bot)
-        triggered = bot._check_and_set_breakeven(92.0)
+        triggered = bot._check_and_set_breakeven(87.0)
         assert triggered is True
         assert bot.stop_loss == pytest.approx(100.0)
 
@@ -252,12 +266,12 @@ class TestBreakeven:
 
     def test_no_position_is_noop(self, bot):
         bot.in_position = False
-        bot.breakeven_on_1r = True
+        bot.breakeven_on_2r = True
         assert bot._check_and_set_breakeven(110.0) is False
 
     def test_breakeven_resets_with_position_state(self, bot):
         self._long(bot)
-        bot._check_and_set_breakeven(106.0)
+        bot._check_and_set_breakeven(111.0)   # 2R trigger
         assert bot.breakeven_set is True
         bot._reset_position_state()
         assert bot.breakeven_set is False
@@ -293,21 +307,23 @@ class TestBreakeven:
 
     def test_long_stop_moved_to_entry_not_below(self, bot):
         """Stop must land exactly at entry, not above or below."""
-        self._long(bot, entry=7168.75, stop=7163.27, target=7179.23)
-        bot._check_and_set_breakeven(7174.23)   # entry + stop_dist
+        # entry=7168.75, stop=7163.27 → stop_dist=5.48 → 2R at 7179.71
+        self._long(bot, entry=7168.75, stop=7163.27, target=7190.0)
+        bot._check_and_set_breakeven(7180.0)   # past 2R
         assert bot.stop_loss == pytest.approx(7168.75)
 
     def test_short_stop_moved_to_entry_not_above(self, bot):
-        self._short(bot, entry=4750.0, stop=4760.0, target=4740.0)
-        bot._check_and_set_breakeven(4740.0)    # entry - stop_dist
+        # entry=4750, stop=4760 → stop_dist=10 → 2R at 4730
+        self._short(bot, entry=4750.0, stop=4760.0, target=4720.0)
+        bot._check_and_set_breakeven(4729.0)   # past 2R
         assert bot.stop_loss == pytest.approx(4750.0)
 
-    def test_1r_threshold_is_stop_distance_not_target(self, bot):
-        """1R = stop distance, even when target is larger (e.g. 3:1 RR)."""
-        # entry=100, stop=95 (5pt), target=120 (20pt) → 1R triggers at 105, not 120
+    def test_2r_threshold_is_stop_distance_not_target(self, bot):
+        """2R = 2 × stop distance, not the profit target."""
+        # entry=100, stop=95 (5pt), target=120 (20pt) → 2R triggers at 110
         self._long(bot, entry=100.0, stop=95.0, target=120.0)
-        assert bot._check_and_set_breakeven(104.99) is False
-        assert bot._check_and_set_breakeven(105.0)  is True
+        assert bot._check_and_set_breakeven(109.99) is False
+        assert bot._check_and_set_breakeven(110.0)  is True
 
 
 class TestUpdateMfe:

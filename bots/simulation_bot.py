@@ -51,7 +51,7 @@ class SimulationBot(TradingBot):
         max_contracts=15,
         min_stop_pts=1.0,
         min_stop_atr_mult=0.5,
-        breakeven_on_1r=False,
+        breakeven_on_2r=False,
     ):
         """
         Initialize the simulation bot.
@@ -87,7 +87,7 @@ class SimulationBot(TradingBot):
             max_contracts=max_contracts,
             min_stop_pts=min_stop_pts,
             min_stop_atr_mult=min_stop_atr_mult,
-            breakeven_on_1r=breakeven_on_1r,
+            breakeven_on_2r=breakeven_on_2r,
         )
 
         # Simulation-specific attributes

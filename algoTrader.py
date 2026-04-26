@@ -118,9 +118,9 @@ Example Usage (Backtesting):
                         help='Profit target in points (optional if strategy provides its own)')
     parser.add_argument('--enable_trailing_stop', action='store_true',
                         help='Use TopstepX native trailing stop bracket (type 5) — trails price continuously')
-    parser.add_argument('--breakeven_on_1r', action=argparse.BooleanOptionalAction, default=None,
+    parser.add_argument('--breakeven_on_2r', action=argparse.BooleanOptionalAction, default=None,
                         help='Move stop to entry price once trade reaches 1R profit (bot-managed, works in sim). '
-                             'Default: on. Use --no-breakeven_on_1r to disable.')
+                             'Default: on. Use --no-breakeven_on_2r to disable.')
     parser.add_argument('--high_conf_multiplier', type=float, default=None,
                         help='Scale risk_amount by this factor when confidence ≥0.90 (e.g. 2.0 doubles size)')
     parser.add_argument('--max_contracts', type=int, default=None,
@@ -249,7 +249,7 @@ def run_backtesting(config):
             max_contracts=config.get("max_contracts", 15),
             min_stop_pts=config.get("min_stop_pts", 1.0),
             min_stop_atr_mult=config.get("min_stop_atr", 0.5),
-            breakeven_on_1r=config.get("breakeven_on_1r", False),
+            breakeven_on_2r=config.get("breakeven_on_2r", False),
         )
 
         if quiet:
@@ -328,7 +328,7 @@ def run_live_trading(config):
             max_contracts=config.get("max_contracts", 15),
             min_stop_pts=config.get("min_stop_pts", 1.0),
             min_stop_atr_mult=config.get("min_stop_atr", 0.5),
-            breakeven_on_1r=config.get("breakeven_on_1r", False),
+            breakeven_on_2r=config.get("breakeven_on_2r", False),
         )
 
         asyncio.run(bot.run())

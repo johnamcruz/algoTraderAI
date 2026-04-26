@@ -26,7 +26,7 @@ class TradingBot(ABC):
         stop_pts=None,
         target_pts=None,
         enable_trailing_stop=False,
-        breakeven_on_1r=False,
+        breakeven_on_2r=False,
         risk_amount=None,
         high_conf_multiplier=1.0,
         max_contracts=15,
@@ -40,7 +40,7 @@ class TradingBot(ABC):
         self.high_conf_multiplier = high_conf_multiplier
         self.max_contracts = max_contracts
         self.min_stop_pts = min_stop_pts
-        self.breakeven_on_1r = breakeven_on_1r
+        self.breakeven_on_2r = breakeven_on_2r
         self.min_stop_atr_mult = min_stop_atr_mult
         self.timeframe_minutes = int(timeframe_minutes)
         self.enable_trailing_stop = enable_trailing_stop
@@ -128,14 +128,14 @@ class TradingBot(ABC):
 
     def _check_and_set_breakeven(self, current_price: float) -> bool:
         """
-        Move stop to entry price once the trade reaches 1R profit.
+        Move stop to entry price once the trade reaches 2R profit.
 
-        Activated only when enable_trailing_stop=True. Fires at most once per
+        Activated only when breakeven_on_2r=True. Fires at most once per
         trade — subsequent calls are no-ops once breakeven_set=True. Returns
         True on the bar the move is triggered so callers can react (e.g. send
         a broker API call to update the live stop order).
         """
-        if not self.breakeven_on_1r:
+        if not self.breakeven_on_2r:
             return False
         if not self.in_position or self.breakeven_set:
             return False
@@ -147,11 +147,11 @@ class TradingBot(ABC):
             return False
 
         if self.position_type == 'LONG':
-            one_r_price = self.entry_price + stop_dist
-            triggered = current_price >= one_r_price
+            two_r_price = self.entry_price + 2 * stop_dist
+            triggered = current_price >= two_r_price
         elif self.position_type == 'SHORT':
-            one_r_price = self.entry_price - stop_dist
-            triggered = current_price <= one_r_price
+            two_r_price = self.entry_price - 2 * stop_dist
+            triggered = current_price <= two_r_price
         else:
             return False
 
@@ -161,7 +161,7 @@ class TradingBot(ABC):
             self.breakeven_set = True
             logging.info(
                 f"🔒 Break-even set — stop moved {old_stop:.2f} → {self.entry_price:.2f} "
-                f"(1R={one_r_price:.2f} reached, price={current_price:.2f})"
+                f"(2R={two_r_price:.2f} reached, price={current_price:.2f})"
             )
             return True
         return False

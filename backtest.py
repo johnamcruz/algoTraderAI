@@ -158,7 +158,7 @@ def build_command(scenario_key: str, args) -> list[str]:
         "--quiet",
     ]
     if args.breakeven:
-        cmd.append("--breakeven_on_1r")
+        cmd.append("--breakeven_on_2r")
     return cmd
 
 
