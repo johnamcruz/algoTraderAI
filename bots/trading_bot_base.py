@@ -130,12 +130,16 @@ class TradingBot(ABC):
         """
         Move stop to entry price once the trade reaches 2R profit.
 
-        Activated only when breakeven_on_2r=True. Fires at most once per
-        trade — subsequent calls are no-ops once breakeven_set=True. Returns
-        True on the bar the move is triggered so callers can react (e.g. send
-        a broker API call to update the live stop order).
+        Activated only when breakeven_on_2r=True AND predicted_rr >= 3.0 at
+        entry — ensures there is always a gap between the 2R trigger and TP.
+        Fires at most once per trade — subsequent calls are no-ops once
+        breakeven_set=True. Returns True on the bar the move is triggered so
+        callers can react (e.g. send a broker API call to update the live stop).
         """
         if not self.breakeven_on_2r:
+            return False
+        predicted_rr = getattr(self.strategy, '_latest_risk_rr', 0.0)
+        if predicted_rr < 3.0:
             return False
         if not self.in_position or self.breakeven_set:
             return False

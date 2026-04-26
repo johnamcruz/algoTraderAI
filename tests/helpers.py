@@ -11,6 +11,8 @@ from bots.trading_bot_base import TradingBot
 class MockStrategy:
     """Minimal stub satisfying BaseStrategy's interface."""
 
+    _latest_risk_rr: float = 3.0  # default ≥3 so breakeven tests fire normally
+
     def get_sequence_length(self):
         return 64
 

@@ -197,6 +197,22 @@ class TestBreakeven:
         assert triggered is False
         assert bot.stop_loss == pytest.approx(95.0)  # unchanged
 
+    def test_disabled_when_predicted_rr_below_3(self, bot):
+        # 2R trades (predicted_rr=2) should never trigger breakeven — TP is at 2R
+        self._long(bot)
+        bot.strategy._latest_risk_rr = 2.0
+        triggered = bot._check_and_set_breakeven(110.0)
+        assert triggered is False
+        assert bot.stop_loss == pytest.approx(95.0)
+        bot.strategy._latest_risk_rr = 3.0  # restore default
+
+    def test_disabled_when_predicted_rr_exactly_3(self, bot):
+        # predicted_rr=3.0 is the minimum that qualifies; should trigger at 2R
+        self._long(bot)
+        bot.strategy._latest_risk_rr = 3.0
+        triggered = bot._check_and_set_breakeven(110.0)
+        assert triggered is True
+
     # ── LONG ──────────────────────────────────────────────────────────────────
 
     def test_long_not_triggered_below_2r(self, bot):
