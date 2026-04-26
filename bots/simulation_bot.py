@@ -579,8 +579,8 @@ class SimulationBot(TradingBot):
             ("Conf gate",      strat_skips.get('conf_gate', 0)),
             ("RR gate",        strat_skips.get('rr_gate', 0)),
             ("Hold (no zone)", strat_skips.get('hold', 0)),
-            ("Zone too wide",  bot_skips.get('zone_too_wide', 0)),
-            ("Zone too tight", bot_skips.get('zone_too_tight', 0)),
+            ("Stop too wide",  bot_skips.get('stop_too_wide', 0)),
+            ("Stop too tight", bot_skips.get('stop_too_tight', 0)),
             ("Predict error",  bot_skips.get('predict_error', 0)),
         ]
         total_skips = sum(n for _, n in skip_rows)
