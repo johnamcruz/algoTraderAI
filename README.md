@@ -4,13 +4,14 @@
 
 ## Overview
 
-A Python algorithmic trading bot for futures markets (MNQ, MES, MGC) via the TopstepX/ProjectX platform. Uses a **CISD+OTE** (Change in State of Delivery + Optimal Trade Entry) AI strategy for entry signals, with dynamic risk-based position sizing.
+A Python algorithmic trading bot for futures markets (MNQ, MES, MGC) via the TopstepX/ProjectX platform. Supports two AI strategies: the default **CISD+OTE v7** (ICT-style zone entries) and **SuperTrend v1** (trend-following with HTF alignment).
 
-**Active model:** `cisd_ote_hybrid_v7.onnx` — FFM Hybrid Transformer (see [MODEL_CONTEXT.md](MODEL_CONTEXT.md))
+**Default model:** `cisd_ote_hybrid_v7.onnx` — FFM Hybrid Transformer (see [MODEL_CONTEXT.md](MODEL_CONTEXT.md))
 
 ### Key Features
 
-- 🧠 **CISD+OTE Strategy v7** — ICT-style zone detection with a 96-bar FFM Transformer backbone. The risk head predicts a per-trade R:R ratio that snaps to calibrated TP tiers (1.5R / 2R / 3R / 4R) — dynamic profit targets without manual tuning.
+- 🧠 **CISD+OTE Strategy v7** — ICT-style zone detection with a 96-bar FFM Transformer backbone. Risk head predicts per-trade R:R; TP set to `int(predicted_rr) × R`.
+- 📈 **SuperTrend Strategy v1** — 5m SuperTrend(10, 2.0) flip + 1h HTF alignment. Same FFM backbone and risk head — TP set to `int(predicted_rr) × R`. Trained on NQ, ES, GC, RTY, YM.
 - 📊 **Real-time Data Processing** — Live tick aggregation and bar generation (1, 3, or 5 minute bars)
 - 💰 **Risk-Based Position Sizing** — Size contracts dynamically from a dollar risk budget; skip signals that exceed it
 - 🔬 **Backtesting Mode** — Replay historical CSV data with realistic gap-open fills and wick-based exit simulation
@@ -41,6 +42,7 @@ algoTrader.py                    # Entry point — arg parsing, mode dispatch
 │   └── trading_bot_base.py      # Shared logic: AI prediction loop, sizing, exits
 ├── strategies/
 │   ├── strategy_cisd_ote_v7.py  # CISD+OTE v7: FFM Transformer backbone + risk head TP
+│   ├── strategy_st_trend_v1.py  # SuperTrend v1: FFM Transformer backbone + risk head TP
 │   ├── strategy_cisd_ote.py     # CISD+OTE v5.1: 32-feature vector, fixed TP
 │   ├── strategy_base.py         # Abstract base class for strategies
 │   └── strategy_factory.py      # Strategy registry
@@ -75,12 +77,13 @@ pip install onnxruntime pandas pandas-ta signalrcore requests numpy scikit-learn
 
 ### Prepare Model Files
 
-Place your trained model in the `models/` folder:
+Place your trained models in the `models/` folder:
 
 ```
 models/
-├── cisd_ote_hybrid_v7.onnx       # v7 — active model (recommended)
-└── cisd_ote_hybrid_v5_1.onnx     # v5.1 — available for comparison
+├── cisd_ote_hybrid_v7.onnx       # CISD+OTE v7 — default (recommended)
+├── st_trend_v1.onnx              # SuperTrend v1 — alternative strategy
+└── cisd_ote_hybrid_v5_1.onnx     # CISD+OTE v5.1 — legacy
 ```
 
 ---
@@ -92,14 +95,17 @@ models/
 `backtest.py` runs predefined market-regime scenarios against historical data:
 
 ```bash
-# Run all scenarios (MNQ default, v7 model)
+# Run all scenarios — CISD+OTE v7 (default)
 python3 backtest.py --parallel
+
+# Run all scenarios — SuperTrend v1
+python3 backtest.py --strategy supertrend --parallel
 
 # Run a single scenario
 python3 backtest.py --scenario banking_2023
 
 # Run on a different symbol
-python3 backtest.py --symbol MGC --parallel
+python3 backtest.py --symbol MES --parallel
 
 # Override entry confidence
 python3 backtest.py --entry_conf 0.85 --parallel
@@ -117,11 +123,15 @@ python3 backtest.py --list
 | `banking_2023` | 2023-03-01 → 2023-05-31 | SVB collapse, high-vol chop |
 | `selloff_2024` | 2024-07-15 → 2024-09-15 | Sharp selloff + recovery |
 | `oos_2021` | 2021-01-01 → 2021-12-31 | Out-of-sample control year |
-| `recent_120d` | 2025-06-27 → 2025-10-24 | Most recent 120-day window |
+| `recent_30d` | Rolling 30-day | Most recent 30-day window |
+| `recent_60d` | Rolling 60-day | Most recent 60-day window |
+| `recent_90d` | Rolling 90-day | Most recent 90-day window |
+| `recent_120d` | Rolling 120-day | Most recent 120-day window |
+| `recent_180d` | Rolling 180-day | Most recent 180-day window |
 
 **Supported symbols:** `MNQ`, `MES`, `MGC`
 
-### Direct Backtesting — v7 (Recommended)
+### Direct Backtesting — CISD+OTE v7 (Default)
 
 ```bash
 python algoTrader.py \
@@ -135,7 +145,21 @@ python algoTrader.py \
     --risk_amount 200
 ```
 
-### Direct Backtesting — v5.1 (Legacy)
+### Direct Backtesting — SuperTrend v1
+
+```bash
+python algoTrader.py \
+    --backtest \
+    --backtest_data data/NQ_continuous_5min.csv \
+    --contract CON.F.US.MNQ.M26 \
+    --strategy supertrend \
+    --model models/st_trend_v1.onnx \
+    --entry_conf 0.80 \
+    --min_risk_rr 2.0 \
+    --risk_amount 200
+```
+
+### Direct Backtesting — CISD+OTE v5.1 (Legacy)
 
 ```bash
 python algoTrader.py \
@@ -148,7 +172,7 @@ python algoTrader.py \
     --risk_amount 300
 ```
 
-### Live Trading — v7
+### Live Trading — CISD+OTE v7
 
 ```bash
 python algoTrader.py \
@@ -159,6 +183,22 @@ python algoTrader.py \
     --timeframe 5 \
     --strategy cisd-ote7 \
     --model models/cisd_ote_hybrid_v7.onnx \
+    --entry_conf 0.80 \
+    --min_risk_rr 2.0 \
+    --risk_amount 200
+```
+
+### Live Trading — SuperTrend v1
+
+```bash
+python algoTrader.py \
+    --account TS001234SIM \
+    --contract CON.F.US.MNQ.M26 \
+    --username YourUsername \
+    --apikey YourApiKey \
+    --timeframe 5 \
+    --strategy supertrend \
+    --model models/st_trend_v1.onnx \
     --entry_conf 0.80 \
     --min_risk_rr 2.0 \
     --risk_amount 200
@@ -194,7 +234,7 @@ python algoTrader.py --config configs/cisd_ote7_mnq.yaml
 
 | Argument | Description | Default |
 |----------|-------------|---------|
-| `--strategy` | `cisd-ote7` (v7, recommended) or `cisd-ote` (v5.1) | — |
+| `--strategy` | `cisd-ote7` (default), `supertrend`, or `cisd-ote` (legacy) | — |
 | `--model` | Path to ONNX model file | — |
 | `--contract` | Contract ID (e.g. `CON.F.US.MNQ.M26`) | — |
 | `--timeframe` | Bar timeframe in minutes (1, 3, 5) | `5` |
@@ -208,7 +248,7 @@ python algoTrader.py --config configs/cisd_ote7_mnq.yaml
 | `--size` | Fixed contract count (used when `--risk_amount` not set) | `1` |
 | `--max_contracts` | Cap on contracts per trade | `15` |
 | `--max_loss` | Stop bot when cumulative loss hits this (dollars) | `3000` |
-| `--profit_target` | Stop bot when cumulative P&L reaches this (dollars) | `6000` |
+| `--profit_target` | Stop bot when cumulative P&L reaches this (dollars) | `12000` |
 | `--min_stop_atr` | Minimum stop size as ATR multiple (prevents micro stops) | `0.5` |
 | `--min_stop_pts` | Minimum stop size in points (floor) | `1.0` |
 
@@ -216,10 +256,10 @@ python algoTrader.py --config configs/cisd_ote7_mnq.yaml
 
 | Argument | Strategy | Description | Default |
 |----------|----------|-------------|---------|
-| `--min_risk_rr` | `cisd-ote7` | Skip signals when model's predicted R:R is below this | `2.0` |
+| `--min_risk_rr` | all | Skip signals when model's predicted R:R is below this | `2.0` |
 | `--min_vty_regime` | `cisd-ote` | Regime gate: skip entries when `atr14/atr_ma50` is below this (0.0 = off) | `0.75` |
 | `--min_entry_distance` | `cisd-ote` | OTE depth gate: minimum zone penetration depth (0.0 = off) | `3.0` |
-| `--high_conf_multiplier` | `cisd-ote` only | Extend profit target at ≥90% confidence (disabled for `cisd-ote7`) | `1.0` |
+| `--high_conf_multiplier` | `cisd-ote` only | Extend profit target at ≥90% confidence (disabled for v7 and supertrend) | `1.0` |
 
 ### Backtesting
 
@@ -242,34 +282,36 @@ python algoTrader.py --config configs/cisd_ote7_mnq.yaml
 
 ## Strategy Comparison
 
-Two strategies are available. Both share the same CISD+OTE entry concept; the difference is the model architecture and how the profit target is set.
+Three strategies are available. CISD+OTE v7 is the default; SuperTrend v1 is the recommended alternative for trend-following regimes.
 
-| | `cisd-ote7` (v7) | `cisd-ote` (v5.1) |
-|---|---|---|
-| **Model** | `cisd_ote_hybrid_v7.onnx` | `cisd_ote_hybrid_v5_1.onnx` |
-| **Backbone** | 96-bar FFM Transformer | 64-bar FFM Transformer |
-| **Profit target** | Dynamic — risk head predicts R:R, snapped to 1.5R/2R/3R/4R tier | Fixed 2R (4R at ≥90% conf via `--high_conf_multiplier`) |
-| **Entry confidence** | 0.80 recommended | 0.70–0.85 |
-| **RR gate** | `--min_risk_rr 2.0` | Not applicable |
-| **Signal frequency** | ~2× more signals | Fewer signals, stricter built-in gates |
-| **Session gate** | None — model self-regulates | Hard: 7am–4pm ET only |
-| **Best for** | Default — dynamic TP, higher frequency | Comparison runs or markets where session gate helps |
+| | `cisd-ote7` (default) | `supertrend` | `cisd-ote` (legacy) |
+|---|---|---|---|
+| **Model** | `cisd_ote_hybrid_v7.onnx` | `st_trend_v1.onnx` | `cisd_ote_hybrid_v5_1.onnx` |
+| **Signal** | CISD zone + OTE entry | ST(10,2.0) flip + 1h HTF alignment | CISD zone + OTE entry |
+| **Backbone** | 96-bar FFM Transformer | 96-bar FFM Transformer | 64-bar FFM Transformer |
+| **Profit target** | `int(predicted_rr) × R` | `int(predicted_rr) × R` | Fixed 2R (4R at ≥90% conf) |
+| **Entry confidence** | 0.80 recommended | 0.80 recommended | 0.70–0.85 |
+| **RR gate** | `--min_risk_rr 2.0` | `--min_risk_rr 2.0` | Not applicable |
+| **Trained on** | NQ, ES, GC, RTY, YM | NQ, ES, GC, RTY, YM | NQ only |
+| **Trades/month (MNQ)** | ~20–30 | ~10–15 | Fewer |
+| **Win rate (recent)** | ~50–60% | ~65–80% | — |
+| **Best for** | Default — zone reversals | Trend-following regimes | Legacy comparison |
 
-**v7 is the recommended default.** It generates more signals and sets profit targets dynamically based on what the model predicts, rather than relying on a fixed multiplier. The `min_risk_rr=2.0` gate keeps precision high by skipping setups where the model is pessimistic about the trade's reward potential.
+**CISD+OTE v7 is the recommended default.** SuperTrend v1 is a strong alternative — it fires fewer signals but achieves higher win rates and larger average R per trade. Both use the same `int(predicted_rr) × R` TP logic with no artificial ceiling.
 
 ---
 
 ## Multi-Ticker Setup
 
-The strategy is designed to run simultaneously across uncorrelated instruments:
+Both strategies are designed to run simultaneously across uncorrelated instruments. A common setup is SuperTrend on MNQ and CISD on MES for diversification across both strategy type and instrument:
 
-| Ticker | Contract | Data | Notes |
-|--------|----------|------|-------|
-| MNQ | `CON.F.US.MNQ.M26` | `NQ_continuous_5min.csv` | Primary — highest signal quality |
-| MES | `CON.F.US.MES.M26` | `ES_continuous_5min.csv` | Correlated to MNQ — adds trade frequency |
-| MGC | `CON.F.US.MGC.M26` | `GC_continuous_5min.csv` | Uncorrelated to equities — genuine diversification |
+| Ticker | Contract | Strategy | Notes |
+|--------|----------|----------|-------|
+| MNQ | `CON.F.US.MNQ.M26` | `supertrend` or `cisd-ote7` | Primary — highest signal quality |
+| MES | `CON.F.US.MES.M26` | `cisd-ote7` | Correlated to MNQ — adds trade frequency |
+| MGC | `CON.F.US.MGC.M26` | `cisd-ote7` | Uncorrelated to equities — genuine diversification |
 
-Run each ticker in a separate terminal or process. All three use the same model.
+Run each ticker in a separate terminal or process.
 
 ---
 
@@ -285,7 +327,7 @@ contracts = floor(risk_amount / (stop_ticks × tick_value))
 
 - If even 1 contract exceeds the budget, the signal is skipped
 - `--min_stop_atr` and `--min_stop_pts` prevent unrealistically tight stops from inflating size
-- For `cisd-ote7`, profit target is set by the risk head (tier-snapped) — `high_conf_multiplier` is always disabled
+- For `cisd-ote7` and `supertrend`, profit target is set by the risk head — `high_conf_multiplier` is always disabled
 
 ### Gap Risk
 
@@ -300,9 +342,9 @@ After each backtest, a winners-vs-losers feature table is printed:
 ```
 Feature                   Winners     Losers      Delta
 --------------------------------------------------------
-signal_prob                0.8234     0.7891    +0.0343
-risk_rr                    2.8801     1.9123    +0.9678
-entry_distance_pct         4.1200     2.3400    +1.7800
+confidence                 0.8698     0.9061    -0.0363
+risk_rr                    5.9561     1.0173    +4.9388
+signal_atr                20.7646    48.4203   -27.6558
 ...
 ```
 
@@ -327,13 +369,13 @@ grep "ERROR" logs/bot_MNQ_live_YYYYMMDD.log
 
 ## Known Issues & Limitations
 
-### Persistent Trend Blindness (v7)
+### Persistent Trend Blindness (CISD v7)
 
-v7's 96-bar context window covers ~8 hours. In sustained multi-week downtrends (e.g. the 2022 bear market), the model fires bullish CISD setups because local structure looks valid — it has no awareness that the daily or weekly trend is bearish. This is the primary driver of underperformance in `bear_2022`. A future version should add a daily HTF structure feature to address this.
+v7's 96-bar context window covers ~8 hours. In sustained multi-week downtrends (e.g. the 2022 bear market), the model fires bullish CISD setups because local structure looks valid — it has no awareness that the daily or weekly trend is bearish. SuperTrend is less susceptible to this since HTF alignment is an explicit input feature.
 
 ### Session Gate Removed in v7
 
-v5.1 enforced a hard 7am–4pm ET session gate that matched its training distribution. v7 was trained on all-hours data, and the session context is encoded via the `in_optimal_session` CISD feature and `sess_id` sequence inputs. Adding a session gate to v7 reduces PT hits (tested: 3/6 with gate vs 4/6 without) and is not recommended.
+v5.1 enforced a hard 7am–4pm ET session gate that matched its training distribution. v7 was trained on all-hours data, and the session context is encoded via the `in_optimal_session` CISD feature and `sess_id` sequence inputs. Adding a session gate to v7 reduces PT hits and is not recommended.
 
 ### Gap-Through-Stop Risk
 
