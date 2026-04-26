@@ -894,7 +894,7 @@ class TestEntryGate:
 class TestStopTargetPts:
     """
     Stop = signal_atr × 1.5.
-    TP tiers: raw_rr < 2 → 1R (floor), 2-4 → 2R, 4-6 → 4R, ≥6 → 6R.
+    TP tiers: raw_rr < 2 → (None, None) skip, 2-4 → 2R, 4-6 → 4R, ≥6 → 6R.
     """
 
     def _set_signal(self, st, atr=4.0, raw_rr=2.5):
@@ -911,17 +911,17 @@ class TestStopTargetPts:
         stop, _ = st.get_stop_target_pts(None, 'LONG', 100.0)
         assert stop == pytest.approx(8.0 * SL_ATR_MULT)  # 8 × 1.5 = 12.0
 
-    def test_rr_below_2_uses_raw_rr_floored_at_1(self, st):
-        """raw_rr < 2 → tier = max(raw_rr, 1.0); for 1.5 → 1.5R."""
+    def test_rr_below_2_skips(self, st):
+        """raw_rr < 2 → (None, None); low-quality signal must not enter."""
         self._set_signal(st, atr=4.0, raw_rr=1.5)
         stop, target = st.get_stop_target_pts(None, 'LONG', 100.0)
-        assert target == pytest.approx(stop * 1.5)
+        assert stop is None and target is None
 
-    def test_rr_below_1_floors_to_1r(self, st):
-        """raw_rr < 1 → tier = 1.0R (absolute floor)."""
+    def test_rr_near_zero_skips(self, st):
+        """raw_rr near zero → (None, None); not silently traded at 1R."""
         self._set_signal(st, atr=4.0, raw_rr=0.3)
         stop, target = st.get_stop_target_pts(None, 'LONG', 100.0)
-        assert target == pytest.approx(stop * 1.0)
+        assert stop is None and target is None
 
     def test_rr_exactly_2_gives_2r(self, st):
         self._set_signal(st, atr=4.0, raw_rr=2.0)
@@ -1864,13 +1864,16 @@ class TestExactFormulas:
     # ── F23. TP tier logic exactly matches the 3-tier system ─────────────────
 
     def test_tp_tier_boundaries_exact(self, st):
-        """Verify exact tier boundaries: <2→raw/1, [2,4)→2R, [4,6)→4R, ≥6→6R."""
-        cases = [
-            (0.0,  1.0),    # below 1 → floored to 1R
-            (0.9,  1.0),
-            (1.0,  1.0),
-            (1.5,  1.5),    # ≥1 but <2 → use raw_rr
-            (1.99, 1.99),
+        """Verify exact tier boundaries: <2→skip, [2,4)→2R, [4,6)→4R, ≥6→6R."""
+        skip_cases = [0.0, 0.9, 1.0, 1.5, 1.99]
+        for raw_rr in skip_cases:
+            st._signal_atr    = 4.0
+            st._latest_risk_rr = raw_rr
+            stop, target = st.get_stop_target_pts(None, 'LONG', 100.0)
+            assert stop is None and target is None, \
+                f"raw_rr={raw_rr}: expected skip (None, None), got ({stop}, {target})"
+
+        tier_cases = [
             (2.0,  2.0),    # exactly 2 → 2R tier
             (2.5,  2.0),
             (3.99, 2.0),
@@ -1881,7 +1884,7 @@ class TestExactFormulas:
             (7.0,  6.0),
             (10.0, 6.0),
         ]
-        for raw_rr, expected_tier in cases:
+        for raw_rr, expected_tier in tier_cases:
             st._signal_atr    = 4.0
             st._latest_risk_rr = raw_rr
             stop, target = st.get_stop_target_pts(None, 'LONG', 100.0)
@@ -1918,3 +1921,44 @@ class TestExactFormulas:
 
     def test_atr_rank_window_constant(self):
         assert ATR_RANK_WINDOW == 200
+
+
+# ── 19. Constructor — min_risk_rr wiring ──────────────────────────────────────
+
+class TestConstructorMinRiskRR:
+    """
+    min_risk_rr must be accepted and stored at construction time.
+    Regression: algoTrader.py previously omitted this kwarg for supertrend,
+    leaving _min_risk_rr=0.0 and silently disabling the rr gate entirely.
+    """
+
+    def test_default_is_zero(self):
+        import logging
+        logging.disable(logging.CRITICAL)
+        s = STTrendStrategyV1(model_path="", contract_symbol="MNQ")
+        assert s._min_risk_rr == 0.0
+
+    def test_constructor_stores_min_risk_rr(self):
+        import logging
+        logging.disable(logging.CRITICAL)
+        s = STTrendStrategyV1(model_path="", contract_symbol="MNQ", min_risk_rr=2.0)
+        assert s._min_risk_rr == 2.0
+
+    def test_rr_gate_inactive_when_zero(self):
+        """_min_risk_rr=0.0 → gate condition never fires regardless of predicted rr."""
+        import logging
+        logging.disable(logging.CRITICAL)
+        s = STTrendStrategyV1(model_path="", contract_symbol="MNQ", min_risk_rr=0.0)
+        s._latest_risk_rr = 0.01
+        ok, _ = s.should_enter_trade(1, 0.95, {}, entry_conf=0.80, adx_thresh=0)
+        assert ok is True
+
+    def test_rr_gate_active_when_set(self):
+        """_min_risk_rr=2.0 → predicted_rr=1.5 must be blocked."""
+        import logging
+        logging.disable(logging.CRITICAL)
+        s = STTrendStrategyV1(model_path="", contract_symbol="MNQ", min_risk_rr=2.0)
+        s._latest_risk_rr = 1.5
+        ok, _ = s.should_enter_trade(1, 0.95, {}, entry_conf=0.80, adx_thresh=0)
+        assert ok is False
+        assert s.skip_stats['rr_gate'] == 1

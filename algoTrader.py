@@ -208,14 +208,12 @@ def run_backtesting(config):
 
     try:
         # Create strategy
-        strategy_kwargs = {}
+        strategy_kwargs = {'min_risk_rr': config.get('min_risk_rr', 2.0)}
         if config['strategy'] == '3min_pivot_reversal' or config['strategy'] == '5min_pivot_reversal':
             strategy_kwargs['pivot_lookback'] = config.get("pivot_lookback", 8)
         if config['strategy'] == 'cisd-ote':
             strategy_kwargs['min_vty_regime']     = config.get('min_vty_regime', 0.75)
             strategy_kwargs['min_entry_distance'] = config.get('min_entry_distance', 3.0)
-        if config['strategy'] == 'cisd-ote7':
-            strategy_kwargs['min_risk_rr'] = config.get('min_risk_rr', 2.0)
 
         strategy = StrategyFactory.create_strategy(
             strategy_name=config["strategy"],
@@ -288,14 +286,12 @@ def run_live_trading(config):
     
     try:
         # Create strategy
-        strategy_kwargs = {}
+        strategy_kwargs = {'min_risk_rr': config.get('min_risk_rr', 2.0)}
         if config['strategy'] == '3min_pivot_reversal' or config['strategy'] == '5min_pivot_reversal':
             strategy_kwargs['pivot_lookback'] = config.get("pivot_lookback", 8)
         if config['strategy'] == 'cisd-ote':
             strategy_kwargs['min_vty_regime']     = config.get('min_vty_regime', 0.75)
             strategy_kwargs['min_entry_distance'] = config.get('min_entry_distance', 3.0)
-        if config['strategy'] == 'cisd-ote7':
-            strategy_kwargs['min_risk_rr'] = config.get('min_risk_rr', 2.0)
 
         strategy = StrategyFactory.create_strategy(
             strategy_name=config["strategy"],

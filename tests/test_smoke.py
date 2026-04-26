@@ -216,3 +216,75 @@ class TestRunWarmupEdgeCases:
         t._run_warmup(pd.DataFrame({"close": [1.0, 2.0]}))
         assert calls == [0]
         assert t._bar_count == 1
+
+
+# ── algoTrader strategy kwarg wiring ─────────────────────────────────────────
+
+class TestAlgoTraderStrategyKwargs:
+    """
+    Regression: min_risk_rr was only forwarded for 'cisd-ote7', not 'supertrend'.
+    Strategies received min_risk_rr=0.0 (default), silently disabling the rr gate.
+    """
+
+    def _make_config(self, strategy, **overrides):
+        base = dict(
+            strategy=strategy,
+            model='models/fake.onnx',
+            contract='CON.F.US.MNQ.M26',
+            backtest=True,
+            backtest_data='data/fake.csv',
+            size=1,
+            timeframe=5,
+            entry_conf=0.8,
+            adx_thresh=0,
+            risk_amount=200.0,
+            max_contracts=5,
+            high_conf_multiplier=1.0,
+            max_loss=3000.0,
+            profit_target=12000.0,
+            min_stop_pts=1.0,
+            min_stop_atr=0.5,
+            min_vty_regime=0.75,
+            min_risk_rr=2.0,
+            breakeven_on_1r=False,
+            quiet=True,
+        )
+        base.update(overrides)
+        return base
+
+    def _captured_kwargs(self, strategy_name):
+        """Return the kwargs passed to StrategyFactory.create_strategy for the given strategy."""
+        import sys
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from unittest.mock import patch, MagicMock
+        import algoTrader as at
+
+        captured = {}
+
+        def fake_create(strategy_name, model_path, contract_symbol, **kwargs):
+            captured.update(kwargs)
+            m = MagicMock()
+            m.skip_stats = {}
+            return m
+
+        config = self._make_config(strategy_name)
+        with patch('algoTrader.StrategyFactory.create_strategy', side_effect=fake_create), \
+             patch('algoTrader.SimulationBot') as mock_bot:
+            mock_bot.return_value.run = MagicMock(return_value=None)
+            import asyncio
+            with patch.object(asyncio, 'run', return_value=None):
+                try:
+                    at.run_backtesting(config)
+                except Exception:
+                    pass
+        return captured
+
+    def test_supertrend_receives_min_risk_rr(self):
+        kwargs = self._captured_kwargs('supertrend')
+        assert 'min_risk_rr' in kwargs, "supertrend strategy never received min_risk_rr"
+        assert kwargs['min_risk_rr'] == 2.0
+
+    def test_cisd_ote7_receives_min_risk_rr(self):
+        kwargs = self._captured_kwargs('cisd-ote7')
+        assert 'min_risk_rr' in kwargs
+        assert kwargs['min_risk_rr'] == 2.0

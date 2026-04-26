@@ -90,6 +90,7 @@ class CISDOTEStrategy(BaseStrategy):
         session_end_hour: int = SESSION_END_HOUR,
         min_vty_regime: float = 0.75,
         min_entry_distance: float = 3.0,
+        min_risk_rr: float = 0.0,
     ):
         super().__init__(model_path, contract_symbol)
         self._session_start_hour = session_start_hour

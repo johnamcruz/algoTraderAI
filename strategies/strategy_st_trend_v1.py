@@ -568,7 +568,7 @@ class STTrendStrategyV1(BaseStrategy):
         elif raw_rr >= 2.0:
             rr = 2.0
         else:
-            rr = max(raw_rr, 1.0)
+            return None, None
 
         target_pts = stop_pts * rr
         logging.info(
