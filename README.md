@@ -6,7 +6,7 @@
 
 A Python algorithmic trading bot for futures markets (MNQ, MES, MGC) via the TopstepX/ProjectX platform. Supports two AI strategies: the default **CISD+OTE v7** (ICT-style zone entries) and **SuperTrend v1** (trend-following with HTF alignment).
 
-**Default model:** `cisd_ote_hybrid_v7.onnx` — FFM Hybrid Transformer (see [MODEL_CONTEXT.md](MODEL_CONTEXT.md))
+**Default model:** `cisd_ote_hybrid_v7.onnx` — FFM Hybrid Transformer
 
 ### Key Features
 

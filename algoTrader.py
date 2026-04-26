@@ -187,8 +187,9 @@ Example Usage (Backtesting):
     if args.config:
         logging.info(f"Loaded config from: {args.config}")
     
-    # Log config data for debugging
-    logging.info(config)
+    # Log config data for debugging (credentials redacted)
+    safe_config = {k: '***' if k in ('apikey', 'password', 'token') else v for k, v in config.items()}
+    logging.info(safe_config)
 
     # Check mode
     if config.get('backtest'):

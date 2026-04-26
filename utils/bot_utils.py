@@ -118,7 +118,7 @@ def authenticate(base_url, username, api_key):
     payload = {"userName": username, "apiKey": api_key}
     try:
         logging.info("🔐 Authenticating...")
-        logging.info(payload)     
+        logging.info(f"🔐 Auth request for user: {username}")
         response = requests.post(auth_url, json=payload, timeout=10)
         response.raise_for_status()
         data = response.json()
