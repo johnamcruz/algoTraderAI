@@ -507,6 +507,26 @@ class TestOnBreakevenTriggered:
         with patch.object(live_bot, "_modify_order", return_value=False):
             run(live_bot._on_breakeven_triggered())   # must not raise
 
+    def test_modify_failure_rolls_back_breakeven_state(self, live_bot):
+        # If API fails, breakeven_set must be reset so the next tick retries
+        self._setup(live_bot, bracket_id=5003, entry=100.0)
+        live_bot.breakeven_set = True
+        live_bot._pre_breakeven_stop = 95.0
+        with patch.object(live_bot, "_modify_order", return_value=False):
+            run(live_bot._on_breakeven_triggered())
+        assert live_bot.breakeven_set is False
+        assert live_bot.stop_loss == pytest.approx(95.0)
+
+    def test_no_bracket_id_rolls_back_breakeven_state(self, live_bot):
+        # No bracket ID — same rollback so next tick retries
+        live_bot.stop_bracket_order_id = None
+        live_bot.entry_price = 100.0
+        live_bot.stop_loss = 100.0
+        live_bot.breakeven_set = True
+        live_bot._pre_breakeven_stop = 95.0
+        run(live_bot._on_breakeven_triggered())
+        assert live_bot.breakeven_set is False
+
     def test_works_for_short_position(self, live_bot):
         self._setup(live_bot, bracket_id=5004, entry=200.0, size=1,
                     position_type="SHORT")

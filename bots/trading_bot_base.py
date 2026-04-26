@@ -57,7 +57,8 @@ class TradingBot(ABC):
         self.position_size = None
         self.entry_timestamp = None
         self.mfe_pts: float = 0.0       # peak unrealized gain in points this trade
-        self.breakeven_set: bool = False # True once stop has been moved to entry
+        self.breakeven_set: bool = False    # True once stop has been moved to entry
+        self._pre_breakeven_stop: float = 0.0  # original stop saved before BE fires (for rollback)
 
         # Strategy
         self.strategy = strategy

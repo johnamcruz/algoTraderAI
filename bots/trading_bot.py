@@ -462,19 +462,31 @@ class RealTimeBot(TradingBot):
             return False
 
     async def _on_breakeven_triggered(self):
-        """Move the bracket stop to entry price once 1R profit is reached."""
+        """Move the bracket stop to entry price once 2R profit is reached."""
         if not self.stop_bracket_order_id:
-            logging.warning(
-                f"⚠️ Breakeven triggered but stop bracket ID unknown — "
-                f"broker stop NOT moved to {self.entry_price:.2f}"
+            logging.critical(
+                f"🚨 Breakeven triggered but stop bracket ID unknown — "
+                f"broker stop NOT moved to {self.entry_price}. "
+                f"Original stop {self.stop_loss} still active at broker."
             )
+            # Roll back in-memory state so the next tick retries
+            self.breakeven_set = False
             return
 
-        self._modify_order(
+        success = self._modify_order(
             order_id=self.stop_bracket_order_id,
             stop_price=self.entry_price,
             size=self.position_size,
         )
+        if not success:
+            logging.critical(
+                f"🚨 Breakeven API call FAILED — broker stop NOT moved to {self.entry_price:.2f}. "
+                f"Original stop {self.stop_loss:.2f} may still be active at broker. "
+                f"Will retry on next tick."
+            )
+            # Roll back in-memory state so _check_and_set_breakeven retries next tick
+            self.breakeven_set = False
+            self.stop_loss = self._pre_breakeven_stop
 
     # =========================================================
     # BAR CLOSER WATCHER
@@ -552,6 +564,7 @@ class RealTimeBot(TradingBot):
             # Check exits if in position (for sim bot compatibility)
             if self.in_position:
                 self._update_mfe(price)
+                self._pre_breakeven_stop = self.stop_loss
                 if self._check_and_set_breakeven(price):
                     await self._on_breakeven_triggered()
                 exit_price, exit_reason = self._check_exit_conditions(price)
