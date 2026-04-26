@@ -473,16 +473,25 @@ class RealTimeBot(TradingBot):
             self.breakeven_set = False
             return
 
+        logging.info(
+            f"🔒 Breakeven: attempting to move broker stop "
+            f"order={self.stop_bracket_order_id} → {self.entry_price:.2f} "
+            f"(was {self._pre_breakeven_stop:.2f})"
+        )
         success = self._modify_order(
             order_id=self.stop_bracket_order_id,
             stop_price=self.entry_price,
             size=self.position_size,
         )
-        if not success:
+        if success:
+            logging.info(
+                f"✅ Breakeven confirmed — broker stop moved to entry {self.entry_price:.2f}. "
+                f"Original stop {self._pre_breakeven_stop:.2f} replaced."
+            )
+        else:
             logging.critical(
-                f"🚨 Breakeven API call FAILED — broker stop NOT moved to {self.entry_price:.2f}. "
-                f"Original stop {self.stop_loss:.2f} may still be active at broker. "
-                f"Will retry on next tick."
+                f"🚨 Breakeven API FAILED — broker stop NOT moved. "
+                f"Keeping original stop {self._pre_breakeven_stop:.2f}. Will retry next tick."
             )
             # Roll back in-memory state so _check_and_set_breakeven retries next tick
             self.breakeven_set = False
