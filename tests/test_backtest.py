@@ -51,7 +51,7 @@ def _default_args(**overrides):
         min_entry_distance=DEFAULT_MIN_ENTRY_DISTANCE,
         min_vty_regime=0.75,
         min_risk_rr=DEFAULT_MIN_RISK_RR,
-        breakeven=False,
+        no_breakeven=False,
     )
     base.update(overrides)
     return argparse.Namespace(**base)

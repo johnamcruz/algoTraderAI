@@ -157,7 +157,7 @@ def build_command(scenario_key: str, args) -> list[str]:
         "--min_risk_rr",          str(args.min_risk_rr),
         "--quiet",
     ]
-    if args.breakeven:
+    if not args.no_breakeven:
         cmd.append("--breakeven_on_2r")
     return cmd
 
@@ -212,7 +212,7 @@ def print_results(results: list[dict], args) -> None:
     print(f"  BACKTEST RESULTS — {args.symbol}  |  strategy: {args.strategy}  |  model: {os.path.basename(args.model)}")
     print(f"  entry_conf={args.entry_conf}  risk=${args.risk_amount}  max_contracts={args.max_contracts}")
     print(f"  max_loss=${args.max_loss}  profit_target=${args.profit_target}  min_stop_atr={args.min_stop_atr}")
-    print(f"  min_vty_regime={args.min_vty_regime}  min_risk_rr={args.min_risk_rr}  breakeven={'ON' if args.breakeven else 'OFF'}")
+    print(f"  min_vty_regime={args.min_vty_regime}  min_risk_rr={args.min_risk_rr}  breakeven={'OFF' if args.no_breakeven else 'ON'}")
     print("═" * width)
 
     for r in results:
@@ -283,8 +283,8 @@ def main():
                         help=f"Volatility regime gate: min atr14/atr_ma50 ratio (default: {DEFAULT_MIN_VTY_REGIME})")
     parser.add_argument("--min_risk_rr", type=float, default=DEFAULT_MIN_RISK_RR,
                         help=f"(cisd-ote7) RR gate: min model-predicted RR to enter (default: {DEFAULT_MIN_RISK_RR}, 0=off)")
-    parser.add_argument("--breakeven", action="store_true", default=False,
-                        help="Enable breakeven-on-1R (default: off)")
+    parser.add_argument("--no-breakeven", action="store_true", default=False,
+                        help="Disable breakeven-on-2R (default: on)")
     args = parser.parse_args()
 
     # Auto-select the correct model when --model was not explicitly provided
