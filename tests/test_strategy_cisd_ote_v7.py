@@ -170,33 +170,40 @@ class TestStopTargetPts:
         stop, _ = strategy.get_stop_target_pts(None, 'LONG', 98.0)
         assert stop == pytest.approx(3.0)   # 98 - 95
 
-    def test_long_target_snaps_1_5r_tier(self, strategy):
-        """predict=1.7 snaps down to 1.5R tier."""
+    def test_long_target_below_2r_skips(self, strategy):
+        """predict=1.7 → skip (None, None)."""
         strategy._latest_risk_rr = 1.7
         strategy._active_zones.appendleft(_zone(fib_bot=95.0, fib_top=100.0))
         stop, target = strategy.get_stop_target_pts(None, 'LONG', 98.0)
-        assert target == pytest.approx(stop * 1.5)
+        assert stop is None and target is None
 
-    def test_long_target_snaps_to_tier(self, strategy):
-        """predict=2.5 snaps down to 2R tier."""
+    def test_long_target_int_floors(self, strategy):
+        """predict=2.5 → int(2.5)=2 → 2R."""
         strategy._latest_risk_rr = 2.5
         strategy._active_zones.appendleft(_zone(fib_bot=95.0, fib_top=100.0))
         stop, target = strategy.get_stop_target_pts(None, 'LONG', 98.0)
         assert target == pytest.approx(stop * 2.0)
 
-    def test_long_target_snaps_3r_tier(self, strategy):
-        """predict=3.7 snaps down to 3R tier."""
+    def test_long_target_3r(self, strategy):
+        """predict=3.7 → int(3.7)=3 → 3R."""
         strategy._latest_risk_rr = 3.7
         strategy._active_zones.appendleft(_zone(fib_bot=95.0, fib_top=100.0))
         stop, target = strategy.get_stop_target_pts(None, 'LONG', 98.0)
         assert target == pytest.approx(stop * 3.0)
 
-    def test_long_target_snaps_4r_tier(self, strategy):
-        """predict=4.5 snaps to 4R tier."""
+    def test_long_target_4r(self, strategy):
+        """predict=4.5 → int(4.5)=4 → 4R."""
         strategy._latest_risk_rr = 4.5
         strategy._active_zones.appendleft(_zone(fib_bot=95.0, fib_top=100.0))
         stop, target = strategy.get_stop_target_pts(None, 'LONG', 98.0)
         assert target == pytest.approx(stop * 4.0)
+
+    def test_long_target_above_4r_no_ceiling(self, strategy):
+        """predict=7.8 → int(7.8)=7 → 7R (no ceiling)."""
+        strategy._latest_risk_rr = 7.8
+        strategy._active_zones.appendleft(_zone(fib_bot=95.0, fib_top=100.0))
+        stop, target = strategy.get_stop_target_pts(None, 'LONG', 98.0)
+        assert target == pytest.approx(stop * 7.0)
 
     def test_short_stop_is_distance_to_fib_top(self, strategy):
         strategy._active_zones.appendleft(_zone(fib_bot=95.0, fib_top=100.0, is_bullish=False))
@@ -210,12 +217,12 @@ class TestStopTargetPts:
         stop, target = strategy.get_stop_target_pts(None, 'SHORT', 97.0)
         assert target == pytest.approx(stop * 3.0)
 
-    def test_risk_rr_floored_at_1(self, strategy):
-        """If model predicts RR < 1, floor to 1.0 so target never beats stop."""
+    def test_risk_rr_below_2_skips(self, strategy):
+        """predicted_rr < 2.0 → (None, None)."""
         strategy._latest_risk_rr = 0.3
         strategy._active_zones.appendleft(_zone(fib_bot=95.0, fib_top=100.0))
         stop, target = strategy.get_stop_target_pts(None, 'LONG', 98.0)
-        assert target == pytest.approx(stop * 1.0)
+        assert stop is None and target is None
 
     def test_zero_stop_returns_none(self, strategy):
         strategy._active_zones.appendleft(_zone(fib_bot=95.0, fib_top=100.0))

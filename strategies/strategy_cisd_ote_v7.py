@@ -386,19 +386,11 @@ class CISDOTEStrategyV7(BaseStrategy):
         if stop_pts <= 0:
             return None, None
 
-        # Snap predicted RR to calibrated tier floor (F4 val: ≥2R→85%, ≥3R→81%, ≥4R→81%)
-        # Tiers: 1.5, 2, 3, 4 — predict ≥ tier sets TP at that tier level
         raw_rr = self._latest_risk_rr
-        if raw_rr >= 4.0:
-            rr = 4.0
-        elif raw_rr >= 3.0:
-            rr = 3.0
-        elif raw_rr >= 2.0:
-            rr = 2.0
-        elif raw_rr >= 1.5:
-            rr = 1.5
+        if raw_rr >= 2.0:
+            rr = int(raw_rr)
         else:
-            rr = max(raw_rr, 1.0)
+            return None, None
 
         target_pts = stop_pts * rr
         logging.info(

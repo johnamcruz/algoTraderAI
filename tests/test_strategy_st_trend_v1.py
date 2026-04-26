@@ -894,7 +894,7 @@ class TestEntryGate:
 class TestStopTargetPts:
     """
     Stop = signal_atr × 1.5.
-    TP tiers: raw_rr < 2 → skip, [2,3)→2R, [3,4)→3R, [4,5)→4R, [5,6)→5R, ≥6→6R.
+    TP: int(predicted_rr) × R — skip if predicted_rr < 2.0.
     """
 
     def _set_signal(self, st, atr=4.0, raw_rr=2.5):
@@ -938,18 +938,8 @@ class TestStopTargetPts:
         stop, target = st.get_stop_target_pts(None, 'LONG', 100.0)
         assert target == pytest.approx(stop * 3.0)
 
-    def test_rr_between_3_and_4_gives_3r(self, st):
-        self._set_signal(st, atr=4.0, raw_rr=3.9)
-        stop, target = st.get_stop_target_pts(None, 'LONG', 100.0)
-        assert target == pytest.approx(stop * 3.0)
-
     def test_rr_exactly_4_gives_4r(self, st):
         self._set_signal(st, atr=4.0, raw_rr=4.0)
-        stop, target = st.get_stop_target_pts(None, 'LONG', 100.0)
-        assert target == pytest.approx(stop * 4.0)
-
-    def test_rr_between_4_and_5_gives_4r(self, st):
-        self._set_signal(st, atr=4.0, raw_rr=4.9)
         stop, target = st.get_stop_target_pts(None, 'LONG', 100.0)
         assert target == pytest.approx(stop * 4.0)
 
@@ -958,20 +948,22 @@ class TestStopTargetPts:
         stop, target = st.get_stop_target_pts(None, 'LONG', 100.0)
         assert target == pytest.approx(stop * 5.0)
 
-    def test_rr_between_5_and_6_gives_5r(self, st):
-        self._set_signal(st, atr=4.0, raw_rr=5.5)
-        stop, target = st.get_stop_target_pts(None, 'LONG', 100.0)
-        assert target == pytest.approx(stop * 5.0)
-
     def test_rr_exactly_6_gives_6r(self, st):
         self._set_signal(st, atr=4.0, raw_rr=6.0)
         stop, target = st.get_stop_target_pts(None, 'LONG', 100.0)
         assert target == pytest.approx(stop * 6.0)
 
-    def test_rr_above_6_gives_6r(self, st):
-        self._set_signal(st, atr=4.0, raw_rr=8.0)
+    def test_rr_above_6_uses_full_prediction(self, st):
+        """No ceiling — int(8.3) = 8R target."""
+        self._set_signal(st, atr=4.0, raw_rr=8.3)
         stop, target = st.get_stop_target_pts(None, 'LONG', 100.0)
-        assert target == pytest.approx(stop * 6.0)
+        assert target == pytest.approx(stop * 8.0)
+
+    def test_rr_large_prediction(self, st):
+        """int(14.18) = 14R target."""
+        self._set_signal(st, atr=4.0, raw_rr=14.18)
+        stop, target = st.get_stop_target_pts(None, 'LONG', 100.0)
+        assert target == pytest.approx(stop * 14.0)
 
     def test_stop_same_for_long_and_short(self, st):
         self._set_signal(st, atr=4.0, raw_rr=2.0)
@@ -1884,7 +1876,7 @@ class TestExactFormulas:
     # ── F23. TP tier logic exactly matches the 3-tier system ─────────────────
 
     def test_tp_tier_boundaries_exact(self, st):
-        """Verify exact tier boundaries: <2→skip, [2,3)→2R, [3,4)→3R, [4,5)→4R, [5,6)→5R, ≥6→6R."""
+        """Verify: <2→skip, ≥2→int(raw_rr)×R with no ceiling."""
         skip_cases = [0.0, 0.9, 1.0, 1.5, 1.99]
         for raw_rr in skip_cases:
             st._signal_atr    = 4.0
@@ -1894,28 +1886,24 @@ class TestExactFormulas:
                 f"raw_rr={raw_rr}: expected skip (None, None), got ({stop}, {target})"
 
         tier_cases = [
-            (2.0,  2.0),    # exactly 2 → 2R
-            (2.5,  2.0),
-            (2.99, 2.0),
-            (3.0,  3.0),    # exactly 3 → 3R
-            (3.5,  3.0),
-            (3.99, 3.0),
-            (4.0,  4.0),    # exactly 4 → 4R
-            (4.5,  4.0),
-            (4.99, 4.0),
-            (5.0,  5.0),    # exactly 5 → 5R
-            (5.5,  5.0),
-            (5.99, 5.0),
-            (6.0,  6.0),    # exactly 6 → 6R
-            (7.0,  6.0),
-            (10.0, 6.0),
+            (2.0,  2.0),
+            (2.9,  2.0),
+            (3.0,  3.0),
+            (3.9,  3.0),
+            (4.0,  4.0),
+            (4.9,  4.0),
+            (5.0,  5.0),
+            (5.9,  5.0),
+            (6.0,  6.0),
+            (7.5,  7.0),    # no ceiling — int(7.5)=7
+            (14.2, 14.0),   # high prediction → 14R
         ]
         for raw_rr, expected_tier in tier_cases:
             st._signal_atr    = 4.0
             st._latest_risk_rr = raw_rr
             stop, target = st.get_stop_target_pts(None, 'LONG', 100.0)
             assert target == pytest.approx(stop * expected_tier, rel=1e-5), \
-                f"raw_rr={raw_rr}: expected tier={expected_tier}R, got target/stop={target/stop:.3f}"
+                f"raw_rr={raw_rr}: expected {expected_tier}R, got {target/stop:.3f}R"
 
     # ── F24. Batch reference compute_st produces correct bands ───────────────
 

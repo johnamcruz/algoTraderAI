@@ -4,7 +4,7 @@ SuperTrend Trend Follow Strategy v1.0 — FFM Hybrid Transformer
 
 Signal: 5-minute SuperTrend(10, 2.0) flip + 1h SuperTrend(10, 3.0) HTF alignment
 Stop:   1.5 × ATR (Wilder's ATR, period=10) — dynamic sizing via bot's risk_amount
-TP:     Risk head tier — <2R skip, [2,3)→2R, [3,4)→3R, [4,5)→4R, [5,6)→5R, ≥6→6R
+TP:     Risk head floor — <2R skip, ≥2R → int(predicted_rr) × R
 
 Architecture identical to CISD+OTE v7:
   FFMBackbone(256-dim, 67 features × 96 bars) + STProjection(8 features)
@@ -552,7 +552,7 @@ class STTrendStrategyV1(BaseStrategy):
     ) -> Tuple[Optional[float], Optional[float]]:
         """
         Stop: 1.5 × ATR (Wilder's, period=10) captured at signal bar.
-        Target: risk-head tier — 2R / 3R / 4R / 5R / 6R.
+        Target: int(predicted_rr) × R — skips if predicted_rr < 2.0.
         Bot sizes contracts as floor(risk_amount / (stop_pts × point_value)).
         """
         if self._signal_atr <= 0:
@@ -561,16 +561,8 @@ class STTrendStrategyV1(BaseStrategy):
         stop_pts = self._signal_atr * SL_ATR_MULT
 
         raw_rr = self._latest_risk_rr
-        if raw_rr >= 6.0:
-            rr = 6.0
-        elif raw_rr >= 5.0:
-            rr = 5.0
-        elif raw_rr >= 4.0:
-            rr = 4.0
-        elif raw_rr >= 3.0:
-            rr = 3.0
-        elif raw_rr >= 2.0:
-            rr = 2.0
+        if raw_rr >= 2.0:
+            rr = int(raw_rr)
         else:
             return None, None
 
