@@ -16,6 +16,10 @@ def _load_st_trend_v1():
     from strategies.strategy_st_trend_v1 import STTrendStrategyV1
     return STTrendStrategyV1
 
+def _load_vwap_v1():
+    from strategies.strategy_vwap_v1 import VWAPReversionStrategyV1
+    return VWAPReversionStrategyV1
+
 class StrategyFactory:
     """
     Factory class for creating strategy instances.
@@ -25,7 +29,8 @@ class StrategyFactory:
     STRATEGIES = {
         'cisd-ote':    CISDOTEStrategy,
         'cisd-ote7':   _load_v7,            # lazy: futures_foundation only required when selected
-        'supertrend': _load_st_trend_v1,    # lazy: SuperTrend FFM hybrid v1
+        'supertrend':  _load_st_trend_v1,   # lazy: SuperTrend FFM hybrid v1
+        'vwap':        _load_vwap_v1,        # lazy: VWAP Reversion FFM hybrid v1
     }
     
     @classmethod
