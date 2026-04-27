@@ -32,6 +32,8 @@ def live_bot(mock_strategy):
             stop_pts=10.0,
             target_pts=20.0,
             risk_amount=50.0,
+            username="test-user",
+            api_key="test-api-key",
         )
         # Pre-populate a contracts list so tick/size lookups work
         bot.contracts = [
@@ -736,3 +738,81 @@ class TestReconcileOpenPosition:
         with patch.object(live_bot, "_search_open_positions", side_effect=Exception("timeout")):
             run(live_bot._reconcile_open_position())   # must not raise
         assert live_bot.in_position is False
+
+
+# ── _refresh_token ────────────────────────────────────────────────────────────
+
+class TestRefreshToken:
+    """_refresh_token: re-authenticates and updates self.token."""
+
+    def test_updates_token_on_success(self, live_bot):
+        with patch("bots.trading_bot.authenticate", return_value="new-token"):
+            live_bot._refresh_token()
+        assert live_bot.token == "new-token"
+
+    def test_returns_true_on_success(self, live_bot):
+        with patch("bots.trading_bot.authenticate", return_value="new-token"):
+            assert live_bot._refresh_token() is True
+
+    def test_returns_false_on_auth_failure(self, live_bot):
+        with patch("bots.trading_bot.authenticate", return_value=None):
+            assert live_bot._refresh_token() is False
+
+    def test_keeps_old_token_on_failure(self, live_bot):
+        with patch("bots.trading_bot.authenticate", return_value=None):
+            live_bot._refresh_token()
+        assert live_bot.token == "test-token"
+
+    def test_skips_if_no_username(self, live_bot):
+        live_bot.username = None
+        with patch("bots.trading_bot.authenticate") as mock_auth:
+            live_bot._refresh_token()
+        mock_auth.assert_not_called()
+
+    def test_skips_if_no_api_key(self, live_bot):
+        live_bot.api_key = None
+        with patch("bots.trading_bot.authenticate") as mock_auth:
+            live_bot._refresh_token()
+        mock_auth.assert_not_called()
+
+    def test_returns_false_if_no_credentials(self, live_bot):
+        live_bot.username = None
+        live_bot.api_key = None
+        assert live_bot._refresh_token() is False
+
+
+# ── _rebuild_signalr_client ───────────────────────────────────────────────────
+
+class TestRebuildSignalrClient:
+    """_rebuild_signalr_client: recreates client with current token and re-registers handlers."""
+
+    def test_client_url_contains_current_token(self, live_bot):
+        live_bot.token = "refreshed-token"
+        with patch("bots.trading_bot.SignalRClient") as mock_cls:
+            live_bot._rebuild_signalr_client()
+        url = mock_cls.call_args[0][0]
+        assert "refreshed-token" in url
+
+    def test_client_url_does_not_contain_old_token(self, live_bot):
+        live_bot.token = "new-token"
+        with patch("bots.trading_bot.SignalRClient") as mock_cls:
+            live_bot._rebuild_signalr_client()
+        url = mock_cls.call_args[0][0]
+        assert "test-token" not in url
+
+    def test_all_handlers_registered(self, live_bot):
+        mock_instance = MagicMock()
+        with patch("bots.trading_bot.SignalRClient", return_value=mock_instance):
+            live_bot._rebuild_signalr_client()
+        mock_instance.on_open.assert_called_once()
+        mock_instance.on_close.assert_called_once()
+        mock_instance.on_error.assert_called_once()
+        mock_instance.on.assert_called_once_with("GatewayTrade", live_bot.process_tick)
+
+    def test_replaces_self_client(self, live_bot):
+        old_client = live_bot.client
+        mock_instance = MagicMock()
+        with patch("bots.trading_bot.SignalRClient", return_value=mock_instance):
+            live_bot._rebuild_signalr_client()
+        assert live_bot.client is mock_instance
+        assert live_bot.client is not old_client

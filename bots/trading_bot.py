@@ -17,7 +17,7 @@ import pandas as pd
 from datetime import datetime, timedelta, timezone
 from pysignalr.client import SignalRClient
 from strategies.strategy_base import BaseStrategy
-from utils.bot_utils import parse_future_symbol
+from utils.bot_utils import parse_future_symbol, authenticate
 from bots.trading_bot_base import TradingBot
 
 # =========================================================
@@ -45,6 +45,8 @@ class RealTimeBot(TradingBot):
         min_stop_pts=1.0,
         min_stop_atr_mult=0.5,
         breakeven_on_2r=False,
+        username=None,
+        api_key=None,
     ):
         """
         Initialize the real-time trading bot.
@@ -84,11 +86,15 @@ class RealTimeBot(TradingBot):
         )
 
         # Real-time specific attributes
+        self.market_hub = market_hub
+        self.token = token
+        self.username = username
+        self.api_key = api_key
         self.hub_url = f"{market_hub}?access_token={token}"
         self.base_url = base_url
         self.account = account
         self.client = SignalRClient(self.hub_url)
-        self.token = token
+        self._token_refresh_task = None
         
         self.current_bar = {}
         self.current_bar_time = None
@@ -138,9 +144,7 @@ class RealTimeBot(TradingBot):
 
     async def on_close(self):
         """Callback when connection closes."""
-        print('🔌 Disconnected from the server')
-        if self.closer_task:
-            self.closer_task.cancel()
+        logging.warning('🔌 Disconnected from market hub — reconnection loop will retry')
 
     async def on_error(self, message):
         """Callback on error."""
@@ -467,6 +471,40 @@ class RealTimeBot(TradingBot):
         logging.warning("⚠️ No stop bracket order found after entry")
         return None
 
+    def _rebuild_signalr_client(self):
+        """Recreate SignalR client with current token. Called before each connection attempt."""
+        self.hub_url = f"{self.market_hub}?access_token={self.token}"
+        self.client = SignalRClient(self.hub_url)
+        self.client.on_open(self.on_open)
+        self.client.on_close(self.on_close)
+        self.client.on_error(self.on_error)
+        self.client.on("GatewayTrade", self.process_tick)
+
+    def _refresh_token(self) -> bool:
+        """Re-authenticate and update self.token. Returns True on success."""
+        if not self.username or not self.api_key:
+            logging.warning("⚠️ Token refresh skipped — username/api_key not set")
+            return False
+        new_token = authenticate(self.base_url, self.username, self.api_key)
+        if new_token:
+            self.token = new_token
+            logging.info("✅ JWT token refreshed")
+            return True
+        logging.error("❌ JWT token refresh failed — will retry next interval")
+        return False
+
+    async def _token_refresh_loop(self):
+        """Refresh JWT token every 25 minutes to stay ahead of expiry."""
+        REFRESH_INTERVAL = 23 * 3600  # token valid 24h; refresh once near end-of-day
+        while True:
+            try:
+                await asyncio.sleep(REFRESH_INTERVAL)
+                self._refresh_token()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logging.error(f"❌ Token refresh loop error: {e}")
+
     def _modify_order(self, order_id: int, stop_price: float, size: int) -> bool:
         """Move an existing order's stop price via Order/modify.
 
@@ -667,35 +705,61 @@ class RealTimeBot(TradingBot):
     # MAIN RUN LOOP
     # =========================================================
     async def run(self):
-        """Starts the bot."""
+        """Starts the bot with automatic reconnection on disconnect."""
         await self.fetch_historical_data()
         await self.fetch_contract_data()
 
         contract_details = self.find_contract(self.contract)
-        contract_symbol = None        
-        if contract_details and contract_details.get('name'):            
+        contract_symbol = None
+        if contract_details and contract_details.get('name'):
             full_contract_name = contract_details['name']
-            contract_symbol = parse_future_symbol(full_contract_name)            
-            logging.info(f"Identified Contract Symbol: {contract_symbol} from name: {full_contract_name}")            
-        else:                        
-            logging.error("⚠️ Could not find full contract name via API. ")
+            contract_symbol = parse_future_symbol(full_contract_name)
+            logging.info(f"Identified Contract Symbol: {contract_symbol} from name: {full_contract_name}")
+        else:
+            logging.error("⚠️ Could not find full contract name via API.")
             return
-        
-        # Initialize the strategy with the derived symbol
-        self.strategy.set_contract_symbol(contract_symbol)
 
+        self.strategy.set_contract_symbol(contract_symbol)
         self.strategy.load_model()
 
         # Reconcile any open position from before startup (e.g. bot restarted mid-trade)
         await self._reconcile_open_position()
 
-        print("🚀 Starting bot connection...")
-        # ⭐️ CRITICAL FIX: Create the watcher task so it runs on the loop
         self.closer_task = asyncio.create_task(self.bar_closer_watcher())
-        
-        # Now, await the main blocking client loop
-        await self.client.run()
-        
-        # If the client.run() ever exits (e.g., disconnect), cancel the watcher
-        if self.closer_task:
-            self.closer_task.cancel()
+        self._token_refresh_task = asyncio.create_task(self._token_refresh_loop())
+
+        print("🚀 Starting bot connection...")
+
+        retry_delay = 5
+        attempt = 0
+
+        try:
+            while True:
+                attempt += 1
+                if attempt > 1:
+                    logging.info(f"🔄 Reconnect attempt {attempt} — reconciling position state...")
+                    await self._reconcile_open_position()
+
+                self._rebuild_signalr_client()
+                logging.info(f"🔌 Connecting to market hub (attempt {attempt})...")
+
+                try:
+                    await self.client.run()
+                    logging.warning("⚠️ Market hub connection closed.")
+                    retry_delay = 5  # clean disconnect — reset backoff
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    logging.error(f"❌ Connection error: {e}")
+                    retry_delay = min(retry_delay * 2, 60)
+
+                logging.warning(f"🔄 Reconnecting in {retry_delay}s...")
+                await asyncio.sleep(retry_delay)
+
+        except asyncio.CancelledError:
+            logging.info("Bot connection cancelled — shutting down.")
+        finally:
+            if self.closer_task:
+                self.closer_task.cancel()
+            if self._token_refresh_task:
+                self._token_refresh_task.cancel()
