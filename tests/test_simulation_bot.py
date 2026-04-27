@@ -347,15 +347,16 @@ class TestProcessBarExitLogic:
 
     # ── Both stop and target hit same bar ────────────────────────────
 
-    def test_long_stop_wins_when_open_closer_to_low(self, sim_bot):
-        """Open near low → stop hit first."""
+    def test_long_tp_wins_when_wick_hits_even_if_open_near_stop(self, sim_bot):
+        """TP limit order fills the instant price touches it, even if open is near stop.
+        When the bar's high crosses the TP wick, the limit is assumed to fill first."""
         self._put_in_position(sim_bot, "LONG", entry=100, stop=95, target=110)
-        # open=96 (2 pts above stop=95, 14 pts below target=110)
+        # open=96 (near stop=95) but wick reaches 111 — TP limit fires at 110
         bar = self._make_bar(open_=96, high=111, low=94, close=105)
         run(sim_bot._process_bar(bar, 1, 10))
         trade = sim_bot.trades_log[-1]
-        assert trade["reason"] == "STOP_LOSS"
-        assert trade["exit"] == 95
+        assert trade["reason"] == "PROFIT_TARGET"
+        assert trade["exit"] == 110
 
     def test_long_target_wins_when_open_closer_to_high(self, sim_bot):
         """Open near high → target hit first, exits at profit_target."""
@@ -367,14 +368,15 @@ class TestProcessBarExitLogic:
         assert trade["reason"] == "PROFIT_TARGET"
         assert trade["exit"] == 110
 
-    def test_short_stop_wins_when_open_closer_to_high(self, sim_bot):
-        """SHORT: open near high → stop hit first."""
+    def test_short_tp_wins_when_wick_hits_even_if_open_near_stop(self, sim_bot):
+        """SHORT: TP limit fires when low wick crosses target, even if open is near stop."""
         self._put_in_position(sim_bot, "SHORT", entry=100, stop=105, target=90)
-        # open=104 (1 pt below stop=105, 14 pts above target=90)
+        # open=104 (near stop=105) but wick reaches 89 — TP limit fires at 90
         bar = self._make_bar(open_=104, high=106, low=89, close=95)
         run(sim_bot._process_bar(bar, 1, 10))
         trade = sim_bot.trades_log[-1]
-        assert trade["reason"] == "STOP_LOSS"
+        assert trade["reason"] == "PROFIT_TARGET"
+        assert trade["exit"] == 90
 
     def test_short_target_wins_when_open_closer_to_low(self, sim_bot):
         """SHORT: open near low → target hit first."""

@@ -404,10 +404,8 @@ class SimulationBot(TradingBot):
             # Skip exit check if we just entered this bar
             # ========================================
             if self.in_position and not self.just_entered_this_bar:
-                # Update MFE and check break-even with the most favorable intrabar price
                 favorable_price = high if self.position_type == 'LONG' else low
                 self._update_mfe(favorable_price)
-                self._check_and_set_breakeven(favorable_price)
 
                 # ── Gap-open check: if bar opens past stop/target, fill at open ──
                 exit_price, exit_reason = None, None
@@ -432,12 +430,16 @@ class SimulationBot(TradingBot):
                         close_target_hit = close >= self.profit_target
                         target_hit      = wick_target_hit or close_target_hit
                         if stop_hit and target_hit:
-                            # Both levels touched — assume the one closer to open happened first
-                            if abs(open_price - low) <= abs(open_price - high):
+                            # Both levels hit intrabar. TP is a pre-placed limit order that
+                            # fills the instant price touches it; stop can only fire after TP
+                            # misses. Prefer TP when the wick reached it; fall back to the
+                            # open-proximity heuristic only when the close crossed TP (no wick).
+                            if wick_target_hit:
+                                exit_price, exit_reason = self.profit_target, 'PROFIT_TARGET'
+                            elif abs(open_price - low) <= abs(open_price - high):
                                 exit_price, exit_reason = self.stop_loss,     'STOP_LOSS'
                             else:
-                                exit_price = self.profit_target if wick_target_hit else close
-                                exit_reason = 'PROFIT_TARGET'
+                                exit_price, exit_reason = close,              'PROFIT_TARGET'
                         elif stop_hit:
                             exit_price, exit_reason = self.stop_loss,     'STOP_LOSS'
                         elif target_hit:
@@ -449,11 +451,12 @@ class SimulationBot(TradingBot):
                         close_target_hit = close <= self.profit_target
                         target_hit      = wick_target_hit or close_target_hit
                         if stop_hit and target_hit:
-                            if abs(open_price - high) <= abs(open_price - low):
+                            if wick_target_hit:
+                                exit_price, exit_reason = self.profit_target, 'PROFIT_TARGET'
+                            elif abs(open_price - high) <= abs(open_price - low):
                                 exit_price, exit_reason = self.stop_loss,     'STOP_LOSS'
                             else:
-                                exit_price = self.profit_target if wick_target_hit else close
-                                exit_reason = 'PROFIT_TARGET'
+                                exit_price, exit_reason = close,              'PROFIT_TARGET'
                         elif stop_hit:
                             exit_price, exit_reason = self.stop_loss,     'STOP_LOSS'
                         elif target_hit:
@@ -504,6 +507,11 @@ class SimulationBot(TradingBot):
                         print(f"🎉 PROFIT TARGET REACHED: ${self.total_pnl_dollars:,.2f}")
                         print("="*50 + "\n")
                         return True
+                else:
+                    # No exit this bar — update breakeven for future bars only.
+                    # Must run after exit checks so the modified stop_loss cannot
+                    # interfere with the current bar's gap-open or intrabar logic.
+                    self._check_and_set_breakeven(favorable_price)
             
             # Reset the just_entered flag at end of bar processing
             self.just_entered_this_bar = False
