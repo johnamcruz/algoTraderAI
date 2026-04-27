@@ -69,7 +69,7 @@ class STTrendStrategyV1(BaseStrategy):
         self,
         model_path: str,
         contract_symbol: str,
-        min_risk_rr: float = 0.0,
+        min_risk_rr: float = 2.0,
     ):
         super().__init__(model_path, contract_symbol)
 

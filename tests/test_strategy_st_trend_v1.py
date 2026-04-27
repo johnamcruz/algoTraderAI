@@ -1946,11 +1946,11 @@ class TestConstructorMinRiskRR:
     leaving _min_risk_rr=0.0 and silently disabling the rr gate entirely.
     """
 
-    def test_default_is_zero(self):
+    def test_default_is_two(self):
         import logging
         logging.disable(logging.CRITICAL)
         s = STTrendStrategyV1(model_path="", contract_symbol="MNQ")
-        assert s._min_risk_rr == 0.0
+        assert s._min_risk_rr == 2.0
 
     def test_constructor_stores_min_risk_rr(self):
         import logging

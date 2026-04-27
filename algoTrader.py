@@ -208,8 +208,11 @@ def run_backtesting(config):
         print("="*60 + "\n")
 
     try:
-        # Create strategy
-        strategy_kwargs = {'min_risk_rr': config.get('min_risk_rr', 2.0)}
+        # Create strategy — only pass min_risk_rr when explicitly provided so each
+        # strategy's constructor default (e.g. vwap=4.0, others=0.0) is respected.
+        strategy_kwargs = {}
+        if 'min_risk_rr' in config:
+            strategy_kwargs['min_risk_rr'] = config['min_risk_rr']
         if config['strategy'] == '3min_pivot_reversal' or config['strategy'] == '5min_pivot_reversal':
             strategy_kwargs['pivot_lookback'] = config.get("pivot_lookback", 8)
         if config['strategy'] == 'cisd-ote':
@@ -286,8 +289,11 @@ def run_live_trading(config):
     logging.info(f"🎫 Token received. Creating strategy...")
     
     try:
-        # Create strategy
-        strategy_kwargs = {'min_risk_rr': config.get('min_risk_rr', 2.0)}
+        # Create strategy — only pass min_risk_rr when explicitly provided so each
+        # strategy's constructor default (e.g. vwap=4.0, others=0.0) is respected.
+        strategy_kwargs = {}
+        if 'min_risk_rr' in config:
+            strategy_kwargs['min_risk_rr'] = config['min_risk_rr']
         if config['strategy'] == '3min_pivot_reversal' or config['strategy'] == '5min_pivot_reversal':
             strategy_kwargs['pivot_lookback'] = config.get("pivot_lookback", 8)
         if config['strategy'] == 'cisd-ote':

@@ -7,6 +7,7 @@ Stop:   bar extreme (low/high) ± ATR × 0.1  (exact match with training labeler
 TP:     fixed 2R (matches the binary training label — "did price reach 2R within 96 bars?")
         predicted_rr is the risk head's max-excursion estimate; use as a gate (≥4.0),
         not as a TP multiplier. At conf≥0.70 + rr≥4.0: ~93% expected win rate.
+        Default min_risk_rr=4.0 is baked into the constructor; no CLI flag needed.
 
 Architecture identical to CISD+OTE v7 and SuperTrend v1:
   FFMBackbone(256-dim, 67 features × 96 bars) + VWAPProjection(8 features)
@@ -75,7 +76,7 @@ class VWAPReversionStrategyV1(BaseStrategy):
         self,
         model_path: str,
         contract_symbol: str,
-        min_risk_rr: float = 0.0,
+        min_risk_rr: float = 4.0,
     ):
         super().__init__(model_path, contract_symbol)
         self._instrument     = self._resolve_instrument(contract_symbol)
