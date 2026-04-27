@@ -234,51 +234,109 @@ class RealTimeBot(TradingBot):
             return contract_details['tickValue']
         return 0.50
 
-    async def _has_existing_position(self):
-        """
-        Check if there's an existing position by querying the broker API.
-        
-        Returns:
-            bool: True if position exists, False otherwise
+    def _search_open_positions(self) -> list:
+        """Call Position/searchOpen and return the positions list. Returns [] on any failure."""
+        try:
+            r = requests.post(
+                f"{self.base_url}/Position/searchOpen",
+                headers={'Authorization': f'Bearer {self.token}'},
+                json={"accountId": self.account},
+                timeout=10,
+            )
+            r.raise_for_status()
+            data = r.json()
+            if not data.get('success'):
+                logging.error(f"❌ Position/searchOpen error: {data.get('errorMessage')}")
+                return []
+            return data.get('positions', [])
+        except Exception as e:
+            logging.error(f"❌ Position/searchOpen exception: {e}")
+            return []
+
+    def _search_open_orders(self) -> list:
+        """Call Order/searchOpen and return the orders list. Returns [] on any failure."""
+        try:
+            r = requests.post(
+                f"{self.base_url}/Order/searchOpen",
+                headers={'Authorization': f'Bearer {self.token}'},
+                json={"accountId": self.account},
+                timeout=10,
+            )
+            r.raise_for_status()
+            data = r.json()
+            if not data.get('success'):
+                logging.error(f"❌ Order/searchOpen error: {data.get('errorMessage')}")
+                return []
+            return data.get('orders', [])
+        except Exception as e:
+            logging.error(f"❌ Order/searchOpen exception: {e}")
+            return []
+
+    async def _reconcile_open_position(self):
+        """On startup, restore in-memory position state from the broker.
+
+        If the bot restarted mid-trade, self.in_position is False but the
+        broker still holds the position. Without reconciliation, breakeven
+        and exit monitoring are blind for the rest of that trade.
         """
         try:
-            # Call broker API to get open positions
-            positions_url = f"{self.base_url}/Position/searchOpen"  # ✅ Correct endpoint
-            headers = {'Authorization': f'Bearer {self.token}'}
-            payload = {"accountId": self.account}
-            
-            response = requests.post(
-                positions_url, 
-                headers=headers, 
-                json=payload, 
-                timeout=10
-            )
-            response.raise_for_status()
-            
-            data = response.json()
-            
-            # Check if API call was successful
-            if not data.get('success', False):
-                error_msg = data.get('errorMessage', 'Unknown error')
-                logging.error(f"❌ Position check API error: {error_msg}")
-                return True  # Fail-safe
-            
-            positions = data.get('positions', [])
-            
-            # Check if any position matches our contract
-            for position in positions:
-                if position.get('contractId') == self.contract:
-                    size = position.get('size', 0)  # ✅ Using 'size' field
+            positions = self._search_open_positions()
+            for pos in positions:
+                if pos.get('contractId') != self.contract:
+                    continue
+                size = pos.get('size', 0)
+                if size == 0:
+                    continue
+
+                avg_price      = pos.get('averagePrice', 0.0)
+                position_type  = 'LONG' if size > 0 else 'SHORT'
+
+                self.in_position    = True
+                self.position_type  = position_type
+                self.entry_price    = avg_price
+                self.position_size  = abs(size)
+
+                # Fetch open orders once and extract both bracket ID and stop price
+                orders = self._search_open_orders()
+                for order in orders:
+                    if order.get('contractId') == self.contract and order.get('type') == 4:
+                        self.stop_bracket_order_id = order['id']
+                        self.stop_loss = order.get('stopPrice', avg_price)
+                        logging.info(f"📌 Stop bracket order ID: {self.stop_bracket_order_id} @ stopPrice={self.stop_loss}")
+                        break
+
+                logging.warning(
+                    f"⚠️ Startup reconciliation: found open {position_type} position "
+                    f"{abs(size)} contracts @ {avg_price} — restoring in-memory state. "
+                    f"stop_loss={self.stop_loss} bracket_id={self.stop_bracket_order_id}"
+                )
+                return
+
+            logging.info("✅ Startup reconciliation: no open position found — starting clean.")
+
+        except Exception as e:
+            logging.error(f"❌ Startup reconciliation failed: {e} — proceeding without position state.")
+
+    async def _has_existing_position(self):
+        """Check if there's an existing position for this contract via the broker API.
+
+        Returns True on any API failure (fail-safe: prevents duplicate orders).
+        """
+        try:
+            positions = self._search_open_positions()
+            if not positions and positions == []:
+                # Distinguish empty list (no positions) from failure (already logged)
+                pass
+            for pos in positions:
+                if pos.get('contractId') == self.contract:
+                    size = pos.get('size', 0)
                     if size != 0:
-                        logging.info(f"📍 Existing position found: {size} contracts @ {position.get('averagePrice', 0):.2f}")
+                        logging.info(f"📍 Existing position found: {size} contracts @ {pos.get('averagePrice', 0):.2f}")
                         return True
-            
             return False
-            
         except Exception as e:
             logging.error(f"❌ Error checking positions: {e}")
-            # Fail-safe: Assume position exists to prevent duplicate orders
-            return True
+            return True  # Fail-safe: assume position exists to prevent duplicate orders
 
     async def _close_and_print_bar(self):
         """Finalize current bar and run strategy."""
@@ -400,29 +458,14 @@ class RealTimeBot(TradingBot):
             return None
 
     def _fetch_stop_bracket_order_id(self):
-        """Search open orders and return the stop bracket order ID for our contract."""
-        try:
-            r = requests.post(
-                f"{self.base_url}/Order/searchOpen",
-                headers={'Authorization': f'Bearer {self.token}'},
-                json={"accountId": self.account},
-                timeout=10
-            )
-            r.raise_for_status()
-            data = r.json()
-            if not data.get('success'):
-                logging.error(f"❌ searchOpen failed: {data.get('errorMessage')}")
-                return None
-            for order in data.get('orders', []):
-                if order.get('contractId') == self.contract and order.get('type') == 4:
-                    oid = order['id']
-                    logging.info(f"📌 Stop bracket order ID: {oid} @ stopPrice={order.get('stopPrice')}")
-                    return oid
-            logging.warning("⚠️ No stop bracket order found after entry")
-            return None
-        except Exception as e:
-            logging.error(f"❌ Error in searchOpen: {e}")
-            return None
+        """Return the stop bracket order ID for our contract using _search_open_orders."""
+        for order in self._search_open_orders():
+            if order.get('contractId') == self.contract and order.get('type') == 4:
+                oid = order['id']
+                logging.info(f"📌 Stop bracket order ID: {oid} @ stopPrice={order.get('stopPrice')}")
+                return oid
+        logging.warning("⚠️ No stop bracket order found after entry")
+        return None
 
     def _modify_order(self, order_id: int, stop_price: float, size: int) -> bool:
         """Move an existing order's stop price via Order/modify.
@@ -642,6 +685,9 @@ class RealTimeBot(TradingBot):
         self.strategy.set_contract_symbol(contract_symbol)
 
         self.strategy.load_model()
+
+        # Reconcile any open position from before startup (e.g. bot restarted mid-trade)
+        await self._reconcile_open_position()
 
         print("🚀 Starting bot connection...")
         # ⭐️ CRITICAL FIX: Create the watcher task so it runs on the loop

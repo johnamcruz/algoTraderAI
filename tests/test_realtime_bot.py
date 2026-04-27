@@ -335,63 +335,88 @@ def _fail(msg="some error"):
     return _ok({"success": False, "errorCode": 1, "errorMessage": msg})
 
 
+# ── _search_open_positions / _search_open_orders (primitives) ─────────────────
+
+class TestSearchOpenPositions:
+    """_search_open_positions: wraps Position/searchOpen, returns list or []."""
+
+    def test_returns_positions_on_success(self, live_bot):
+        resp = _ok({"success": True, "positions": [{"contractId": "X", "size": 1}]})
+        with patch("bots.trading_bot.requests.post", return_value=resp):
+            result = live_bot._search_open_positions()
+        assert result == [{"contractId": "X", "size": 1}]
+
+    def test_returns_empty_on_api_failure(self, live_bot):
+        with patch("bots.trading_bot.requests.post", return_value=_fail()):
+            result = live_bot._search_open_positions()
+        assert result == []
+
+    def test_returns_empty_on_exception(self, live_bot):
+        with patch("bots.trading_bot.requests.post", side_effect=ConnectionError("timeout")):
+            result = live_bot._search_open_positions()
+        assert result == []
+
+
+class TestSearchOpenOrders:
+    """_search_open_orders: wraps Order/searchOpen, returns list or []."""
+
+    def test_returns_orders_on_success(self, live_bot):
+        with patch("bots.trading_bot.requests.post", return_value=_search_ok(stop_id=7001)):
+            result = live_bot._search_open_orders()
+        assert any(o["id"] == 7001 for o in result)
+
+    def test_returns_empty_on_api_failure(self, live_bot):
+        with patch("bots.trading_bot.requests.post", return_value=_fail()):
+            result = live_bot._search_open_orders()
+        assert result == []
+
+    def test_returns_empty_on_exception(self, live_bot):
+        with patch("bots.trading_bot.requests.post", side_effect=ConnectionError("timeout")):
+            result = live_bot._search_open_orders()
+        assert result == []
+
+
 # ── _fetch_stop_bracket_order_id ──────────────────────────────────────────────
 
 class TestFetchStopBracketOrderId:
-    """_fetch_stop_bracket_order_id: finds and returns the stop bracket order ID."""
+    """_fetch_stop_bracket_order_id: delegates to _search_open_orders."""
+
+    def _orders(self, orders):
+        return patch.object
 
     def test_returns_stop_id_when_found(self, live_bot):
-        with patch("bots.trading_bot.requests.post", return_value=_search_ok(stop_id=9001)):
+        orders = _search_ok(stop_id=9001, contract="CON.F.US.MNQ.Z25").json()["orders"]
+        with patch.object(live_bot, "_search_open_orders", return_value=orders):
             result = live_bot._fetch_stop_bracket_order_id()
         assert result == 9001
 
     def test_returns_none_when_no_stop_order(self, live_bot):
-        # Only a limit (take-profit) order, no stop
-        resp = _ok({
-            "success": True,
-            "orders": [
-                {"id": 9002, "contractId": "CON.F.US.MNQ.Z25", "type": 1,
-                 "side": 1, "stopPrice": None, "limitPrice": 110.0, "status": 1}
-            ]
-        })
-        with patch("bots.trading_bot.requests.post", return_value=resp):
+        orders = [{"id": 9002, "contractId": "CON.F.US.MNQ.Z25", "type": 1,
+                   "side": 1, "stopPrice": None, "limitPrice": 110.0, "status": 1}]
+        with patch.object(live_bot, "_search_open_orders", return_value=orders):
             result = live_bot._fetch_stop_bracket_order_id()
         assert result is None
 
-    def test_returns_none_on_api_error(self, live_bot):
-        with patch("bots.trading_bot.requests.post", return_value=_fail("searchOpen failed")):
-            result = live_bot._fetch_stop_bracket_order_id()
-        assert result is None
-
-    def test_returns_none_on_request_exception(self, live_bot):
-        with patch("bots.trading_bot.requests.post", side_effect=ConnectionError("timeout")):
+    def test_returns_none_when_search_fails(self, live_bot):
+        with patch.object(live_bot, "_search_open_orders", return_value=[]):
             result = live_bot._fetch_stop_bracket_order_id()
         assert result is None
 
     def test_ignores_stop_orders_from_other_contracts(self, live_bot):
-        # Stop order belongs to a different contract — should be filtered out
-        resp = _ok({
-            "success": True,
-            "orders": [
-                {"id": 9003, "contractId": "CON.F.US.MES.Z25", "type": 4,
-                 "side": 1, "stopPrice": 95.0, "limitPrice": None, "status": 1}
-            ]
-        })
-        with patch("bots.trading_bot.requests.post", return_value=resp):
+        orders = [{"id": 9003, "contractId": "CON.F.US.MES.Z25", "type": 4,
+                   "side": 1, "stopPrice": 95.0, "limitPrice": None, "status": 1}]
+        with patch.object(live_bot, "_search_open_orders", return_value=orders):
             result = live_bot._fetch_stop_bracket_order_id()
         assert result is None
 
     def test_returns_first_stop_when_multiple_present(self, live_bot):
-        resp = _ok({
-            "success": True,
-            "orders": [
-                {"id": 9010, "contractId": "CON.F.US.MNQ.Z25", "type": 4,
-                 "side": 1, "stopPrice": 95.0, "limitPrice": None, "status": 1},
-                {"id": 9011, "contractId": "CON.F.US.MNQ.Z25", "type": 4,
-                 "side": 1, "stopPrice": 94.0, "limitPrice": None, "status": 1},
-            ]
-        })
-        with patch("bots.trading_bot.requests.post", return_value=resp):
+        orders = [
+            {"id": 9010, "contractId": "CON.F.US.MNQ.Z25", "type": 4,
+             "side": 1, "stopPrice": 95.0, "limitPrice": None, "status": 1},
+            {"id": 9011, "contractId": "CON.F.US.MNQ.Z25", "type": 4,
+             "side": 1, "stopPrice": 94.0, "limitPrice": None, "status": 1},
+        ]
+        with patch.object(live_bot, "_search_open_orders", return_value=orders):
             result = live_bot._fetch_stop_bracket_order_id()
         assert result == 9010
 
@@ -617,3 +642,68 @@ class TestPlaceOrderSetsState:
                 profit_target=110.0, stop_ticks=-20, take_profit_ticks=40, size=1
             ))
         assert result is None
+
+
+# ── _reconcile_open_position ──────────────────────────────────────────────────
+
+def _position_ok(contract="CON.F.US.MNQ.Z25", size=2, avg_price=100.0):
+    return _ok({
+        "success": True,
+        "positions": [{"contractId": contract, "size": size, "averagePrice": avg_price}]
+    })
+
+
+def _no_position():
+    return _ok({"success": True, "positions": []})
+
+
+class TestReconcileOpenPosition:
+    """_reconcile_open_position: restores in-memory state from broker on startup."""
+
+    def _pos(self, contract="CON.F.US.MNQ.Z25", size=1, avg_price=100.0):
+        return [{"contractId": contract, "size": size, "averagePrice": avg_price}]
+
+    def _orders(self, stop_id=9001, contract="CON.F.US.MNQ.Z25", stop_price=95.0):
+        return [{"id": stop_id, "contractId": contract, "type": 4,
+                 "side": 1, "stopPrice": stop_price, "limitPrice": None, "status": 1}]
+
+    def test_no_position_starts_clean(self, live_bot):
+        with patch.object(live_bot, "_search_open_positions", return_value=[]):
+            run(live_bot._reconcile_open_position())
+        assert live_bot.in_position is False
+        assert live_bot.entry_price is None
+
+    def test_long_position_restores_state(self, live_bot):
+        with patch.object(live_bot, "_search_open_positions", return_value=self._pos(size=3, avg_price=18000.0)), \
+             patch.object(live_bot, "_search_open_orders", return_value=self._orders(stop_id=9001, stop_price=17990.0)):
+            run(live_bot._reconcile_open_position())
+        assert live_bot.in_position is True
+        assert live_bot.position_type == 'LONG'
+        assert live_bot.entry_price == 18000.0
+        assert live_bot.position_size == 3
+        assert live_bot.stop_loss == 17990.0
+        assert live_bot.stop_bracket_order_id == 9001
+
+    def test_short_position_restores_state(self, live_bot):
+        with patch.object(live_bot, "_search_open_positions", return_value=self._pos(size=-2, avg_price=18100.0)), \
+             patch.object(live_bot, "_search_open_orders", return_value=self._orders(stop_price=18110.0)):
+            run(live_bot._reconcile_open_position())
+        assert live_bot.in_position is True
+        assert live_bot.position_type == 'SHORT'
+        assert live_bot.position_size == 2
+
+    def test_different_contract_ignored(self, live_bot):
+        with patch.object(live_bot, "_search_open_positions",
+                          return_value=self._pos(contract="CON.F.US.MES.Z25")):
+            run(live_bot._reconcile_open_position())
+        assert live_bot.in_position is False
+
+    def test_positions_api_failure_does_not_crash(self, live_bot):
+        with patch.object(live_bot, "_search_open_positions", return_value=[]):
+            run(live_bot._reconcile_open_position())   # must not raise
+        assert live_bot.in_position is False
+
+    def test_exception_does_not_crash(self, live_bot):
+        with patch.object(live_bot, "_search_open_positions", side_effect=Exception("timeout")):
+            run(live_bot._reconcile_open_position())   # must not raise
+        assert live_bot.in_position is False
