@@ -234,8 +234,8 @@ class RealTimeBot(TradingBot):
             return contract_details['tickValue']
         return 0.50
 
-    def _search_open_positions(self) -> list:
-        """Call Position/searchOpen and return the positions list. Returns [] on any failure."""
+    def _search_open_positions(self):
+        """Call Position/searchOpen. Returns positions list on success, None on any failure."""
         try:
             r = requests.post(
                 f"{self.base_url}/Position/searchOpen",
@@ -247,14 +247,14 @@ class RealTimeBot(TradingBot):
             data = r.json()
             if not data.get('success'):
                 logging.error(f"❌ Position/searchOpen error: {data.get('errorMessage')}")
-                return []
+                return None
             return data.get('positions', [])
         except Exception as e:
             logging.error(f"❌ Position/searchOpen exception: {e}")
-            return []
+            return None
 
-    def _search_open_orders(self) -> list:
-        """Call Order/searchOpen and return the orders list. Returns [] on any failure."""
+    def _search_open_orders(self):
+        """Call Order/searchOpen. Returns orders list on success, None on any failure."""
         try:
             r = requests.post(
                 f"{self.base_url}/Order/searchOpen",
@@ -266,11 +266,11 @@ class RealTimeBot(TradingBot):
             data = r.json()
             if not data.get('success'):
                 logging.error(f"❌ Order/searchOpen error: {data.get('errorMessage')}")
-                return []
+                return None
             return data.get('orders', [])
         except Exception as e:
             logging.error(f"❌ Order/searchOpen exception: {e}")
-            return []
+            return None
 
     async def _reconcile_open_position(self):
         """On startup, restore in-memory position state from the broker.
@@ -281,6 +281,10 @@ class RealTimeBot(TradingBot):
         """
         try:
             positions = self._search_open_positions()
+            if positions is None:
+                logging.warning("⚠️ Startup reconciliation: Position/searchOpen failed — proceeding without position state.")
+                return
+
             for pos in positions:
                 if pos.get('contractId') != self.contract:
                     continue
@@ -297,7 +301,7 @@ class RealTimeBot(TradingBot):
                 self.position_size  = abs(size)
 
                 # Fetch open orders once and extract both bracket ID and stop price
-                orders = self._search_open_orders()
+                orders = self._search_open_orders() or []
                 for order in orders:
                     if order.get('contractId') == self.contract and order.get('type') == 4:
                         self.stop_bracket_order_id = order['id']
@@ -322,21 +326,17 @@ class RealTimeBot(TradingBot):
 
         Returns True on any API failure (fail-safe: prevents duplicate orders).
         """
-        try:
-            positions = self._search_open_positions()
-            if not positions and positions == []:
-                # Distinguish empty list (no positions) from failure (already logged)
-                pass
-            for pos in positions:
-                if pos.get('contractId') == self.contract:
-                    size = pos.get('size', 0)
-                    if size != 0:
-                        logging.info(f"📍 Existing position found: {size} contracts @ {pos.get('averagePrice', 0):.2f}")
-                        return True
-            return False
-        except Exception as e:
-            logging.error(f"❌ Error checking positions: {e}")
-            return True  # Fail-safe: assume position exists to prevent duplicate orders
+        positions = self._search_open_positions()
+        if positions is None:
+            logging.error("❌ Position check failed — assuming position exists to prevent duplicate order")
+            return True  # Fail-safe
+        for pos in positions:
+            if pos.get('contractId') == self.contract:
+                size = pos.get('size', 0)
+                if size != 0:
+                    logging.info(f"📍 Existing position found: {size} contracts @ {pos.get('averagePrice', 0):.2f}")
+                    return True
+        return False
 
     async def _close_and_print_bar(self):
         """Finalize current bar and run strategy."""
@@ -459,7 +459,7 @@ class RealTimeBot(TradingBot):
 
     def _fetch_stop_bracket_order_id(self):
         """Return the stop bracket order ID for our contract using _search_open_orders."""
-        for order in self._search_open_orders():
+        for order in (self._search_open_orders() or []):
             if order.get('contractId') == self.contract and order.get('type') == 4:
                 oid = order['id']
                 logging.info(f"📌 Stop bracket order ID: {oid} @ stopPrice={order.get('stopPrice')}")

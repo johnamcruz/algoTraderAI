@@ -346,34 +346,34 @@ class TestSearchOpenPositions:
             result = live_bot._search_open_positions()
         assert result == [{"contractId": "X", "size": 1}]
 
-    def test_returns_empty_on_api_failure(self, live_bot):
+    def test_returns_none_on_api_failure(self, live_bot):
         with patch("bots.trading_bot.requests.post", return_value=_fail()):
             result = live_bot._search_open_positions()
-        assert result == []
+        assert result is None
 
-    def test_returns_empty_on_exception(self, live_bot):
+    def test_returns_none_on_exception(self, live_bot):
         with patch("bots.trading_bot.requests.post", side_effect=ConnectionError("timeout")):
             result = live_bot._search_open_positions()
-        assert result == []
+        assert result is None
 
 
 class TestSearchOpenOrders:
-    """_search_open_orders: wraps Order/searchOpen, returns list or []."""
+    """_search_open_orders: wraps Order/searchOpen, returns list or None on failure."""
 
     def test_returns_orders_on_success(self, live_bot):
         with patch("bots.trading_bot.requests.post", return_value=_search_ok(stop_id=7001)):
             result = live_bot._search_open_orders()
         assert any(o["id"] == 7001 for o in result)
 
-    def test_returns_empty_on_api_failure(self, live_bot):
+    def test_returns_none_on_api_failure(self, live_bot):
         with patch("bots.trading_bot.requests.post", return_value=_fail()):
             result = live_bot._search_open_orders()
-        assert result == []
+        assert result is None
 
-    def test_returns_empty_on_exception(self, live_bot):
+    def test_returns_none_on_exception(self, live_bot):
         with patch("bots.trading_bot.requests.post", side_effect=ConnectionError("timeout")):
             result = live_bot._search_open_orders()
-        assert result == []
+        assert result is None
 
 
 # ── _fetch_stop_bracket_order_id ──────────────────────────────────────────────
@@ -425,6 +425,35 @@ class TestFetchStopBracketOrderId:
 
 def _modify_ok():
     return _ok({"success": True, "errorCode": 0, "errorMessage": None})
+
+
+# ── _has_existing_position ────────────────────────────────────────────────────
+
+class TestHasExistingPosition:
+    """_has_existing_position: fail-safe True on API failure, False when no position."""
+
+    def test_returns_false_when_no_position(self, live_bot):
+        with patch.object(live_bot, "_search_open_positions", return_value=[]):
+            result = run(live_bot._has_existing_position())
+        assert result is False
+
+    def test_returns_true_when_position_found(self, live_bot):
+        positions = [{"contractId": "CON.F.US.MNQ.Z25", "size": 2, "averagePrice": 100.0}]
+        with patch.object(live_bot, "_search_open_positions", return_value=positions):
+            result = run(live_bot._has_existing_position())
+        assert result is True
+
+    def test_returns_true_on_api_failure_failsafe(self, live_bot):
+        # API failure → None → must return True to prevent duplicate order
+        with patch.object(live_bot, "_search_open_positions", return_value=None):
+            result = run(live_bot._has_existing_position())
+        assert result is True
+
+    def test_ignores_different_contract(self, live_bot):
+        positions = [{"contractId": "CON.F.US.MES.Z25", "size": 1, "averagePrice": 5000.0}]
+        with patch.object(live_bot, "_search_open_positions", return_value=positions):
+            result = run(live_bot._has_existing_position())
+        assert result is False
 
 
 # ── _modify_order ─────────────────────────────────────────────────────────────
