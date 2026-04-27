@@ -4,8 +4,9 @@ VWAP Reversion Strategy v1.1 — FFM Hybrid Transformer
 
 Signal: 5-min bar closes >= 2.0 SDs from daily VWAP + reversal candle
 Stop:   bar extreme (low/high) ± ATR × 0.1  (exact match with training labeler)
-TP:     predicted_rr < 2.0  → skip
-        predicted_rr >= 2.0 → int(rr) × stop_pts  (same as CISD+OTE v7 / SuperTrend)
+TP:     fixed 2R (matches the binary training label — "did price reach 2R within 96 bars?")
+        predicted_rr is the risk head's max-excursion estimate; use as a gate (≥4.0),
+        not as a TP multiplier. At conf≥0.70 + rr≥4.0: ~93% expected win rate.
 
 Architecture identical to CISD+OTE v7 and SuperTrend v1:
   FFMBackbone(256-dim, 67 features × 96 bars) + VWAPProjection(8 features)
@@ -500,16 +501,14 @@ class VWAPReversionStrategyV1(BaseStrategy):
         stop_pts = self._signal_sl_dist
         raw_rr   = self._latest_risk_rr
 
-        if raw_rr >= 2.0:
-            rr = int(raw_rr)
-        else:
+        if raw_rr < 2.0:
             return None, None
 
-        target_pts = stop_pts * rr
+        target_pts = 2.0 * stop_pts
         logging.info(
             f"  VWAP stop/target | dir={direction} entry={entry_price:.2f} "
             f"stop={stop_pts:.2f}pts target={target_pts:.2f}pts "
-            f"(predicted_rr={raw_rr:.2f} → {rr}R)"
+            f"(predicted_rr={raw_rr:.2f} → 2R fixed)"
         )
         return stop_pts, target_pts
 
