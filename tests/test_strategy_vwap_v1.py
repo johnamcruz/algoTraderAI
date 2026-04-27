@@ -461,12 +461,11 @@ class TestSignalStop:
 # ── 11. Stop/target tiers (get_stop_target_pts) ───────────────────────────────
 
 class TestStopTargetPts:
-    """TP tiers: <2R skip, 2–4R → 2R, ≥4R → max(vwap_dist, int(rr)×R)."""
+    """TP: predicted_rr < 2.0 → skip; >= 2.0 → int(rr) × stop_pts (same as CISD v7)."""
 
-    def _setup(self, s, sl_dist=5.0, rr=2.5, signal_vwap=100.0):
+    def _setup(self, s, sl_dist=5.0, rr=2.5):
         s._signal_sl_dist = sl_dist
         s._latest_risk_rr = rr
-        s._signal_vwap    = signal_vwap
 
     def test_zero_sl_dist_returns_none(self, vwap):
         vwap._signal_sl_dist = 0.0
@@ -482,36 +481,37 @@ class TestStopTargetPts:
         self._setup(vwap, sl_dist=5.0, rr=2.0)
         stop, target = vwap.get_stop_target_pts(None, 'LONG', 100.0)
         assert stop   == pytest.approx(5.0)
-        assert target == pytest.approx(10.0)   # int(2.0) × 5 = 2 × 5
+        assert target == pytest.approx(10.0)   # int(2) × 5
 
-    def test_rr_2_5_floors_to_2r(self, vwap):
-        """int(2.5) = 2 → 2R."""
-        self._setup(vwap, sl_dist=4.0, rr=2.5)
+    def test_rr_3_7_truncates_to_3r(self, vwap):
+        """int(3.7) = 3, not 4."""
+        self._setup(vwap, sl_dist=4.0, rr=3.7)
         stop, target = vwap.get_stop_target_pts(None, 'LONG', 100.0)
-        assert target == pytest.approx(4.0 * 2)
-
-    def test_rr_3_7_floors_to_3r(self, vwap):
-        """int(3.7) = 3 → 3R."""
-        self._setup(vwap, sl_dist=5.0, rr=3.7)
-        stop, target = vwap.get_stop_target_pts(None, 'LONG', 100.0)
-        assert target == pytest.approx(5.0 * 3)
+        assert target == pytest.approx(4.0 * 3)
 
     def test_rr_4_gives_4r(self, vwap):
         self._setup(vwap, sl_dist=5.0, rr=4.0)
         stop, target = vwap.get_stop_target_pts(None, 'LONG', 100.0)
         assert target == pytest.approx(5.0 * 4)
 
-    def test_rr_6_7_floors_to_6r(self, vwap):
-        """int(6.7) = 6 → 6R."""
-        self._setup(vwap, sl_dist=5.0, rr=6.7)
+    def test_rr_11_gives_11r(self, vwap):
+        """Avg predicted_rr ≈ 11 → target = 11 × stop."""
+        self._setup(vwap, sl_dist=5.0, rr=11.3)
         stop, target = vwap.get_stop_target_pts(None, 'LONG', 100.0)
-        assert target == pytest.approx(5.0 * 6)
+        assert target == pytest.approx(5.0 * 11)   # int(11.3) = 11
 
     def test_stop_passthrough(self, vwap):
-        """stop_pts always equals _signal_sl_dist regardless of TP tier."""
+        """stop_pts always equals _signal_sl_dist."""
         self._setup(vwap, sl_dist=7.5, rr=3.0)
         stop, _ = vwap.get_stop_target_pts(None, 'SHORT', 100.0)
         assert stop == pytest.approx(7.5)
+
+    def test_entry_price_not_used_in_target(self, vwap):
+        """Target is purely stop × rr — entry_price has no effect."""
+        self._setup(vwap, sl_dist=5.0, rr=4.0)
+        _, t1 = vwap.get_stop_target_pts(None, 'LONG', 80.0)
+        _, t2 = vwap.get_stop_target_pts(None, 'LONG', 120.0)
+        assert t1 == pytest.approx(t2)
 
 
 # ── 12. Entry gate (should_enter_trade) ───────────────────────────────────────

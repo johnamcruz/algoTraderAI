@@ -107,12 +107,14 @@ SYMBOL_CONFIG = {
 DEFAULT_MODEL         = "models/cisd_ote_hybrid_v5_1.onnx"
 DEFAULT_MODEL_V7      = "models/cisd_ote_hybrid_v7.onnx"
 DEFAULT_MODEL_ST      = "models/st_trend_v1.onnx"
+DEFAULT_MODEL_VWAP    = "models/vwap_v1.onnx"
 
 # Maps strategy name → default model when --model is not explicitly overridden
 STRATEGY_DEFAULT_MODEL = {
     "cisd-ote":   DEFAULT_MODEL,
     "cisd-ote7":  DEFAULT_MODEL_V7,
     "supertrend": DEFAULT_MODEL_ST,
+    "vwap":       DEFAULT_MODEL_VWAP,
 }
 DEFAULT_SYMBOL        = "MNQ"
 DEFAULT_ENTRY_CONF    = 0.80
@@ -257,7 +259,7 @@ def main():
                         choices=["MNQ", "MES", "MGC"],
                         help=f"Trading symbol (default: {DEFAULT_SYMBOL})")
     parser.add_argument("--strategy",   type=str,  default="cisd-ote7",
-                        choices=["cisd-ote", "cisd-ote7", "supertrend"],
+                        choices=["cisd-ote", "cisd-ote7", "supertrend", "vwap"],
                         help="Strategy to backtest (default: cisd-ote7)")
     parser.add_argument("--model",      type=str,  default=DEFAULT_MODEL,
                         help=f"ONNX model path (default: {DEFAULT_MODEL})")

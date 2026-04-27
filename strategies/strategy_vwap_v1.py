@@ -5,7 +5,7 @@ VWAP Reversion Strategy v1.1 — FFM Hybrid Transformer
 Signal: 5-min bar closes >= 2.0 SDs from daily VWAP + reversal candle
 Stop:   bar extreme (low/high) ± ATR × 0.1  (exact match with training labeler)
 TP:     predicted_rr < 2.0  → skip
-        rr >= 2.0            → int(rr) × stop_pts  (same tier-snap as CISD v7 / SuperTrend)
+        predicted_rr >= 2.0 → int(rr) × stop_pts  (same as CISD+OTE v7 / SuperTrend)
 
 Architecture identical to CISD+OTE v7 and SuperTrend v1:
   FFMBackbone(256-dim, 67 features × 96 bars) + VWAPProjection(8 features)
@@ -129,7 +129,7 @@ class VWAPReversionStrategyV1(BaseStrategy):
         logging.info(f"  seq_len=96 | FFM features=67 | VWAP features=8")
         logging.info(f"  Trigger: |dev_sd| >= {VWAP_DEV_THRESH} SDs + reversal candle")
         logging.info(f"  SL: bar_extreme ± {SL_ATR_MULT}×ATR | Session: {SESSION_START}h–{SESSION_END}h ET")
-        logging.info(f"  TP: <2R skip | ≥2R → int(rr)×R  (same tier-snap as CISD v7 / ST)")
+        logging.info(f"  TP: <2R skip | 2–4R fixed 2R | ≥4R → VWAP distance (mean-reversion anchor)")
         logging.info(f"  Recommended threshold: 0.70")
         if min_risk_rr > 0.0:
             logging.info(f"  RR gate: block when predicted_rr < {min_risk_rr}")
@@ -494,14 +494,6 @@ class VWAPReversionStrategyV1(BaseStrategy):
         direction: str,
         entry_price: float,
     ) -> Tuple[Optional[float], Optional[float]]:
-        """
-        Stop: exact match with training labeler:
-          LONG:  close - low  + 0.1×ATR
-          SHORT: high  - close + 0.1×ATR
-
-        Target: int(predicted_rr) × stop_pts — skips if predicted_rr < 2.0.
-        Bot sizes contracts as floor(risk_amount / (stop_pts × point_value)).
-        """
         if self._signal_sl_dist <= 0:
             return None, None
 
@@ -517,7 +509,7 @@ class VWAPReversionStrategyV1(BaseStrategy):
         logging.info(
             f"  VWAP stop/target | dir={direction} entry={entry_price:.2f} "
             f"stop={stop_pts:.2f}pts target={target_pts:.2f}pts "
-            f"(predicted_rr={raw_rr:.2f} → tier={rr}R)"
+            f"(predicted_rr={raw_rr:.2f} → {rr}R)"
         )
         return stop_pts, target_pts
 
