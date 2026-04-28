@@ -10,33 +10,28 @@ prompt() {
 echo "AlgoTraderAI Setup"
 echo "=================="
 
-# Copy templates into configs/ (gitignored, safe for credentials)
-mkdir -p "$APP_DIR/configs"
-for cfg in combine-mes practice-mnq practice-mes; do
-    cp "$APP_DIR/configs.example/$cfg.yaml" "$APP_DIR/configs/$cfg.yaml"
-done
+mkdir -p "$APP_DIR/configs" "$APP_DIR/logs"
 
-# Credentials (shared across all bots)
+# Let the user pick which template to start from
+TEMPLATE=$(osascript -e 'button returned of (display dialog "Which strategy do you want to run?" buttons {"MES (CISD-OTE v7)", "MNQ (SuperTrend)", "MES (VWAP)"} default button "MES (CISD-OTE v7)")')
+
+case "$TEMPLATE" in
+    "MES (CISD-OTE v7)") SRC="combine-mes" ;;
+    "MNQ (SuperTrend)")  SRC="practice-mnq" ;;
+    "MES (VWAP)")        SRC="practice-mes" ;;
+esac
+
+cp "$APP_DIR/configs.example/$SRC.yaml" "$APP_DIR/configs/bot.yaml"
+
+# Credentials
 USERNAME=$(prompt "Enter your TopstepX username:" "")
 APIKEY=$(prompt "Enter your TopstepX API key:" "")
+ACCOUNT=$(prompt "Enter your TopstepX account ID:" "")
 
-# Accounts
-COMBINE_ACCOUNT=$(prompt "Enter your COMBINE account ID:" "")
-PRACTICE_ACCOUNT=$(prompt "Enter your PRACTICE account ID:" "")
-
-# Write credentials into combine config
-FILE="$APP_DIR/configs/combine-mes.yaml"
-sed -i '' "s/^account:.*/account:    \"$COMBINE_ACCOUNT\"/" "$FILE"
-sed -i '' "s/^username:.*/username:   \"$USERNAME\"/"       "$FILE"
-sed -i '' "s/^apikey:.*/apikey:     \"$APIKEY\"/"           "$FILE"
-
-# Write credentials into practice configs
-for cfg in practice-mnq practice-mes; do
-    FILE="$APP_DIR/configs/$cfg.yaml"
-    sed -i '' "s/^account:.*/account:    \"$PRACTICE_ACCOUNT\"/" "$FILE"
-    sed -i '' "s/^username:.*/username:   \"$USERNAME\"/"        "$FILE"
-    sed -i '' "s/^apikey:.*/apikey:     \"$APIKEY\"/"            "$FILE"
-done
+FILE="$APP_DIR/configs/bot.yaml"
+sed -i '' "s/^account:.*/account:    \"$ACCOUNT\"/"  "$FILE"
+sed -i '' "s/^username:.*/username:   \"$USERNAME\"/" "$FILE"
+sed -i '' "s/^apikey:.*/apikey:     \"$APIKEY\"/"    "$FILE"
 
 # Check Docker is installed
 if ! command -v docker &>/dev/null; then
@@ -49,21 +44,7 @@ cd "$APP_DIR"
 echo "Pulling latest AlgoTraderAI image..."
 docker compose pull
 
-echo ""
-CHOICE=$(osascript -e 'button returned of (display dialog "Which bots do you want to run?" buttons {"All 3", "Combine only", "Cancel"} default button "All 3")')
+docker compose up -d
 
-case "$CHOICE" in
-    "All 3")
-        docker compose up -d
-        ;;
-    "Combine only")
-        docker compose up -d combine-mes
-        ;;
-    *)
-        echo "Cancelled."
-        exit 0
-        ;;
-esac
-
-osascript -e 'display dialog "Bots are running! Use Docker Desktop to monitor them." buttons {"OK"} default button "OK"'
+osascript -e 'display dialog "Bot is running! Use Docker Desktop to monitor it." buttons {"OK"} default button "OK"'
 echo "Done. Logs are in: $APP_DIR/logs/"

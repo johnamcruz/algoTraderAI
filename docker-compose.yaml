@@ -1,30 +1,23 @@
 version: "3.8"
 
+# ── AlgoTraderAI — Live Trading Bot ──────────────────────────────────────────
+#
+# Quick start:
+#   1. Copy a template:  cp configs.example/practice-mes.yaml configs/bot.yaml
+#   2. Fill in your credentials (account, username, apikey) in configs/bot.yaml
+#   3. Run:              docker compose up -d
+#
+# Multiple bots: duplicate the service block below, give each a unique name
+# and point its command at a different config file.
+# ─────────────────────────────────────────────────────────────────────────────
+
 services:
 
-  combine-mes:
+  algo-bot:
     image: johnamcruz/algotraderai:latest
-    container_name: algo-combine-mes
+    container_name: algo-bot
     volumes:
       - ./logs:/app/logs
       - ./configs:/app/configs:ro
-    command: --config /app/configs/combine-mes.yaml
-    restart: unless-stopped
-
-  practice-mnq:
-    image: johnamcruz/algotraderai:latest
-    container_name: algo-practice-mnq
-    volumes:
-      - ./logs:/app/logs
-      - ./configs:/app/configs:ro
-    command: --config /app/configs/practice-mnq.yaml
-    restart: unless-stopped
-
-  practice-mes:
-    image: johnamcruz/algotraderai:latest
-    container_name: algo-practice-mes
-    volumes:
-      - ./logs:/app/logs
-      - ./configs:/app/configs:ro
-    command: --config /app/configs/practice-mes.yaml
+    command: --config /app/configs/bot.yaml
     restart: unless-stopped
