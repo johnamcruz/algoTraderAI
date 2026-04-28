@@ -6,7 +6,6 @@ Creates strategy instances based on strategy name.
 """
 
 from strategies.strategy_base import BaseStrategy
-from strategies.strategy_cisd_ote import CISDOTEStrategy
 
 def _load_v7():
     from strategies.strategy_cisd_ote_v7 import CISDOTEStrategyV7
@@ -27,7 +26,6 @@ class StrategyFactory:
 
     # Registry of available strategies
     STRATEGIES = {
-        'cisd-ote':    CISDOTEStrategy,
         'cisd-ote7':   _load_v7,            # lazy: futures_foundation only required when selected
         'supertrend':  _load_st_trend_v1,   # lazy: SuperTrend FFM hybrid v1
         'vwap':        _load_vwap_v1,        # lazy: VWAP Reversion FFM hybrid v1

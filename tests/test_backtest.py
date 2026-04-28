@@ -20,10 +20,8 @@ from backtest import (
     DEFAULT_PROFIT_TARGET,
     DEFAULT_MIN_STOP_ATR,
     DEFAULT_MIN_STOP_PTS,
-    DEFAULT_MIN_ENTRY_DISTANCE,
     DEFAULT_MIN_RISK_RR,
     DEFAULT_HIGH_CONF_MULT,
-    DEFAULT_MODEL,
     DEFAULT_MODEL_V7,
     STRATEGY_DEFAULT_MODEL,
     DEFAULT_SYMBOL,
@@ -39,7 +37,7 @@ def _default_args(**overrides):
     base = dict(
         symbol=DEFAULT_SYMBOL,
         strategy='cisd-ote7',
-        model=DEFAULT_MODEL,
+        model=DEFAULT_MODEL_V7,
         entry_conf=DEFAULT_ENTRY_CONF,
         risk_amount=DEFAULT_RISK_AMOUNT,
         max_contracts=DEFAULT_MAX_CONTRACTS,
@@ -48,8 +46,6 @@ def _default_args(**overrides):
         profit_target=DEFAULT_PROFIT_TARGET,
         min_stop_atr=DEFAULT_MIN_STOP_ATR,
         min_stop_pts=DEFAULT_MIN_STOP_PTS,
-        min_entry_distance=DEFAULT_MIN_ENTRY_DISTANCE,
-        min_vty_regime=0.75,
         min_risk_rr=DEFAULT_MIN_RISK_RR,
         no_breakeven=False,
         no_target=False,
@@ -173,11 +169,6 @@ class TestBuildCommand:
         idx = cmd.index("--profit_target")
         assert cmd[idx + 1] == "6000.0"
 
-    def test_min_entry_distance_passed(self):
-        cmd = build_command("bear_2022", _default_args(min_entry_distance=3.0))
-        idx = cmd.index("--min_entry_distance")
-        assert cmd[idx + 1] == "3.0"
-
     def test_quiet_flag_present(self):
         cmd = build_command("bear_2022", _default_args())
         assert "--quiet" in cmd
@@ -266,28 +257,21 @@ class TestStrategyDefaultModel:
     def test_cisd_ote7_maps_to_v7_model(self):
         assert STRATEGY_DEFAULT_MODEL["cisd-ote7"] == DEFAULT_MODEL_V7
 
-    def test_cisd_ote_maps_to_v5_model(self):
-        assert STRATEGY_DEFAULT_MODEL["cisd-ote"] == DEFAULT_MODEL
+    def test_supertrend_maps_to_st_model(self):
+        assert "st_trend" in STRATEGY_DEFAULT_MODEL["supertrend"]
+
+    def test_vwap_maps_to_vwap_model(self):
+        assert "vwap" in STRATEGY_DEFAULT_MODEL["vwap"]
 
     def test_v7_model_filename_contains_v7(self):
         assert "v7" in DEFAULT_MODEL_V7
 
-    def test_v5_model_filename_contains_v5(self):
-        assert "v5" in DEFAULT_MODEL
-
     def test_cisd_ote7_build_uses_v7_model(self):
-        # simulate what main() does: override model when strategy is cisd-ote7
         args = _default_args(strategy="cisd-ote7",
                              model=STRATEGY_DEFAULT_MODEL["cisd-ote7"])
         cmd = build_command("bear_2022", args)
         idx = cmd.index("--model")
         assert "v7" in cmd[idx + 1]
-
-    def test_cisd_ote_build_uses_v5_model(self):
-        args = _default_args(strategy="cisd-ote", model=DEFAULT_MODEL)
-        cmd = build_command("bear_2022", args)
-        idx = cmd.index("--model")
-        assert "v5" in cmd[idx + 1]
 
 
 # ── Defaults sanity ───────────────────────────────────────────────────────────
@@ -311,5 +295,5 @@ class TestDefaults:
     def test_default_symbol_is_mnq(self):
         assert DEFAULT_SYMBOL == "MNQ"
 
-    def test_default_min_entry_distance(self):
-        assert DEFAULT_MIN_ENTRY_DISTANCE == 3.0
+    def test_default_min_risk_rr(self):
+        assert DEFAULT_MIN_RISK_RR == 2.0

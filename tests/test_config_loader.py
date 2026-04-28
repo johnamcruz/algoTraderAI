@@ -92,7 +92,7 @@ class TestValidateConfig:
             "contract": "MNQ",
             "username": "user",
             "apikey": "key",
-            "strategy": "cisd_ote",
+            "strategy": "cisd-ote7",
             "model": "model.onnx",
             "scaler": "scaler.pkl",
             "market_hub": "https://hub",

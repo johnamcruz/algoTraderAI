@@ -9,7 +9,7 @@ Usage:
     python3 backtest.py --parallel             # run all in parallel (default: sequential)
     python3 backtest.py --symbol MES           # override symbol (MNQ default)
     python3 backtest.py --entry_conf 0.90      # override entry confidence
-    python3 backtest.py --model models/cisd_ote_hybrid_v5_5.onnx  # override model
+    python3 backtest.py --model models/cisd_ote_hybrid_v7.onnx  # override model
 """
 
 import argparse
@@ -104,14 +104,12 @@ SYMBOL_CONFIG = {
     },
 }
 
-DEFAULT_MODEL         = "models/cisd_ote_hybrid_v5_1.onnx"
 DEFAULT_MODEL_V7      = "models/cisd_ote_hybrid_v7.onnx"
 DEFAULT_MODEL_ST      = "models/st_trend_v1.onnx"
 DEFAULT_MODEL_VWAP    = "models/vwap_v1.onnx"
 
 # Maps strategy name → default model when --model is not explicitly overridden
 STRATEGY_DEFAULT_MODEL = {
-    "cisd-ote":   DEFAULT_MODEL,
     "cisd-ote7":  DEFAULT_MODEL_V7,
     "supertrend": DEFAULT_MODEL_ST,
     "vwap":       DEFAULT_MODEL_VWAP,
@@ -123,11 +121,9 @@ DEFAULT_HIGH_CONF_MULT = 2.0
 DEFAULT_MAX_CONTRACTS = 5
 DEFAULT_MAX_LOSS      = 3000.0
 DEFAULT_PROFIT_TARGET = 12000.0
-DEFAULT_MIN_STOP_ATR      = 0.5
-DEFAULT_MIN_STOP_PTS      = 1.0
-DEFAULT_MIN_ENTRY_DISTANCE = 3.0
-DEFAULT_MIN_VTY_REGIME    = 0.75
-DEFAULT_MIN_RISK_RR       = 2.0
+DEFAULT_MIN_STOP_ATR  = 0.5
+DEFAULT_MIN_STOP_PTS  = 1.0
+DEFAULT_MIN_RISK_RR   = 2.0
 
 
 # ── Build command ─────────────────────────────────────────────────────────────
@@ -153,8 +149,6 @@ def build_command(scenario_key: str, args) -> list[str]:
         "--max_loss",             str(args.max_loss),
         "--min_stop_atr",         str(args.min_stop_atr),
         "--min_stop_pts",         str(args.min_stop_pts),
-        "--min_entry_distance",   str(args.min_entry_distance),
-        "--min_vty_regime",       str(args.min_vty_regime),
         "--min_risk_rr",          str(args.min_risk_rr),
         "--quiet",
     ]
@@ -217,7 +211,7 @@ def print_results(results: list[dict], args) -> None:
     print(f"  BACKTEST RESULTS — {args.symbol}  |  strategy: {args.strategy}  |  model: {os.path.basename(args.model)}")
     print(f"  entry_conf={args.entry_conf}  risk=${args.risk_amount}  max_contracts={args.max_contracts}")
     print(f"  max_loss=${args.max_loss}  profit_target={'none' if args.no_target else f'${args.profit_target}'}  min_stop_atr={args.min_stop_atr}")
-    print(f"  min_vty_regime={args.min_vty_regime}  min_risk_rr={args.min_risk_rr}  breakeven={'OFF' if args.no_breakeven else 'ON'}")
+    print(f"  min_risk_rr={args.min_risk_rr}  breakeven={'OFF' if args.no_breakeven else 'ON'}")
     print("═" * width)
 
     for r in results:
@@ -262,10 +256,10 @@ def main():
                         choices=["MNQ", "MES", "MGC"],
                         help=f"Trading symbol (default: {DEFAULT_SYMBOL})")
     parser.add_argument("--strategy",   type=str,  default="cisd-ote7",
-                        choices=["cisd-ote", "cisd-ote7", "supertrend", "vwap"],
+                        choices=["cisd-ote7", "supertrend", "vwap"],
                         help="Strategy to backtest (default: cisd-ote7)")
-    parser.add_argument("--model",      type=str,  default=DEFAULT_MODEL,
-                        help=f"ONNX model path (default: {DEFAULT_MODEL})")
+    parser.add_argument("--model",      type=str,  default=DEFAULT_MODEL_V7,
+                        help=f"ONNX model path (default: {DEFAULT_MODEL_V7})")
     parser.add_argument("--entry_conf", type=float, default=DEFAULT_ENTRY_CONF,
                         help=f"Entry confidence threshold (default: {DEFAULT_ENTRY_CONF})")
     parser.add_argument("--risk_amount", type=float, default=DEFAULT_RISK_AMOUNT,
@@ -282,10 +276,6 @@ def main():
                         help=f"Min stop ATR multiplier (default: {DEFAULT_MIN_STOP_ATR})")
     parser.add_argument("--min_stop_pts", type=float, default=DEFAULT_MIN_STOP_PTS,
                         help=f"Min stop floor in points (default: {DEFAULT_MIN_STOP_PTS})")
-    parser.add_argument("--min_entry_distance", type=float, default=DEFAULT_MIN_ENTRY_DISTANCE,
-                        help=f"OTE depth gate: min entry_distance_pct (default: {DEFAULT_MIN_ENTRY_DISTANCE})")
-    parser.add_argument("--min_vty_regime", type=float, default=DEFAULT_MIN_VTY_REGIME,
-                        help=f"Volatility regime gate: min atr14/atr_ma50 ratio (default: {DEFAULT_MIN_VTY_REGIME})")
     parser.add_argument("--min_risk_rr", type=float, default=DEFAULT_MIN_RISK_RR,
                         help=f"(cisd-ote7) RR gate: min model-predicted RR to enter (default: {DEFAULT_MIN_RISK_RR}, 0=off)")
     parser.add_argument("--no-breakeven", action="store_true", default=False,
@@ -295,7 +285,7 @@ def main():
     args = parser.parse_args()
 
     # Auto-select the correct model when --model was not explicitly provided
-    if args.model == DEFAULT_MODEL and args.strategy in STRATEGY_DEFAULT_MODEL:
+    if args.model == DEFAULT_MODEL_V7 and args.strategy in STRATEGY_DEFAULT_MODEL:
         args.model = STRATEGY_DEFAULT_MODEL[args.strategy]
 
     if args.list:

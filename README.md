@@ -44,7 +44,6 @@ algoTrader.py                    # Entry point — arg parsing, mode dispatch
 ├── strategies/
 │   ├── strategy_cisd_ote_v7.py  # CISD+OTE v7: FFM Transformer backbone + risk head TP
 │   ├── strategy_st_trend_v1.py  # SuperTrend v1: FFM Transformer backbone + risk head TP
-│   ├── strategy_cisd_ote.py     # CISD+OTE v5.1: 32-feature vector, fixed TP
 │   ├── strategy_base.py         # Abstract base class for strategies
 │   └── strategy_factory.py      # Strategy registry
 ├── utils/
@@ -84,8 +83,7 @@ Place your trained models in the `models/` folder:
 models/
 ├── cisd_ote_hybrid_v7.onnx       # CISD+OTE v7 — default (recommended)
 ├── st_trend_v1.onnx              # SuperTrend v1 — trend-following
-├── vwap_v1.onnx                  # VWAP Reversion v1 — mean-reversion
-└── cisd_ote_hybrid_v5_1.onnx     # CISD+OTE v5.1 — legacy
+└── vwap_v1.onnx                  # VWAP Reversion v1 — mean-reversion
 ```
 
 ---
@@ -173,19 +171,6 @@ python algoTrader.py \
     --entry_conf 0.70 \
     --min_risk_rr 4.0 \
     --risk_amount 200
-```
-
-### Direct Backtesting — CISD+OTE v5.1 (Legacy)
-
-```bash
-python algoTrader.py \
-    --backtest \
-    --backtest_data data/NQ_continuous_5min.csv \
-    --contract CON.F.US.MNQ.M26 \
-    --strategy cisd-ote \
-    --model models/cisd_ote_hybrid_v5_1.onnx \
-    --entry_conf 0.70 \
-    --risk_amount 300
 ```
 
 ### Live Trading — CISD+OTE v7
@@ -289,9 +274,7 @@ python algoTrader.py --config configs/cisd_ote7_mnq.yaml
 | Argument | Strategy | Description | Default |
 |----------|----------|-------------|---------|
 | `--min_risk_rr` | all | Skip signals when model's predicted R:R is below this | `2.0` |
-| `--min_vty_regime` | `cisd-ote` | Regime gate: skip entries when `atr14/atr_ma50` is below this (0.0 = off) | `0.75` |
-| `--min_entry_distance` | `cisd-ote` | OTE depth gate: minimum zone penetration depth (0.0 = off) | `3.0` |
-| `--high_conf_multiplier` | `cisd-ote` only | Extend profit target at ≥90% confidence (disabled for v7 and supertrend) | `1.0` |
+| `--high_conf_multiplier` | `supertrend`, `vwap` | Scale risk_amount by this factor at ≥90% confidence (always disabled for cisd-ote7) | `1.0` |
 
 ### Backtesting
 
@@ -318,17 +301,17 @@ python algoTrader.py --config configs/cisd_ote7_mnq.yaml
 
 Three strategies are available. CISD+OTE v7 is the default; SuperTrend v1 and VWAP Reversion v1 are alternatives suited to different market regimes.
 
-| | `cisd-ote7` (default) | `supertrend` | `vwap` | `cisd-ote` (legacy) |
-|---|---|---|---|---|
-| **Model** | `cisd_ote_hybrid_v7.onnx` | `st_trend_v1.onnx` | `vwap_v1.onnx` | `cisd_ote_hybrid_v5_1.onnx` |
-| **Signal** | CISD zone + OTE entry | ST(10,2.0) flip + 1h HTF alignment | VWAP statistical extreme reversion | CISD zone + OTE entry |
-| **Backbone** | 96-bar FFM Transformer | 96-bar FFM Transformer | 96-bar FFM Transformer | 64-bar FFM Transformer |
-| **Profit target** | `int(predicted_rr) × R` | `int(predicted_rr) × R` | `int(predicted_rr) × R` | Fixed 2R (4R at ≥90% conf) |
-| **Entry confidence** | 0.80 recommended | 0.80 recommended | 0.70 recommended | 0.70–0.85 |
-| **RR gate** | `--min_risk_rr 2.0` | `--min_risk_rr 2.0` | `--min_risk_rr 4.0` | Not applicable |
-| **Trained on** | NQ, ES, GC, RTY, YM | NQ, ES, GC, RTY, YM | NQ, ES, GC, RTY, YM | NQ only |
-| **Trades/month (MNQ)** | ~20–30 | ~10–15 | ~5–10 | Fewer |
-| **Best for** | Default — zone reversals | Trend-following regimes | Range-bound / mean-reversion | Legacy comparison |
+| | `cisd-ote7` (default) | `supertrend` | `vwap` |
+|---|---|---|---|
+| **Model** | `cisd_ote_hybrid_v7.onnx` | `st_trend_v1.onnx` | `vwap_v1.onnx` |
+| **Signal** | CISD zone + OTE entry | ST(10,2.0) flip + 1h HTF alignment | VWAP statistical extreme reversion |
+| **Backbone** | 96-bar FFM Transformer | 96-bar FFM Transformer | 96-bar FFM Transformer |
+| **Profit target** | `int(predicted_rr) × R` | `int(predicted_rr) × R` | `int(predicted_rr) × R` |
+| **Entry confidence** | 0.80 recommended | 0.80 recommended | 0.70 recommended |
+| **RR gate** | `--min_risk_rr 2.0` | `--min_risk_rr 2.0` | `--min_risk_rr 4.0` |
+| **Trained on** | NQ, ES, GC, RTY, YM | NQ, ES, GC, RTY, YM | NQ, ES, GC, RTY, YM |
+| **Trades/month (MNQ)** | ~20–30 | ~10–15 | ~5–10 |
+| **Best for** | Default — zone reversals | Trend-following regimes | Range-bound / mean-reversion |
 
 **CISD+OTE v7 is the recommended default.** SuperTrend v1 suits strong trending conditions. VWAP Reversion v1 is a high-selectivity strategy for mean-reversion — fewest signals, highest RR gate. All three use the same `int(predicted_rr) × R` TP logic with no artificial ceiling.
 
@@ -405,10 +388,6 @@ grep "ERROR" logs/bot_MNQ_live_YYYYMMDD.log
 ### Persistent Trend Blindness (CISD v7)
 
 v7's 96-bar context window covers ~8 hours. In sustained multi-week downtrends (e.g. the 2022 bear market), the model fires bullish CISD setups because local structure looks valid — it has no awareness that the daily or weekly trend is bearish. SuperTrend is less susceptible to this since HTF alignment is an explicit input feature.
-
-### Session Gate Removed in v7
-
-v5.1 enforced a hard 7am–4pm ET session gate that matched its training distribution. v7 was trained on all-hours data, and the session context is encoded via the `in_optimal_session` CISD feature and `sess_id` sequence inputs. Adding a session gate to v7 reduces PT hits and is not recommended.
 
 ### Gap-Through-Stop Risk
 
