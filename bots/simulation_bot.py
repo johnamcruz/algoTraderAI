@@ -609,7 +609,8 @@ class SimulationBot(TradingBot):
             meta_keys = list(trades_with_meta[0]['signal_meta'].keys())
 
             def avg(trades, key):
-                vals = [t['signal_meta'].get(key, 0) for t in trades]
+                vals = [t['signal_meta'].get(key) for t in trades]
+                vals = [v for v in vals if isinstance(v, (int, float))]
                 return sum(vals) / len(vals) if vals else 0.0
 
             print("\n📊 SIGNAL FEATURE ANALYSIS (winners vs losers):")

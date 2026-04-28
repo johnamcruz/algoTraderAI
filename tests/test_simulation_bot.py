@@ -447,3 +447,56 @@ class TestProcessBarExitLogic:
         bar = self._make_bar(open_=99, high=101, low=94, close=98)
         run(sim_bot._process_bar(bar, 1, 10))
         assert sim_bot.trades_log[-1]["pnl_points"] == pytest.approx(-5.0)
+
+
+# ── _print_summary ────────────────────────────────────────────────────
+
+class TestPrintSummary:
+    """_print_summary: must not crash when signal_meta contains string fields."""
+
+    def test_summary_handles_string_signal_meta(self, sim_bot, capsys):
+        """signal_meta with string-valued keys (htf_trend, trend_alignment) must not raise TypeError."""
+        sim_bot.trades_log = [
+            {
+                "entry_timestamp": "2022-01-01 09:00",
+                "exit_timestamp": "2022-01-01 09:05",
+                "type": "LONG",
+                "entry": 100.0,
+                "exit": 110.0,
+                "reason": "PROFIT_TARGET",
+                "pnl_points": 10.0,
+                "pnl_dollars": 100.0,
+                "total_pnl_dollars": 100.0,
+                "signal_meta": {
+                    "signal_prob": 0.85,
+                    "risk_rr": 8.5,
+                    "confluence_score": 2,
+                    "htf_trend": "UP",
+                    "trend_alignment": "ALIGNED",
+                },
+            },
+            {
+                "entry_timestamp": "2022-01-02 09:00",
+                "exit_timestamp": "2022-01-02 09:05",
+                "type": "LONG",
+                "entry": 100.0,
+                "exit": 95.0,
+                "reason": "STOP_LOSS",
+                "pnl_points": -5.0,
+                "pnl_dollars": -50.0,
+                "total_pnl_dollars": 50.0,
+                "signal_meta": {
+                    "signal_prob": 0.72,
+                    "risk_rr": 7.2,
+                    "confluence_score": 1,
+                    "htf_trend": "DOWN",
+                    "trend_alignment": "COUNTER",
+                },
+            },
+        ]
+        sim_bot.winning_trades = 1
+        sim_bot.losing_trades = 1
+        sim_bot.total_pnl_points = 5.0
+        sim_bot.total_pnl_dollars = 50.0
+
+        sim_bot._print_summary()  # must not raise
