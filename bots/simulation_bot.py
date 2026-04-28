@@ -152,16 +152,14 @@ class SimulationBot(TradingBot):
             if missing_cols:
                 raise ValueError(f"CSV missing required columns: {missing_cols}")
             
-            # Handle timestamp column (time, timestamp, or date)
+            # Handle timestamp column (time, timestamp, date, or datetime)
             time_col = None
-            if 'time' in df.columns:
-                time_col = 'time'
-            elif 'timestamp' in df.columns:
-                time_col = 'timestamp'
-            elif 'date' in df.columns:
-                time_col = 'date'
-            else:
-                raise ValueError("CSV must have a 'time', 'timestamp', or 'date' column")
+            for candidate in ('time', 'timestamp', 'date', 'datetime'):
+                if candidate in df.columns:
+                    time_col = candidate
+                    break
+            if time_col is None:
+                raise ValueError("CSV must have a 'time', 'timestamp', 'date', or 'datetime' column")
             
             # Handle volume column (optional)
             if 'volume' not in df.columns:
