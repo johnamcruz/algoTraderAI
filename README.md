@@ -4,7 +4,7 @@
 
 ## Overview
 
-A Python algorithmic trading bot for futures markets (MNQ, MES, MGC) via the TopstepX/ProjectX platform. Supports two AI strategies: the default **CISD+OTE v7** (ICT-style zone entries) and **SuperTrend v1** (trend-following with HTF alignment).
+A Python algorithmic trading bot for futures markets (MNQ, MES, MGC) via the TopstepX/ProjectX platform. Supports multiple AI strategies: the default **CISD+OTE v7** (ICT-style zone entries), **SuperTrend v1** (trend-following with HTF alignment), and **VWAP Reversion v1** (mean-reversion at statistical extremes).
 
 **Default model:** `cisd_ote_hybrid_v7.onnx` — FFM Hybrid Transformer
 
@@ -12,13 +12,14 @@ A Python algorithmic trading bot for futures markets (MNQ, MES, MGC) via the Top
 
 - 🧠 **CISD+OTE Strategy v7** — ICT-style zone detection with a 96-bar FFM Transformer backbone. Risk head predicts per-trade R:R; TP set to `int(predicted_rr) × R`.
 - 📈 **SuperTrend Strategy v1** — 5m SuperTrend(10, 2.0) flip + 1h HTF alignment. Same FFM backbone and risk head — TP set to `int(predicted_rr) × R`. Trained on NQ, ES, GC, RTY, YM.
+- 🔁 **VWAP Reversion Strategy v1** — Mean-reversion entries at statistical VWAP extremes. Same FFM backbone and risk head. High win rate, low trade frequency.
 - 📊 **Real-time Data Processing** — Live tick aggregation and bar generation (1, 3, or 5 minute bars)
 - 💰 **Risk-Based Position Sizing** — Size contracts dynamically from a dollar risk budget; skip signals that exceed it
 - 🔬 **Backtesting Mode** — Replay historical CSV data with realistic gap-open fills and wick-based exit simulation
 - 🎯 **RR Gate** — Filters low-expectancy signals; only enters when the model predicts `>= min_risk_rr` (default 2.0)
 - 📋 **Per-Trade Signal Analysis** — Logs feature averages for winners vs losers after each backtest run
-- ⚙️ **YAML Configuration** — Manage live and backtest configs via file; CLI args override
-- 🔄 **Backtest Runner** — `backtest.py` runs predefined market-regime scenarios (bear, recovery, banking crisis, selloff, OOS) in parallel
+- ⚙️ **YAML Configuration** — All parameters configurable via YAML file; CLI args override
+- 🔄 **Backtest Runner** — `backtest.py` runs predefined market-regime scenarios (bear, recovery, banking crisis, selloff, OOS) in parallel or sequentially
 
 ---
 
@@ -82,7 +83,8 @@ Place your trained models in the `models/` folder:
 ```
 models/
 ├── cisd_ote_hybrid_v7.onnx       # CISD+OTE v7 — default (recommended)
-├── st_trend_v1.onnx              # SuperTrend v1 — alternative strategy
+├── st_trend_v1.onnx              # SuperTrend v1 — trend-following
+├── vwap_v1.onnx                  # VWAP Reversion v1 — mean-reversion
 └── cisd_ote_hybrid_v5_1.onnx     # CISD+OTE v5.1 — legacy
 ```
 
@@ -159,6 +161,20 @@ python algoTrader.py \
     --risk_amount 200
 ```
 
+### Direct Backtesting — VWAP Reversion v1
+
+```bash
+python algoTrader.py \
+    --backtest \
+    --backtest_data data/NQ_continuous_5min.csv \
+    --contract CON.F.US.MNQ.M26 \
+    --strategy vwap \
+    --model models/vwap_v1.onnx \
+    --entry_conf 0.70 \
+    --min_risk_rr 4.0 \
+    --risk_amount 200
+```
+
 ### Direct Backtesting — CISD+OTE v5.1 (Legacy)
 
 ```bash
@@ -201,6 +217,22 @@ python algoTrader.py \
     --model models/st_trend_v1.onnx \
     --entry_conf 0.80 \
     --min_risk_rr 2.0 \
+    --risk_amount 200
+```
+
+### Live Trading — VWAP Reversion v1
+
+```bash
+python algoTrader.py \
+    --account TS001234SIM \
+    --contract CON.F.US.MES.M26 \
+    --username YourUsername \
+    --apikey YourApiKey \
+    --timeframe 5 \
+    --strategy vwap \
+    --model models/vwap_v1.onnx \
+    --entry_conf 0.70 \
+    --min_risk_rr 4.0 \
     --risk_amount 200
 ```
 
@@ -269,6 +301,8 @@ python algoTrader.py --config configs/cisd_ote7_mnq.yaml
 | `--backtest_data` | Path to OHLCV CSV file | — |
 | `--start-date` | Start date (`YYYY-MM-DD`) | None |
 | `--end-date` | End date (`YYYY-MM-DD`) | None |
+| `--no-profit-target` | Disable session profit target cap — run the full date range without stopping early | — |
+| `--simulation-days` | Limit backtest to the last N days of the CSV | None |
 
 ### Live Only
 
@@ -282,33 +316,32 @@ python algoTrader.py --config configs/cisd_ote7_mnq.yaml
 
 ## Strategy Comparison
 
-Three strategies are available. CISD+OTE v7 is the default; SuperTrend v1 is the recommended alternative for trend-following regimes.
+Three strategies are available. CISD+OTE v7 is the default; SuperTrend v1 and VWAP Reversion v1 are alternatives suited to different market regimes.
 
-| | `cisd-ote7` (default) | `supertrend` | `cisd-ote` (legacy) |
-|---|---|---|---|
-| **Model** | `cisd_ote_hybrid_v7.onnx` | `st_trend_v1.onnx` | `cisd_ote_hybrid_v5_1.onnx` |
-| **Signal** | CISD zone + OTE entry | ST(10,2.0) flip + 1h HTF alignment | CISD zone + OTE entry |
-| **Backbone** | 96-bar FFM Transformer | 96-bar FFM Transformer | 64-bar FFM Transformer |
-| **Profit target** | `int(predicted_rr) × R` | `int(predicted_rr) × R` | Fixed 2R (4R at ≥90% conf) |
-| **Entry confidence** | 0.80 recommended | 0.80 recommended | 0.70–0.85 |
-| **RR gate** | `--min_risk_rr 2.0` | `--min_risk_rr 2.0` | Not applicable |
-| **Trained on** | NQ, ES, GC, RTY, YM | NQ, ES, GC, RTY, YM | NQ only |
-| **Trades/month (MNQ)** | ~20–30 | ~10–15 | Fewer |
-| **Win rate (recent)** | ~50–60% | ~65–80% | — |
-| **Best for** | Default — zone reversals | Trend-following regimes | Legacy comparison |
+| | `cisd-ote7` (default) | `supertrend` | `vwap` | `cisd-ote` (legacy) |
+|---|---|---|---|---|
+| **Model** | `cisd_ote_hybrid_v7.onnx` | `st_trend_v1.onnx` | `vwap_v1.onnx` | `cisd_ote_hybrid_v5_1.onnx` |
+| **Signal** | CISD zone + OTE entry | ST(10,2.0) flip + 1h HTF alignment | VWAP statistical extreme reversion | CISD zone + OTE entry |
+| **Backbone** | 96-bar FFM Transformer | 96-bar FFM Transformer | 96-bar FFM Transformer | 64-bar FFM Transformer |
+| **Profit target** | `int(predicted_rr) × R` | `int(predicted_rr) × R` | `int(predicted_rr) × R` | Fixed 2R (4R at ≥90% conf) |
+| **Entry confidence** | 0.80 recommended | 0.80 recommended | 0.70 recommended | 0.70–0.85 |
+| **RR gate** | `--min_risk_rr 2.0` | `--min_risk_rr 2.0` | `--min_risk_rr 4.0` | Not applicable |
+| **Trained on** | NQ, ES, GC, RTY, YM | NQ, ES, GC, RTY, YM | NQ, ES, GC, RTY, YM | NQ only |
+| **Trades/month (MNQ)** | ~20–30 | ~10–15 | ~5–10 | Fewer |
+| **Best for** | Default — zone reversals | Trend-following regimes | Range-bound / mean-reversion | Legacy comparison |
 
-**CISD+OTE v7 is the recommended default.** SuperTrend v1 is a strong alternative — it fires fewer signals but achieves higher win rates and larger average R per trade. Both use the same `int(predicted_rr) × R` TP logic with no artificial ceiling.
+**CISD+OTE v7 is the recommended default.** SuperTrend v1 suits strong trending conditions. VWAP Reversion v1 is a high-selectivity strategy for mean-reversion — fewest signals, highest RR gate. All three use the same `int(predicted_rr) × R` TP logic with no artificial ceiling.
 
 ---
 
 ## Multi-Ticker Setup
 
-Both strategies are designed to run simultaneously across uncorrelated instruments. A common setup is SuperTrend on MNQ and CISD on MES for diversification across both strategy type and instrument:
+All strategies are designed to run simultaneously across uncorrelated instruments. Mix strategy types across tickers for diversification across both signal type and underlying:
 
 | Ticker | Contract | Strategy | Notes |
 |--------|----------|----------|-------|
 | MNQ | `CON.F.US.MNQ.M26` | `supertrend` or `cisd-ote7` | Primary — highest signal quality |
-| MES | `CON.F.US.MES.M26` | `cisd-ote7` | Correlated to MNQ — adds trade frequency |
+| MES | `CON.F.US.MES.M26` | `cisd-ote7` or `vwap` | Correlated to MNQ — adds trade frequency |
 | MGC | `CON.F.US.MGC.M26` | `cisd-ote7` | Uncorrelated to equities — genuine diversification |
 
 Run each ticker in a separate terminal or process.
