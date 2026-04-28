@@ -108,6 +108,11 @@ SYMBOL_CONFIG = {
         "tick_size":  0.10,
         "contract":   "CON.F.US.MGC.M26",
     },
+    "SIL": {
+        "data":       "data/SI_5min.csv",
+        "tick_size":  0.005,
+        "contract":   "CON.F.US.SIL.M26",
+    },
 }
 
 DEFAULT_MODEL_V7      = "models/cisd_ote_hybrid_v7.onnx"
@@ -259,7 +264,7 @@ def main():
     parser.add_argument("--parallel",   action="store_true",
                         help="Run scenarios in parallel (default: sequential)")
     parser.add_argument("--symbol",     type=str,  default=DEFAULT_SYMBOL,
-                        choices=["MNQ", "MES", "MGC"],
+                        choices=["MNQ", "MES", "MGC", "SIL"],
                         help=f"Trading symbol (default: {DEFAULT_SYMBOL})")
     parser.add_argument("--strategy",   type=str,  default="cisd-ote7",
                         choices=["cisd-ote7", "supertrend", "vwap"],
