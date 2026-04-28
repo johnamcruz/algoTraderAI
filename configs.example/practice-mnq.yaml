@@ -1,0 +1,14 @@
+# Practice account — MNQ — SuperTrend v1
+account:    ""               # TopstepX account ID
+username:   ""               # TopstepX username
+apikey:     ""               # TopstepX API key
+
+contract:   "CON.F.US.MNQ.M26"
+strategy:   "supertrend"
+model:      "models/st_trend_v1.onnx"
+
+risk_amount:  200
+entry_conf:   0.80
+min_risk_rr:  2.0
+profit_target: 12000
+max_loss:     3000

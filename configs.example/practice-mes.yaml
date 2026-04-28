@@ -1,0 +1,14 @@
+# Practice account — MES — VWAP v1
+account:    ""               # TopstepX account ID
+username:   ""               # TopstepX username
+apikey:     ""               # TopstepX API key
+
+contract:   "CON.F.US.MES.M26"
+strategy:   "vwap"
+model:      "models/vwap_v1.onnx"
+
+risk_amount:  200
+entry_conf:   0.70
+min_risk_rr:  4.0
+profit_target: 12000
+max_loss:     3000
