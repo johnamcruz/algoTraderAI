@@ -151,7 +151,6 @@ def build_command(scenario_key: str, args) -> list[str]:
         "--max_contracts",        str(args.max_contracts),
         "--high_conf_multiplier", str(args.high_conf_mult),
         "--max_loss",             str(args.max_loss),
-        "--profit_target",        str(args.profit_target),
         "--min_stop_atr",         str(args.min_stop_atr),
         "--min_stop_pts",         str(args.min_stop_pts),
         "--min_entry_distance",   str(args.min_entry_distance),
@@ -161,6 +160,10 @@ def build_command(scenario_key: str, args) -> list[str]:
     ]
     if not args.no_breakeven:
         cmd.append("--breakeven_on_2r")
+    if args.no_target:
+        cmd.append("--no-profit-target")
+    else:
+        cmd += ["--profit_target", str(args.profit_target)]
     return cmd
 
 
@@ -213,7 +216,7 @@ def print_results(results: list[dict], args) -> None:
     print("═" * width)
     print(f"  BACKTEST RESULTS — {args.symbol}  |  strategy: {args.strategy}  |  model: {os.path.basename(args.model)}")
     print(f"  entry_conf={args.entry_conf}  risk=${args.risk_amount}  max_contracts={args.max_contracts}")
-    print(f"  max_loss=${args.max_loss}  profit_target=${args.profit_target}  min_stop_atr={args.min_stop_atr}")
+    print(f"  max_loss=${args.max_loss}  profit_target={'none' if args.no_target else f'${args.profit_target}'}  min_stop_atr={args.min_stop_atr}")
     print(f"  min_vty_regime={args.min_vty_regime}  min_risk_rr={args.min_risk_rr}  breakeven={'OFF' if args.no_breakeven else 'ON'}")
     print("═" * width)
 
@@ -287,6 +290,8 @@ def main():
                         help=f"(cisd-ote7) RR gate: min model-predicted RR to enter (default: {DEFAULT_MIN_RISK_RR}, 0=off)")
     parser.add_argument("--no-breakeven", action="store_true", default=False,
                         help="Disable breakeven-on-2R (default: on)")
+    parser.add_argument("--no-target", action="store_true", default=False,
+                        help="Disable session profit target cap — run full regime window")
     args = parser.parse_args()
 
     # Auto-select the correct model when --model was not explicitly provided

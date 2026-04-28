@@ -126,7 +126,8 @@ class SimulationBot(TradingBot):
         print(f"📈 Trade Params: Entry={self.entry_conf}, ADX={self.adx_thresh}, "
               f"Stop={self.stop_pts} pts, Target={self.target_pts} pts")
         print(f"📊 Strategy: {self.strategy.__class__.__name__}")
-        print(f"💰 Profit Target: ${self.session_profit_target:,.2f} | Max Loss: ${self.max_loss_limit:,.2f}")
+        pt_str = f"${self.session_profit_target:,.2f}" if self.session_profit_target is not None else "none"
+        print(f"💰 Profit Target: {pt_str} | Max Loss: ${self.max_loss_limit:,.2f}")
 
     def _load_csv_data(self):
         """

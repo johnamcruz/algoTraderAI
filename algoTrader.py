@@ -68,6 +68,8 @@ Example Usage (Backtesting):
                         help='Contract tick size (for backtesting calculations)')
     parser.add_argument('--profit_target', type=float, default=None,
                         help='Profit target in dollars for backtesting (default: 6000)')
+    parser.add_argument('--no-profit-target', action='store_true', default=False,
+                        help='Disable session profit target cap — run full regime window')
     parser.add_argument('--max_loss', type=float, default=None,
                         help='Maximum loss limit in dollars for backtesting (default: 3000)')    
     parser.add_argument('--simulation-days', type=int,
@@ -160,6 +162,8 @@ Example Usage (Backtesting):
     else:
         config = merge_config_with_args({}, args)
         config.pop('config', None)
+        if args.no_profit_target:
+            config['profit_target'] = None
 
         try:
             if config.get('backtest'):

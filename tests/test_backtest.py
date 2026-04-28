@@ -52,6 +52,7 @@ def _default_args(**overrides):
         min_vty_regime=0.75,
         min_risk_rr=DEFAULT_MIN_RISK_RR,
         no_breakeven=False,
+        no_target=False,
     )
     base.update(overrides)
     return argparse.Namespace(**base)

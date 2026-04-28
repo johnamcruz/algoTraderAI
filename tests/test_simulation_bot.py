@@ -500,3 +500,45 @@ class TestPrintSummary:
         sim_bot.total_pnl_dollars = 50.0
 
         sim_bot._print_summary()  # must not raise
+
+    def test_summary_shows_profit_target_hit_when_exceeded(self, sim_bot, capsys):
+        """When session_profit_target is set and exceeded, 'Profit Target Hit' appears in output."""
+        sim_bot.session_profit_target = 1000.0
+        sim_bot.trades_log = []
+        sim_bot.winning_trades = 1
+        sim_bot.losing_trades = 0
+        sim_bot.total_pnl_points = 100.0
+        sim_bot.total_pnl_dollars = 1200.0
+        sim_bot._print_summary()
+        out = capsys.readouterr().out
+        assert "Profit Target Hit" in out
+
+    def test_summary_omits_profit_target_hit_when_target_is_none(self, sim_bot, capsys):
+        """When session_profit_target is None (--no-target mode), 'Profit Target Hit' must not appear."""
+        sim_bot.session_profit_target = None
+        sim_bot.trades_log = []
+        sim_bot.winning_trades = 1
+        sim_bot.losing_trades = 0
+        sim_bot.total_pnl_points = 100.0
+        sim_bot.total_pnl_dollars = 99999.0
+        sim_bot._print_summary()
+        out = capsys.readouterr().out
+        assert "Profit Target Hit" not in out
+
+
+# ── SimulationBot startup print ───────────────────────────────────────
+
+class TestSimulationBotStartupPrint:
+    """Startup print must not crash regardless of profit_target value."""
+
+    def test_startup_print_with_none_profit_target(self, sim_bot, capsys):
+        """profit_target=None renders as 'none', not a format crash."""
+        sim_bot.session_profit_target = None
+        pt_str = f"${sim_bot.session_profit_target:,.2f}" if sim_bot.session_profit_target is not None else "none"
+        assert pt_str == "none"
+
+    def test_startup_print_with_numeric_profit_target(self, sim_bot, capsys):
+        """profit_target set to a value renders correctly."""
+        sim_bot.session_profit_target = 12000.0
+        pt_str = f"${sim_bot.session_profit_target:,.2f}" if sim_bot.session_profit_target is not None else "none"
+        assert pt_str == "$12,000.00"
