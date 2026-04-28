@@ -83,6 +83,12 @@ SCENARIOS = {
         "end_date":   "2025-10-24",
         "note":       "Most recent 6-month window in data",
     },
+    "recent_1yr": {
+        "label":      "Last 1 Year",
+        "start_date": "2024-10-24",
+        "end_date":   "2025-10-24",
+        "note":       "Most recent full year in data",
+    },
 }
 
 # Symbol → data file, tick_size, full contract ID for backtesting
