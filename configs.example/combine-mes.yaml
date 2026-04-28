@@ -1,14 +1,35 @@
-# Combine account — MES — CISD-OTE v7
-account:    ""               # TopstepX account ID
-username:   ""               # TopstepX username
-apikey:     ""               # TopstepX API key
+# ── Combine account — MES — CISD-OTE v7 ─────────────────────────────
+# Required credentials (filled in by setup.sh)
+account:    ""
+username:   ""
+apikey:     ""
 
+# Contract
 contract:   "CON.F.US.MES.M26"
+
+# Strategy
 strategy:   "cisd-ote7"
 model:      "models/cisd_ote_hybrid_v7.onnx"
 
-risk_amount:  200
-entry_conf:   0.80
-min_risk_rr:  2.0
+# Risk
+risk_amount:          200
+max_contracts:        5
+high_conf_multiplier: 1.0
+
+# Entry filters
+entry_conf:         0.80
+min_risk_rr:        2.0
+min_vty_regime:     0.75
+min_entry_distance: 3.0
+
+# Stop sizing
+min_stop_pts: 1.0
+min_stop_atr: 0.5
+
+# Session limits
 profit_target: 6000
-max_loss:     3000
+max_loss:      3000
+
+# Behaviour
+breakeven_on_2r:      true
+enable_trailing_stop: false

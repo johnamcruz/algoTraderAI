@@ -9,27 +9,46 @@ import os
 from typing import Dict, Any
 
 DEFAULTS = {
-    'size':                 1,
-    'timeframe':            5,
-    'entry_conf':           0.9,
-    'adx_thresh':           0,
-    'tick_size':            0.01,
-    'profit_target':        12000,
-    'max_loss':             3000,
+    # Connection
     'market_hub':           'https://rtc.topstepx.com/hubs/market',
     'base_url':             'https://api.topstepx.com/api',
+
+    # Strategy
     'strategy':             'cisd-ote7',
     'model':                'models/cisd_ote_hybrid_v7.onnx',
 
-    'high_conf_multiplier': 1.0,
-    'max_contracts':        15,
-    'pivot_lookback':       8,
+    # Bar config
+    'size':                 1,
+    'timeframe':            5,
+    'tick_size':            0.01,
+
+    # Entry filters
+    'entry_conf':           0.9,
+    'adx_thresh':           0,
     'min_vty_regime':       0.75,
     'min_entry_distance':   3.0,
-    'enable_trailing_stop': False,
-    'breakeven_on_2r':      True,
+    'min_risk_rr':          2.0,
+
+    # Stop / target
     'min_stop_pts':         1.0,
     'min_stop_atr':         0.5,
+
+    # Session limits
+    'profit_target':        12000,
+    'max_loss':             3000,
+    'max_contracts':        15,
+
+    # Risk
+    'high_conf_multiplier': 1.0,
+
+    # Behaviour flags
+    'enable_trailing_stop': False,
+    'breakeven_on_2r':      True,
+    'debug':                False,
+    'quiet':                False,
+
+    # Strategy-specific
+    'pivot_lookback':       8,
 }
 
 

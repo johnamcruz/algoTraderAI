@@ -54,13 +54,13 @@ Example Usage (Backtesting):
     # Config file option
     parser.add_argument('--config', type=str, 
                         help='Path to YAML config file. Command-line args override config values.')     
-    parser.add_argument('--debug', action='store_true',
+    parser.add_argument('--debug', action='store_true', default=None,
                         help='Enable DEBUG level logging (default: INFO)')
-    parser.add_argument('--quiet', action='store_true',
+    parser.add_argument('--quiet', action='store_true', default=None,
                         help='Suppress all output except the final simulation results summary')
 
     # Backtesting options
-    parser.add_argument('--backtest', action='store_true',
+    parser.add_argument('--backtest', action='store_true', default=None,
                         help='Run in backtesting mode using historical CSV data')
     parser.add_argument('--backtest_data', type=str,
                         help='Path to CSV file with historical OHLCV data for backtesting')
@@ -68,7 +68,7 @@ Example Usage (Backtesting):
                         help='Contract tick size (for backtesting calculations)')
     parser.add_argument('--profit_target', type=float, default=None,
                         help='Profit target in dollars for backtesting (default: 6000)')
-    parser.add_argument('--no-profit-target', action='store_true', default=False,
+    parser.add_argument('--no-profit-target', action='store_true', default=None,
                         help='Disable session profit target cap — run full regime window')
     parser.add_argument('--max_loss', type=float, default=None,
                         help='Maximum loss limit in dollars for backtesting (default: 3000)')    
@@ -118,7 +118,7 @@ Example Usage (Backtesting):
                         help='Stop loss in points (optional if strategy provides its own)')
     parser.add_argument('--target_pts', type=float, default=None,
                         help='Profit target in points (optional if strategy provides its own)')
-    parser.add_argument('--enable_trailing_stop', action='store_true',
+    parser.add_argument('--enable_trailing_stop', action='store_true', default=None,
                         help='Use TopstepX native trailing stop bracket (type 5) — trails price continuously')
     parser.add_argument('--breakeven_on_2r', action=argparse.BooleanOptionalAction, default=None,
                         help='Move stop to entry price once trade reaches 1R profit (bot-managed, works in sim). '
