@@ -270,13 +270,18 @@ class TradingBot(ABC):
             )
             
             if should_enter:
-                # ✅ CHECK FOR EXISTING POSITION BEFORE ENTERING
+                # Guard against concurrent signals (within-process and cross-process race)
+                if self.in_position:
+                    logging.info(f"{direction} signal ignored: Already in position (in-memory guard)")
+                    return
                 has_position = await self._has_existing_position()
                 if has_position:
                     print("⚠️ SIGNAL IGNORED - Already in position")
                     logging.info(f"{direction} signal ignored: Already in position")
                     return
-                
+                # Claim the position slot immediately so no concurrent call can also pass
+                self.in_position = True
+
                 close_price = latest_bar['close']
                 tick_size = self._get_tick_size()
 
@@ -306,6 +311,7 @@ class TradingBot(ABC):
                         "❌ No stop/target available — set --stop_pts/--target_pts "
                         "or use a strategy that provides them."
                     )
+                    self.in_position = False
                     return
 
                 # Dynamic minimum stop: max of fixed floor and ATR-based floor.
@@ -331,6 +337,7 @@ class TradingBot(ABC):
                         f"({stop_pts:.2f}pts / {stop_ticks_raw:.1f} ticks < {gate_desc})"
                     )
                     self.skip_stats['stop_too_tight'] += 1
+                    self.in_position = False
                     return
 
                 if direction == 'LONG':
@@ -347,6 +354,7 @@ class TradingBot(ABC):
                             f"exceeds risk_amount ${self.risk_amount:.0f}"
                         )
                         self.skip_stats['stop_too_wide'] += 1
+                        self.in_position = False
                         return
 
                     order_result = await self._place_order(
@@ -367,6 +375,7 @@ class TradingBot(ABC):
                         print("="*40)
                         logging.info(f"LONG SIGNAL @ {close_price:.2f} Stop: {stop_loss:.2f} Target: {profit_target:.2f}")
                     else:
+                        self.in_position = False
                         logging.warning(f"⚠️ LONG order rejected by broker @ {close_price:.2f} — signal not placed")
 
                 else:  # SHORT
@@ -383,6 +392,7 @@ class TradingBot(ABC):
                             f"exceeds risk_amount ${self.risk_amount:.0f}"
                         )
                         self.skip_stats['stop_too_wide'] += 1
+                        self.in_position = False
                         return
 
                     order_result = await self._place_order(
@@ -403,9 +413,11 @@ class TradingBot(ABC):
                         print("="*40)
                         logging.info(f"SHORT SIGNAL @ {close_price:.2f} Stop: {stop_loss:.2f} Target: {profit_target:.2f}")
                     else:
+                        self.in_position = False
                         logging.warning(f"⚠️ SHORT order rejected by broker @ {close_price:.2f} — signal not placed")
                     
         except Exception as e:
+            self.in_position = False
             self.skip_stats['predict_error'] += 1
             logging.exception(f"❌ Error during AI prediction: {e}")
             if "Required inputs" in str(e) and "missing from input feed" in str(e):

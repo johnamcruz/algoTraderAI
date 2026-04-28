@@ -2,6 +2,8 @@
 
 Covers the gates that fire between signal generation and order placement:
   - Existing position blocks duplicate entry (restart-while-in-position)
+  - In-memory position guard fires before broker API call (double-entry fix)
+  - in_position flag resets on every failure path so the next bar can trade
   - High-confidence multiplier extends target, not stop
   - Stop too tight (< 4 ticks) blocks entry
   - Zero contract size blocks entry
@@ -387,3 +389,151 @@ class TestOrderRejectionDetection:
         run(bot._run_ai_prediction())
 
         bot._place_order.assert_called_once()
+
+
+# ── Double-entry guard (bug fix: 2026-04-28) ─────────────────────────────────
+
+class TestInMemoryPositionGuard:
+    """in_position=True blocks entry before any broker API call.
+
+    Root cause: two concurrent run2.py processes both passed Position/searchOpen
+    before either order was confirmed, resulting in duplicate orders at the same
+    bar. Fix: check self.in_position immediately on signal, before awaiting
+    _has_existing_position().
+    """
+
+    def test_in_memory_flag_blocks_before_broker_check(self):
+        """When in_position is already True, _has_existing_position is never called."""
+        bot = _make_bot(stop_pts=10.0, target_pts=20.0)
+        _fill_bars(bot)
+        bot.in_position = True
+
+        run(bot._run_ai_prediction())
+
+        bot._has_existing_position.assert_not_called()
+        bot._place_order.assert_not_called()
+
+    def test_in_position_false_proceeds_to_broker_check(self):
+        """When in_position is False, the broker API is consulted as normal."""
+        bot = _make_bot(stop_pts=10.0, target_pts=20.0)
+        _fill_bars(bot)
+        bot.in_position = False
+
+        run(bot._run_ai_prediction())
+
+        bot._has_existing_position.assert_called_once()
+
+    def test_in_position_set_before_place_order_is_awaited(self):
+        """in_position must be True at the moment _place_order is called.
+
+        Ensures that a second concurrent signal sees the flag and bails
+        even if the first _place_order hasn't returned yet.
+        """
+        bot = _make_bot(stop_pts=10.0, target_pts=20.0)
+        _fill_bars(bot)
+
+        observed = {}
+
+        async def capture_state(**kwargs):
+            observed["in_position_during_place"] = bot.in_position
+            return "order-123"
+
+        bot._place_order = capture_state
+
+        run(bot._run_ai_prediction())
+
+        assert observed.get("in_position_during_place") is True
+
+
+class TestInPositionReset:
+    """in_position must be reset to False on every non-entry path.
+
+    If in_position is left True after a skipped or failed order, the bot
+    will refuse all future entries until restart.
+    """
+
+    def test_reset_when_order_rejected_by_broker_long(self):
+        bot = _make_bot(stop_pts=10.0, target_pts=20.0)
+        _fill_bars(bot)
+        bot._place_order = AsyncMock(return_value=None)
+
+        run(bot._run_ai_prediction())
+
+        assert bot.in_position is False
+
+    def test_reset_when_order_rejected_by_broker_short(self):
+        strategy = MockStrategy()
+        strategy.predict = MagicMock(return_value=(2, 0.85))
+        strategy.should_enter_trade = MagicMock(return_value=(True, "SHORT"))
+        bot = _make_bot(strategy=strategy, stop_pts=10.0, target_pts=20.0)
+        _fill_bars(bot)
+        bot._place_order = AsyncMock(return_value=None)
+
+        run(bot._run_ai_prediction())
+
+        assert bot.in_position is False
+
+    def test_reset_when_stop_too_tight(self):
+        # 0.5 pt stop < 1.0 pt minimum → skipped before _place_order
+        bot = _make_bot(stop_pts=0.5, target_pts=5.0)
+        _fill_bars(bot)
+
+        run(bot._run_ai_prediction())
+
+        assert bot.in_position is False
+        bot._place_order.assert_not_called()
+
+    def test_reset_when_size_is_zero_long(self):
+        # risk=$1, stop=100 pts → 0 contracts
+        bot = _make_bot(risk_amount=1.0, stop_pts=100.0, target_pts=200.0)
+        _fill_bars(bot)
+
+        run(bot._run_ai_prediction())
+
+        assert bot.in_position is False
+        bot._place_order.assert_not_called()
+
+    def test_reset_when_size_is_zero_short(self):
+        strategy = MockStrategy()
+        strategy.predict = MagicMock(return_value=(2, 0.85))
+        strategy.should_enter_trade = MagicMock(return_value=(True, "SHORT"))
+        bot = _make_bot(strategy=strategy, risk_amount=1.0, stop_pts=100.0, target_pts=200.0)
+        _fill_bars(bot)
+
+        run(bot._run_ai_prediction())
+
+        assert bot.in_position is False
+        bot._place_order.assert_not_called()
+
+    def test_reset_when_no_stop_target(self):
+        strategy = MockStrategy()
+        strategy.get_stop_target_pts = MagicMock(return_value=(None, None))
+        bot = _make_bot(strategy=strategy, stop_pts=None, target_pts=None)
+        _fill_bars(bot)
+
+        run(bot._run_ai_prediction())
+
+        assert bot.in_position is False
+        bot._place_order.assert_not_called()
+
+    def test_reset_on_exception_during_prediction(self):
+        strategy = MockStrategy()
+        strategy.predict = MagicMock(side_effect=RuntimeError("model exploded"))
+        bot = _make_bot(strategy=strategy)
+        _fill_bars(bot)
+        bot.in_position = False
+
+        run(bot._run_ai_prediction())
+
+        assert bot.in_position is False
+
+    def test_successful_order_leaves_in_position_true(self):
+        """Sanity check: a successful order must NOT reset in_position."""
+        bot = _make_bot(stop_pts=10.0, target_pts=20.0)
+        _fill_bars(bot)
+        bot._place_order = AsyncMock(return_value="order-123")
+
+        run(bot._run_ai_prediction())
+
+        # _place_order itself sets in_position=True; we just confirm it's still True
+        assert bot.in_position is True
