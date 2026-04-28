@@ -162,8 +162,9 @@ Example Usage (Backtesting):
     else:
         config = merge_config_with_args({}, args)
         config.pop('config', None)
-        if args.no_profit_target:
-            config['profit_target'] = None
+
+    if args.no_profit_target:
+        config['profit_target'] = None
 
         try:
             if config.get('backtest'):

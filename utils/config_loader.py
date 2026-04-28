@@ -27,7 +27,7 @@ DEFAULTS = {
     'adx_thresh':           0,
     'min_vty_regime':       0.75,
     'min_entry_distance':   3.0,
-    'min_risk_rr':          2.0,
+    # min_risk_rr intentionally omitted — each strategy has its own constructor default
 
     # Stop / target
     'min_stop_pts':         1.0,
