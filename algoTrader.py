@@ -43,7 +43,7 @@ Example Usage (Live Trading):
                   --risk_amount 200 --entry_conf 0.80
 
 Example Usage (Backtesting):
-  python %(prog)s --backtest --backtest_data data/ES_continuous_5min.csv \\
+  python %(prog)s --backtest --backtest_data data/ES_5min.csv \\
                   --contract CON.F.US.MES.M26 --timeframe 5 \\
                   --strategy cisd-ote7 --model models/cisd_ote_hybrid_v7.onnx \\
                   --risk_amount 200 --entry_conf 0.80 \\

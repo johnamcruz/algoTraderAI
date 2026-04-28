@@ -94,17 +94,17 @@ SCENARIOS = {
 # Symbol → data file, tick_size, full contract ID for backtesting
 SYMBOL_CONFIG = {
     "MNQ": {
-        "data":       "data/NQ_continuous_5min.csv",
+        "data":       "data/NQ_5min.csv",
         "tick_size":  0.25,
         "contract":   "CON.F.US.MNQ.M26",
     },
     "MES": {
-        "data":       "data/ES_continuous_5min.csv",
+        "data":       "data/ES_5min.csv",
         "tick_size":  0.25,
         "contract":   "CON.F.US.MES.M26",
     },
     "MGC": {
-        "data":       "data/GC_continuous_5min.csv",
+        "data":       "data/GC_5min.csv",
         "tick_size":  0.10,
         "contract":   "CON.F.US.MGC.M26",
     },
