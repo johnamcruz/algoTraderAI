@@ -214,6 +214,7 @@ topstep-config.yaml
 alpha-config.yaml
 configs/
 start_bots.sh
+stop_bots.sh
 
 # Bot logs
 logs/
