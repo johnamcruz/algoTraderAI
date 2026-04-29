@@ -827,7 +827,7 @@ class TestFeatureVector:
 class TestEntryGate:
 
     def _enter(self, st, prediction=1, confidence=0.80, entry_conf=0.70):
-        return st.should_enter_trade(prediction, confidence, {}, entry_conf, 0)
+        return st.should_enter_trade(prediction, confidence, {}, entry_conf)
 
     def test_above_threshold_long_enters(self, st):
         ok, direction = self._enter(st, prediction=1, confidence=0.80)
@@ -978,7 +978,7 @@ class TestSkipStats:
 
     def test_conf_gate_increments(self, st):
         st.skip_stats = {'conf_gate': 0, 'rr_gate': 0, 'hold': 0}
-        st.should_enter_trade(1, 0.60, {}, entry_conf=0.80, adx_thresh=0)
+        st.should_enter_trade(1, 0.60, {}, entry_conf=0.80)
         assert st.skip_stats['conf_gate'] == 1
         assert st.skip_stats['rr_gate'] == 0
 
@@ -986,24 +986,24 @@ class TestSkipStats:
         st._min_risk_rr   = 2.0
         st._latest_risk_rr = 1.5
         st.skip_stats = {'conf_gate': 0, 'rr_gate': 0, 'hold': 0}
-        st.should_enter_trade(1, 0.90, {}, entry_conf=0.80, adx_thresh=0)
+        st.should_enter_trade(1, 0.90, {}, entry_conf=0.80)
         assert st.skip_stats['rr_gate'] == 1
         assert st.skip_stats['conf_gate'] == 0
 
     def test_hold_prediction_increments(self, st):
         st.skip_stats = {'conf_gate': 0, 'rr_gate': 0, 'hold': 0}
-        st.should_enter_trade(0, 0.90, {}, entry_conf=0.80, adx_thresh=0)
+        st.should_enter_trade(0, 0.90, {}, entry_conf=0.80)
         assert st.skip_stats['hold'] == 1
 
     def test_successful_entry_no_increment(self, st):
         st.skip_stats = {'conf_gate': 0, 'rr_gate': 0, 'hold': 0}
-        st.should_enter_trade(1, 0.90, {}, entry_conf=0.80, adx_thresh=0)
+        st.should_enter_trade(1, 0.90, {}, entry_conf=0.80)
         assert st.skip_stats == {'conf_gate': 0, 'rr_gate': 0, 'hold': 0}
 
     def test_stats_accumulate_across_calls(self, st):
         st.skip_stats = {'conf_gate': 0, 'rr_gate': 0, 'hold': 0}
         for _ in range(3):
-            st.should_enter_trade(1, 0.50, {}, entry_conf=0.80, adx_thresh=0)
+            st.should_enter_trade(1, 0.50, {}, entry_conf=0.80)
         assert st.skip_stats['conf_gate'] == 3
 
 
@@ -1964,7 +1964,7 @@ class TestConstructorMinRiskRR:
         logging.disable(logging.CRITICAL)
         s = STTrendStrategyV1(model_path="", contract_symbol="MNQ", min_risk_rr=0.0)
         s._latest_risk_rr = 0.01
-        ok, _ = s.should_enter_trade(1, 0.95, {}, entry_conf=0.80, adx_thresh=0)
+        ok, _ = s.should_enter_trade(1, 0.95, {}, entry_conf=0.80)
         assert ok is True
 
     def test_rr_gate_active_when_set(self):
@@ -1973,6 +1973,6 @@ class TestConstructorMinRiskRR:
         logging.disable(logging.CRITICAL)
         s = STTrendStrategyV1(model_path="", contract_symbol="MNQ", min_risk_rr=2.0)
         s._latest_risk_rr = 1.5
-        ok, _ = s.should_enter_trade(1, 0.95, {}, entry_conf=0.80, adx_thresh=0)
+        ok, _ = s.should_enter_trade(1, 0.95, {}, entry_conf=0.80)
         assert ok is False
         assert s.skip_stats['rr_gate'] == 1

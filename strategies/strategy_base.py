@@ -93,18 +93,16 @@ class BaseStrategy(ABC):
         confidence: float,
         bar: Dict,
         entry_conf: float,
-        adx_thresh: float
     ) -> Tuple[bool, Optional[str]]:
         """
         Determine if entry conditions are met.
-        
+
         Args:
             prediction: Model prediction (0=Hold, 1=Buy, 2=Sell)
             confidence: Model confidence score
             bar: Current bar data with features
             entry_conf: Minimum confidence threshold
-            adx_thresh: Minimum ADX threshold
-            
+
         Returns:
             Tuple of (should_enter, direction)
             - should_enter: Boolean indicating if trade should be entered

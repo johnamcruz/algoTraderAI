@@ -521,7 +521,7 @@ class TestStopTargetPts:
 class TestEntryGate:
 
     def _enter(self, s, prediction=1, confidence=0.80, entry_conf=0.70):
-        return s.should_enter_trade(prediction, confidence, {}, entry_conf, 0)
+        return s.should_enter_trade(prediction, confidence, {}, entry_conf)
 
     def test_long_above_threshold_enters(self, vwap):
         ok, direction = self._enter(vwap, prediction=1, confidence=0.80)
@@ -588,28 +588,28 @@ class TestSkipStats:
     """should_enter_trade must increment skip_stats for each rejection reason."""
 
     def test_conf_gate_increments(self, vwap):
-        vwap.should_enter_trade(1, 0.50, {}, entry_conf=0.70, adx_thresh=0)
+        vwap.should_enter_trade(1, 0.50, {}, entry_conf=0.70)
         assert vwap.skip_stats['conf_gate'] == 1
         assert vwap.skip_stats['rr_gate']   == 0
 
     def test_rr_gate_increments(self, vwap):
         vwap._min_risk_rr    = 2.0
         vwap._latest_risk_rr = 1.5
-        vwap.should_enter_trade(1, 0.90, {}, entry_conf=0.70, adx_thresh=0)
+        vwap.should_enter_trade(1, 0.90, {}, entry_conf=0.70)
         assert vwap.skip_stats['rr_gate']   == 1
         assert vwap.skip_stats['conf_gate'] == 0
 
     def test_hold_increments(self, vwap):
-        vwap.should_enter_trade(0, 0.90, {}, entry_conf=0.70, adx_thresh=0)
+        vwap.should_enter_trade(0, 0.90, {}, entry_conf=0.70)
         assert vwap.skip_stats['hold'] == 1
 
     def test_successful_entry_no_increment(self, vwap):
-        vwap.should_enter_trade(1, 0.90, {}, entry_conf=0.70, adx_thresh=0)
+        vwap.should_enter_trade(1, 0.90, {}, entry_conf=0.70)
         assert all(v == 0 for v in vwap.skip_stats.values())
 
     def test_stats_accumulate_across_calls(self, vwap):
         for _ in range(5):
-            vwap.should_enter_trade(1, 0.50, {}, entry_conf=0.70, adx_thresh=0)
+            vwap.should_enter_trade(1, 0.50, {}, entry_conf=0.70)
         assert vwap.skip_stats['conf_gate'] == 5
 
 

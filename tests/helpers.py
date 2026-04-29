@@ -34,7 +34,7 @@ class MockStrategy:
     def predict(self, df):
         return (1, 0.85)
 
-    def should_enter_trade(self, prediction, confidence, bar, entry_conf, adx_thresh):
+    def should_enter_trade(self, prediction, confidence, bar, entry_conf):
         return (True, "LONG")
 
     def get_stop_target_pts(self, df, direction, entry_price):

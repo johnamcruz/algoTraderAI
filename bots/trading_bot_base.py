@@ -26,7 +26,6 @@ class TradingBot(ABC):
         timeframe_minutes,
         strategy: BaseStrategy,
         entry_conf,
-        adx_thresh,
         stop_pts=None,
         target_pts=None,
         enable_trailing_stop=False,
@@ -74,7 +73,6 @@ class TradingBot(ABC):
         
         # Trading parameters
         self.entry_conf = entry_conf
-        self.adx_thresh = adx_thresh
         self.stop_pts = stop_pts 
         self.target_pts = target_pts
         
@@ -82,7 +80,7 @@ class TradingBot(ABC):
 
         logging.info(f"📊 Strategy: {self.strategy.__class__.__name__}")
         atr_gate = f", MinStopATR={self.min_stop_atr_mult}×ATR" if self.min_stop_atr_mult else ""
-        logging.info(f"📈 Trade Params: Entry={self.entry_conf}, ADX={self.adx_thresh}, "
+        logging.info(f"📈 Trade Params: Entry={self.entry_conf}, "
                     f"Stop={self.stop_pts} pts, Target={self.target_pts} pts, "
                     f"HighConf={self.high_conf_multiplier}x @ ≥90%, "
                     f"MinStop={self.min_stop_pts}pts{atr_gate}")
@@ -259,7 +257,7 @@ class TradingBot(ABC):
             rr_val = getattr(self.strategy, '_latest_risk_rr', None)
             rr_str = f" rr={rr_val:.2f}" if rr_val is not None and prediction != 0 else ""
             print(f"🤖 AI: {pred_labels[prediction]} (Conf: {confidence:.2%}{rr_str}){zone_str}")
-            logging.info(f"AI: {pred_labels[prediction]} (Conf: {confidence:.2%}{rr_str}) ADX: {latest_bar.get('adx', 0):.1f}{zone_str}")
+            logging.info(f"AI: {pred_labels[prediction]} (Conf: {confidence:.2%}{rr_str}){zone_str}")
 
             # Let the strategy veto entries outside its allowed trading window
             if not self.strategy.is_trading_allowed(bar_time):
@@ -271,7 +269,6 @@ class TradingBot(ABC):
                 confidence,
                 latest_bar,
                 self.entry_conf,
-                self.adx_thresh
             )
             
             if should_enter:

@@ -39,7 +39,7 @@ class TestCalculateSize:
             timeframe_minutes=5,
             strategy=mock_strategy,
             entry_conf=0.70,
-            adx_thresh=20.0,
+
             stop_pts=10.0,
             target_pts=20.0,
             risk_amount=None,
@@ -55,7 +55,7 @@ class TestCalculateSize:
             timeframe_minutes=5,
             strategy=mock_strategy,
             entry_conf=0.70,
-            adx_thresh=20.0,
+
             stop_pts=10.0,
             target_pts=20.0,
             risk_amount=50.0,
@@ -447,7 +447,7 @@ class TestWarmupLength:
     def _make_bot(self, strategy):
         return ConcreteBot(
             contract="MNQ", size=1, timeframe_minutes=5,
-            strategy=strategy, entry_conf=0.70, adx_thresh=0,
+            strategy=strategy, entry_conf=0.70,
             stop_pts=10.0, target_pts=20.0,
         )
 

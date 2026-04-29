@@ -23,7 +23,7 @@ def bot(mock_strategy):
         timeframe_minutes=5,
         strategy=mock_strategy,
         entry_conf=0.70,
-        adx_thresh=20.0,
+
         stop_pts=10.0,
         target_pts=20.0,
         risk_amount=50.0,
@@ -45,7 +45,7 @@ def sim_bot(mock_strategy, tmp_path):
         timeframe_minutes=5,
         strategy=mock_strategy,
         entry_conf=0.70,
-        adx_thresh=20.0,
+
         stop_pts=10.0,
         target_pts=20.0,
         risk_amount=50.0,

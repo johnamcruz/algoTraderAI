@@ -226,7 +226,6 @@ class TestAlgoTraderStrategyKwargs:
             size=1,
             timeframe=5,
             entry_conf=0.8,
-            adx_thresh=0,
             risk_amount=200.0,
             max_contracts=5,
             high_conf_multiplier=1.0,

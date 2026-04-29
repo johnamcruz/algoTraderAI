@@ -335,7 +335,6 @@ class CISDOTEStrategyV7(BaseStrategy):
         confidence: float,
         bar: Dict,
         entry_conf: float,
-        adx_thresh: float,
     ) -> Tuple[bool, Optional[str]]:
         """
         Gate entry on confidence threshold (max(softmax) in [0.5, 1.0]).

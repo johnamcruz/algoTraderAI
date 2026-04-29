@@ -115,8 +115,6 @@ Example Usage (Backtesting):
     # Trading Parameters
     parser.add_argument('--entry_conf', type=float, default=None,
                         help='Min AI confidence to enter (default: 0.9)')
-    parser.add_argument('--adx_thresh', type=int, default=None,
-                        help='Min ADX value to enter (default: 0)')
     parser.add_argument('--stop_pts', type=float, default=None,
                         help='Stop loss in points (optional if strategy provides its own)')
     parser.add_argument('--target_pts', type=float, default=None,
@@ -249,7 +247,6 @@ def run_backtesting(config):
             timeframe_minutes=config["timeframe"],
             strategy=strategy,
             entry_conf=config["entry_conf"],
-            adx_thresh=config["adx_thresh"],
             stop_pts=config.get("stop_pts"),
             target_pts=config.get("target_pts"),
             tick_size=config.get("tick_size", 0.01),
@@ -331,7 +328,6 @@ def run_live_trading(config):
             timeframe_minutes=config["timeframe"],
             strategy=strategy,
             entry_conf=config["entry_conf"],
-            adx_thresh=config["adx_thresh"],
             stop_pts=config.get("stop_pts"),
             target_pts=config.get("target_pts"),
             enable_trailing_stop=config.get("enable_trailing_stop", False),

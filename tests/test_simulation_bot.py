@@ -70,7 +70,7 @@ class TestGetTickSize:
             timeframe_minutes=5,
             strategy=mock_strategy,
             entry_conf=0.70,
-            adx_thresh=20.0,
+
             stop_pts=10.0,
             target_pts=20.0,
             tick_size=0.05,
@@ -130,7 +130,7 @@ class TestLoadCsvData:
             timeframe_minutes=5,
             strategy=mock_strategy,
             entry_conf=0.70,
-            adx_thresh=20.0,
+
             stop_pts=10.0,
             target_pts=20.0,
             tick_size=tick_size,

@@ -95,7 +95,7 @@ class TestSessionGate:
 class TestEntryGate:
 
     def _enter(self, strategy, prediction=1, confidence=0.80, entry_conf=0.70):
-        return strategy.should_enter_trade(prediction, confidence, {}, entry_conf, 0)
+        return strategy.should_enter_trade(prediction, confidence, {}, entry_conf)
 
     def test_above_threshold_long_enters(self, strategy):
         ok, direction = self._enter(strategy, prediction=1, confidence=0.80)
@@ -341,7 +341,7 @@ class TestSkipStats:
 
     def test_conf_gate_increments(self, strategy):
         strategy.skip_stats = {'conf_gate': 0, 'rr_gate': 0, 'hold': 0}
-        strategy.should_enter_trade(1, 0.60, {}, entry_conf=0.80, adx_thresh=0)
+        strategy.should_enter_trade(1, 0.60, {}, entry_conf=0.80)
         assert strategy.skip_stats['conf_gate'] == 1
         assert strategy.skip_stats['rr_gate'] == 0
 
@@ -349,18 +349,18 @@ class TestSkipStats:
         strategy._min_risk_rr = 2.0
         strategy._latest_risk_rr = 1.5
         strategy.skip_stats = {'conf_gate': 0, 'rr_gate': 0, 'hold': 0}
-        strategy.should_enter_trade(1, 0.90, {}, entry_conf=0.80, adx_thresh=0)
+        strategy.should_enter_trade(1, 0.90, {}, entry_conf=0.80)
         assert strategy.skip_stats['rr_gate'] == 1
         assert strategy.skip_stats['conf_gate'] == 0
 
     def test_hold_prediction_increments(self, strategy):
         strategy.skip_stats = {'conf_gate': 0, 'rr_gate': 0, 'hold': 0}
-        strategy.should_enter_trade(0, 0.90, {}, entry_conf=0.80, adx_thresh=0)
+        strategy.should_enter_trade(0, 0.90, {}, entry_conf=0.80)
         assert strategy.skip_stats['hold'] == 1
 
     def test_successful_entry_does_not_increment(self, strategy):
         strategy.skip_stats = {'conf_gate': 0, 'rr_gate': 0, 'hold': 0}
-        strategy.should_enter_trade(1, 0.90, {}, entry_conf=0.80, adx_thresh=0)
+        strategy.should_enter_trade(1, 0.90, {}, entry_conf=0.80)
         assert strategy.skip_stats['conf_gate'] == 0
         assert strategy.skip_stats['rr_gate'] == 0
         assert strategy.skip_stats['hold'] == 0
@@ -368,7 +368,7 @@ class TestSkipStats:
     def test_stats_accumulate_across_calls(self, strategy):
         strategy.skip_stats = {'conf_gate': 0, 'rr_gate': 0, 'hold': 0}
         for _ in range(3):
-            strategy.should_enter_trade(1, 0.50, {}, entry_conf=0.80, adx_thresh=0)
+            strategy.should_enter_trade(1, 0.50, {}, entry_conf=0.80)
         assert strategy.skip_stats['conf_gate'] == 3
 
 

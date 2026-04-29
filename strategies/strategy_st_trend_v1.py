@@ -520,7 +520,6 @@ class STTrendStrategyV1(BaseStrategy):
         confidence: float,
         bar: Dict,
         entry_conf: float,
-        adx_thresh: float,
     ) -> Tuple[bool, Optional[str]]:
         if confidence < entry_conf:
             self.skip_stats['conf_gate'] += 1

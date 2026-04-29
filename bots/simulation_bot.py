@@ -37,7 +37,6 @@ class SimulationBot(TradingBot):
         timeframe_minutes,
         strategy: BaseStrategy,
         entry_conf,
-        adx_thresh,
         stop_pts,
         target_pts,
         tick_size=0.01,
@@ -65,7 +64,6 @@ class SimulationBot(TradingBot):
             timeframe_minutes: Bar timeframe
             strategy: Strategy instance (implements BaseStrategy)
             entry_conf: Minimum confidence for entry
-            adx_thresh: Minimum ADX for entry
             stop_atr: Stop loss ATR multiplier
             target_atr: Profit target ATR multiplier
             tick_size: Contract tick size for calculations
@@ -80,7 +78,6 @@ class SimulationBot(TradingBot):
             timeframe_minutes=timeframe_minutes,
             strategy=strategy,
             entry_conf=entry_conf,
-            adx_thresh=adx_thresh,
             stop_pts=stop_pts,
             target_pts=target_pts,
             enable_trailing_stop=enable_trailing_stop,
@@ -126,7 +123,7 @@ class SimulationBot(TradingBot):
         self.current_timestamp = None
         
         print(f"🤖 Simulation Bot initialized for {self.contract}")
-        print(f"📈 Trade Params: Entry={self.entry_conf}, ADX={self.adx_thresh}, "
+        print(f"📈 Trade Params: Entry={self.entry_conf}, "
               f"Stop={self.stop_pts} pts, Target={self.target_pts} pts")
         print(f"📊 Strategy: {self.strategy.__class__.__name__}")
         pt_str = f"${self.session_profit_target:,.2f}" if self.session_profit_target is not None else "none"
