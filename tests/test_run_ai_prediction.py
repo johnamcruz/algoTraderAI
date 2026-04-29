@@ -537,3 +537,82 @@ class TestInPositionReset:
 
         # _place_order itself sets in_position=True; we just confirm it's still True
         assert bot.in_position is True
+
+
+class TestCrossProcessOrderLock:
+    """Filesystem mutex: prevents two processes from both passing the position
+    check and placing orders before either has a broker-confirmed position."""
+
+    def test_lock_blocks_second_process(self):
+        """If the lockdir already exists, the signal is skipped — no order placed."""
+        import os, tempfile
+        bot = _make_bot(stop_pts=10.0, target_pts=20.0)
+        _fill_bars(bot)
+        bot._place_order = AsyncMock(return_value="order-123")
+
+        lock_dir = os.path.join(tempfile.gettempdir(), f"algo_order_{bot.account}.lockdir")
+        os.makedirs(lock_dir, exist_ok=True)
+        try:
+            run(bot._run_ai_prediction())
+            bot._place_order.assert_not_called()
+            assert bot.in_position is False
+        finally:
+            os.rmdir(lock_dir)
+
+    def test_lock_released_after_successful_order(self):
+        """Lock must be gone after a successful order so the next signal can trade."""
+        import os, tempfile
+        bot = _make_bot(stop_pts=10.0, target_pts=20.0)
+        _fill_bars(bot)
+        bot._place_order = AsyncMock(return_value="order-123")
+
+        run(bot._run_ai_prediction())
+
+        lock_dir = os.path.join(tempfile.gettempdir(), f"algo_order_{bot.account}.lockdir")
+        assert not os.path.exists(lock_dir)
+
+    def test_lock_released_after_rejected_order(self):
+        """Lock must be gone even when the broker rejects the order."""
+        import os, tempfile
+        bot = _make_bot(stop_pts=10.0, target_pts=20.0)
+        _fill_bars(bot)
+        bot._place_order = AsyncMock(return_value=None)  # broker rejection
+
+        run(bot._run_ai_prediction())
+
+        lock_dir = os.path.join(tempfile.gettempdir(), f"algo_order_{bot.account}.lockdir")
+        assert not os.path.exists(lock_dir)
+
+    def test_stale_lock_is_cleared_and_order_placed(self):
+        """A lock older than 30s is treated as stale and removed so trading can resume."""
+        import os, tempfile, time
+        bot = _make_bot(stop_pts=10.0, target_pts=20.0)
+        _fill_bars(bot)
+        bot._place_order = AsyncMock(return_value="order-456")
+
+        lock_dir = os.path.join(tempfile.gettempdir(), f"algo_order_{bot.account}.lockdir")
+        os.makedirs(lock_dir, exist_ok=True)
+        # Back-date the directory's mtime by 31 seconds
+        stale_mtime = time.time() - 31
+        os.utime(lock_dir, (stale_mtime, stale_mtime))
+        try:
+            run(bot._run_ai_prediction())
+            bot._place_order.assert_called_once()
+        finally:
+            if os.path.exists(lock_dir):
+                os.rmdir(lock_dir)
+
+    def test_fresh_lock_is_not_cleared(self):
+        """A lock held for <30s is NOT treated as stale — second process is blocked."""
+        import os, tempfile
+        bot = _make_bot(stop_pts=10.0, target_pts=20.0)
+        _fill_bars(bot)
+        bot._place_order = AsyncMock(return_value="order-789")
+
+        lock_dir = os.path.join(tempfile.gettempdir(), f"algo_order_{bot.account}.lockdir")
+        os.makedirs(lock_dir, exist_ok=True)
+        try:
+            run(bot._run_ai_prediction())
+            bot._place_order.assert_not_called()  # blocked by fresh lock
+        finally:
+            os.rmdir(lock_dir)

@@ -278,15 +278,15 @@ class TradingBot(ABC):
                     logging.info(f"{direction} signal ignored: Already in position (in-memory guard)")
                     return
 
-                # Cross-process mutex: atomic mkdir per account prevents two bot
-                # processes from both passing the position check simultaneously.
+                # Cross-process mutex: held from position check through order placement.
+                # Prevents two processes from both seeing no open position and both filling.
+                # Stale TTL (30s) ensures a crashed process can't lock out trading forever.
                 lock_dir = os.path.join(tempfile.gettempdir(), f"algo_order_{self.account}.lockdir")
                 lock_acquired = False
                 try:
                     os.mkdir(lock_dir)
                     lock_acquired = True
                 except FileExistsError:
-                    # Check if lock is stale (held >30s means the other process crashed)
                     try:
                         age = time.time() - os.stat(lock_dir).st_mtime
                         if age > 30:
@@ -306,147 +306,149 @@ class TradingBot(ABC):
                     if has_position:
                         logging.info(f"{direction} signal ignored: Already in position (broker check)")
                         return
-                    # Claim the position slot immediately so no concurrent call can also pass
                     self.in_position = True
+
+                    close_price = latest_bar['close']
+                    tick_size = self._get_tick_size()
+
+                    # Let the strategy provide its own stop/target (e.g. zone-based).
+                    # Fall back to the bot's global stop_pts / target_pts if not provided.
+                    strat_stop, strat_target = self.strategy.get_stop_target_pts(
+                        df, direction, close_price
+                    )
+                    stop_pts   = strat_stop   if strat_stop   is not None else self.stop_pts
+                    target_pts = strat_target if strat_target is not None else self.target_pts
+
+                    # On high-confidence signals, extend the target (same risk, larger reward).
+                    HIGH_CONF_THRESHOLD = 0.90
+                    if confidence >= HIGH_CONF_THRESHOLD and self.high_conf_multiplier > 1.0:
+                        extended_target = target_pts * self.high_conf_multiplier
+                        logging.info(
+                            f"⚡ High confidence ({confidence:.2%}) — target extended "
+                            f"{target_pts:.2f}pts → {extended_target:.2f}pts "
+                            f"(×{self.high_conf_multiplier}, risk unchanged)"
+                        )
+                        target_pts = extended_target
+
+                    effective_risk = self.risk_amount
+
+                    if stop_pts is None or target_pts is None:
+                        logging.error(
+                            "❌ No stop/target available — set --stop_pts/--target_pts "
+                            "or use a strategy that provides them."
+                        )
+                        self.in_position = False
+                        return
+
+                    # Dynamic minimum stop: max of fixed floor and ATR-based floor.
+                    # vty_atr_14 is stored normalized (atr/close); multiply back to get points.
+                    effective_min_stop_pts = self.min_stop_pts
+                    if self.min_stop_atr_mult > 0:
+                        vty_atr_14 = latest_bar.get('vty_atr_14', 0) or 0
+                        atr_pts = vty_atr_14 * close_price
+                        atr_floor = atr_pts * self.min_stop_atr_mult
+                        effective_min_stop_pts = max(self.min_stop_pts, atr_floor)
+
+                    min_stop_ticks = effective_min_stop_pts / tick_size
+                    stop_ticks_raw = stop_pts / tick_size
+                    if stop_ticks_raw < min_stop_ticks:
+                        gate_desc = (
+                            f"ATR-based {effective_min_stop_pts:.2f}pts "
+                            f"({self.min_stop_atr_mult}×ATR)"
+                            if self.min_stop_atr_mult and effective_min_stop_pts > self.min_stop_pts
+                            else f"fixed {self.min_stop_pts}pts"
+                        )
+                        logging.info(
+                            f"⚠️ Signal skipped — zone stop too tight "
+                            f"({stop_pts:.2f}pts / {stop_ticks_raw:.1f} ticks < {gate_desc})"
+                        )
+                        self.skip_stats['stop_too_tight'] += 1
+                        self.in_position = False
+                        return
+
+                    if direction == 'LONG':
+                        stop_loss        = close_price - stop_pts
+                        profit_target    = close_price + target_pts
+                        stop_ticks       = -int(stop_pts / tick_size)
+                        take_profit_ticks = int(target_pts / tick_size)
+                        size = self._calculate_size(stop_ticks, effective_risk)
+
+                        if size == 0:
+                            logging.info(
+                                f"⚠️ Signal skipped — zone stop {stop_pts:.2f}pts "
+                                f"({abs(stop_ticks)} ticks × ${self._get_tick_value():.2f}) "
+                                f"exceeds risk_amount ${self.risk_amount:.0f}"
+                            )
+                            self.skip_stats['stop_too_wide'] += 1
+                            self.in_position = False
+                            return
+
+                        order_result = await self._place_order(
+                            side=0,
+                            close_price=close_price,
+                            stop_loss=stop_loss,
+                            profit_target=profit_target,
+                            stop_ticks=stop_ticks,
+                            take_profit_ticks=take_profit_ticks,
+                            size=size
+                        )
+
+                        if order_result:
+                            print("="*40)
+                            print(f"🔥 LONG SIGNAL")
+                            print(f"  Reference: {close_price:.2f}")
+                            print(f"  Stop: {stop_loss:.2f} | Target: {profit_target:.2f}")
+                            print("="*40)
+                            logging.info(f"LONG SIGNAL @ {close_price:.2f} Stop: {stop_loss:.2f} Target: {profit_target:.2f}")
+                        else:
+                            self.in_position = False
+                            logging.warning(f"⚠️ LONG order rejected by broker @ {close_price:.2f} — signal not placed")
+
+                    else:  # SHORT
+                        stop_loss        = close_price + stop_pts
+                        profit_target    = close_price - target_pts
+                        stop_ticks       = int(stop_pts / tick_size)
+                        take_profit_ticks = -int(target_pts / tick_size)
+                        size = self._calculate_size(stop_ticks, effective_risk)
+
+                        if size == 0:
+                            logging.info(
+                                f"⚠️ Signal skipped — zone stop {stop_pts:.2f}pts "
+                                f"({abs(stop_ticks)} ticks × ${self._get_tick_value():.2f}) "
+                                f"exceeds risk_amount ${self.risk_amount:.0f}"
+                            )
+                            self.skip_stats['stop_too_wide'] += 1
+                            self.in_position = False
+                            return
+
+                        order_result = await self._place_order(
+                            side=1,
+                            close_price=close_price,
+                            stop_loss=stop_loss,
+                            profit_target=profit_target,
+                            stop_ticks=stop_ticks,
+                            take_profit_ticks=take_profit_ticks,
+                            size=size
+                        )
+
+                        if order_result:
+                            print("="*40)
+                            print(f"🥶 SHORT SIGNAL")
+                            print(f"  Reference: {close_price:.2f}")
+                            print(f"  Stop: {stop_loss:.2f} | Target: {profit_target:.2f}")
+                            print("="*40)
+                            logging.info(f"SHORT SIGNAL @ {close_price:.2f} Stop: {stop_loss:.2f} Target: {profit_target:.2f}")
+                        else:
+                            self.in_position = False
+                            logging.warning(f"⚠️ SHORT order rejected by broker @ {close_price:.2f} — signal not placed")
+
                 finally:
+                    # Always release the lock — order confirmed, rejected, or exception.
+                    # Lock is held for ~3-5s (position check + order placement).
                     try:
                         os.rmdir(lock_dir)
                     except Exception:
                         pass
-
-                close_price = latest_bar['close']
-                tick_size = self._get_tick_size()
-
-                # Let the strategy provide its own stop/target (e.g. zone-based).
-                # Fall back to the bot's global stop_pts / target_pts if not provided.
-                strat_stop, strat_target = self.strategy.get_stop_target_pts(
-                    df, direction, close_price
-                )
-                stop_pts   = strat_stop   if strat_stop   is not None else self.stop_pts
-                target_pts = strat_target if strat_target is not None else self.target_pts
-
-                # On high-confidence signals, extend the target (same risk, larger reward).
-                HIGH_CONF_THRESHOLD = 0.90
-                if confidence >= HIGH_CONF_THRESHOLD and self.high_conf_multiplier > 1.0:
-                    extended_target = target_pts * self.high_conf_multiplier
-                    logging.info(
-                        f"⚡ High confidence ({confidence:.2%}) — target extended "
-                        f"{target_pts:.2f}pts → {extended_target:.2f}pts "
-                        f"(×{self.high_conf_multiplier}, risk unchanged)"
-                    )
-                    target_pts = extended_target
-
-                effective_risk = self.risk_amount
-
-                if stop_pts is None or target_pts is None:
-                    logging.error(
-                        "❌ No stop/target available — set --stop_pts/--target_pts "
-                        "or use a strategy that provides them."
-                    )
-                    self.in_position = False
-                    return
-
-                # Dynamic minimum stop: max of fixed floor and ATR-based floor.
-                # vty_atr_14 is stored normalized (atr/close); multiply back to get points.
-                effective_min_stop_pts = self.min_stop_pts
-                if self.min_stop_atr_mult > 0:
-                    vty_atr_14 = latest_bar.get('vty_atr_14', 0) or 0
-                    atr_pts = vty_atr_14 * close_price
-                    atr_floor = atr_pts * self.min_stop_atr_mult
-                    effective_min_stop_pts = max(self.min_stop_pts, atr_floor)
-
-                min_stop_ticks = effective_min_stop_pts / tick_size
-                stop_ticks_raw = stop_pts / tick_size
-                if stop_ticks_raw < min_stop_ticks:
-                    gate_desc = (
-                        f"ATR-based {effective_min_stop_pts:.2f}pts "
-                        f"({self.min_stop_atr_mult}×ATR)"
-                        if self.min_stop_atr_mult and effective_min_stop_pts > self.min_stop_pts
-                        else f"fixed {self.min_stop_pts}pts"
-                    )
-                    logging.info(
-                        f"⚠️ Signal skipped — zone stop too tight "
-                        f"({stop_pts:.2f}pts / {stop_ticks_raw:.1f} ticks < {gate_desc})"
-                    )
-                    self.skip_stats['stop_too_tight'] += 1
-                    self.in_position = False
-                    return
-
-                if direction == 'LONG':
-                    stop_loss        = close_price - stop_pts
-                    profit_target    = close_price + target_pts
-                    stop_ticks       = -int(stop_pts / tick_size)
-                    take_profit_ticks = int(target_pts / tick_size)
-                    size = self._calculate_size(stop_ticks, effective_risk)
-
-                    if size == 0:
-                        logging.info(
-                            f"⚠️ Signal skipped — zone stop {stop_pts:.2f}pts "
-                            f"({abs(stop_ticks)} ticks × ${self._get_tick_value():.2f}) "
-                            f"exceeds risk_amount ${self.risk_amount:.0f}"
-                        )
-                        self.skip_stats['stop_too_wide'] += 1
-                        self.in_position = False
-                        return
-
-                    order_result = await self._place_order(
-                        side=0,
-                        close_price=close_price,
-                        stop_loss=stop_loss,
-                        profit_target=profit_target,
-                        stop_ticks=stop_ticks,
-                        take_profit_ticks=take_profit_ticks,
-                        size=size
-                    )
-
-                    if order_result:
-                        print("="*40)
-                        print(f"🔥 LONG SIGNAL")
-                        print(f"  Reference: {close_price:.2f}")
-                        print(f"  Stop: {stop_loss:.2f} | Target: {profit_target:.2f}")
-                        print("="*40)
-                        logging.info(f"LONG SIGNAL @ {close_price:.2f} Stop: {stop_loss:.2f} Target: {profit_target:.2f}")
-                    else:
-                        self.in_position = False
-                        logging.warning(f"⚠️ LONG order rejected by broker @ {close_price:.2f} — signal not placed")
-
-                else:  # SHORT
-                    stop_loss        = close_price + stop_pts
-                    profit_target    = close_price - target_pts
-                    stop_ticks       = int(stop_pts / tick_size)
-                    take_profit_ticks = -int(target_pts / tick_size)
-                    size = self._calculate_size(stop_ticks, effective_risk)
-
-                    if size == 0:
-                        logging.info(
-                            f"⚠️ Signal skipped — zone stop {stop_pts:.2f}pts "
-                            f"({abs(stop_ticks)} ticks × ${self._get_tick_value():.2f}) "
-                            f"exceeds risk_amount ${self.risk_amount:.0f}"
-                        )
-                        self.skip_stats['stop_too_wide'] += 1
-                        self.in_position = False
-                        return
-
-                    order_result = await self._place_order(
-                        side=1,
-                        close_price=close_price,
-                        stop_loss=stop_loss,
-                        profit_target=profit_target,
-                        stop_ticks=stop_ticks,
-                        take_profit_ticks=take_profit_ticks,
-                        size=size
-                    )
-
-                    if order_result:
-                        print("="*40)
-                        print(f"🥶 SHORT SIGNAL")
-                        print(f"  Reference: {close_price:.2f}")
-                        print(f"  Stop: {stop_loss:.2f} | Target: {profit_target:.2f}")
-                        print("="*40)
-                        logging.info(f"SHORT SIGNAL @ {close_price:.2f} Stop: {stop_loss:.2f} Target: {profit_target:.2f}")
-                    else:
-                        self.in_position = False
-                        logging.warning(f"⚠️ SHORT order rejected by broker @ {close_price:.2f} — signal not placed")
                     
         except Exception as e:
             self.in_position = False
