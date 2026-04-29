@@ -19,6 +19,7 @@ import sys
 from datetime import datetime
 
 from utils.bot_utils import setup_logging, authenticate, MARKET_HUB, BASE_URL
+from utils.fetch_bars import fetch_bars
 from utils.config_loader import load_config, merge_config_with_args, validate_config
 from strategies.strategy_factory import StrategyFactory
 from bots.trading_bot import RealTimeBot
@@ -64,6 +65,8 @@ Example Usage (Backtesting):
                         help='Run in backtesting mode using historical CSV data')
     parser.add_argument('--backtest_data', type=str,
                         help='Path to CSV file with historical OHLCV data for backtesting')
+    parser.add_argument('--live-data', action='store_true', default=None,
+                        help='Fetch bars from the live API instead of a CSV (requires --username/--apikey)')
     parser.add_argument('--tick_size', type=float, default=None,
                         help='Contract tick size (for backtesting calculations)')
     parser.add_argument('--profit_target', type=float, default=None,
@@ -160,8 +163,9 @@ Example Usage (Backtesting):
 
         try:
             if config.get('backtest'):
-                if not config.get('backtest_data'):
-                    raise ValueError("--backtest_data is required when using --backtest")
+                live_data = config.get('live_data') or getattr(args, 'live_data', False)
+                if not live_data and not config.get('backtest_data'):
+                    raise ValueError("--backtest_data is required when using --backtest (or pass --live-data)")
                 if not config.get('contract'):
                     raise ValueError("--contract is required")
             else:
@@ -221,8 +225,25 @@ def run_backtesting(config):
         # would corrupt those calibrated targets, so it is always disabled.
         high_conf_mult = 1.0 if config['strategy'] == 'cisd-ote7' else config.get('high_conf_multiplier', 1.0)
 
+        # Live-data mode: fetch bars from API instead of reading a CSV
+        preloaded_df = None
+        if config.get('live_data'):
+            print("📡 Fetching live historical bars from API...")
+            preloaded_df = fetch_bars(
+                contract_id=config["contract"],
+                start_date=config["start_date"],
+                end_date=config["end_date"],
+                timeframe_minutes=config.get("timeframe", 5),
+                username=config["username"],
+                api_key=config["apikey"],
+                base_url=config.get("base_url", BASE_URL),
+            )
+            if preloaded_df.empty:
+                print("❌ No bars returned from API. Check contract, dates, and credentials.")
+                return
+
         bot = SimulationBot(
-            csv_path=config["backtest_data"],
+            csv_path=config.get("backtest_data"),
             contract=config["contract"],
             size=config["size"],
             timeframe_minutes=config["timeframe"],
@@ -244,6 +265,7 @@ def run_backtesting(config):
             min_stop_pts=config.get("min_stop_pts", 1.0),
             min_stop_atr_mult=config.get("min_stop_atr", 0.5),
             breakeven_on_2r=config.get("breakeven_on_2r", True),
+            df=preloaded_df,
         )
 
         if quiet:

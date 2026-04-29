@@ -18,7 +18,7 @@ import sys
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # ── Scenario definitions ─────────────────────────────────────────────────────
 
@@ -91,6 +91,28 @@ SCENARIOS = {
     },
 }
 
+# Live scenarios: dates computed at runtime from today.
+# Only available when --live-data is passed.
+LIVE_SCENARIOS = {
+    "live_30d":  {"label": "Live Last 30 Days",  "days": 30},
+    "live_60d":  {"label": "Live Last 60 Days",  "days": 60},
+    "live_90d":  {"label": "Live Last 90 Days",  "days": 90},
+    "live_180d": {"label": "Live Last 180 Days", "days": 180},
+}
+
+
+def _live_scenario(key: str) -> dict:
+    """Build a scenario dict for a live_Nd key using today as end date."""
+    days = LIVE_SCENARIOS[key]["days"]
+    today = datetime.utcnow().date()
+    start = today - timedelta(days=days)
+    return {
+        "label":      LIVE_SCENARIOS[key]["label"],
+        "start_date": str(start),
+        "end_date":   str(today),
+        "note":       f"Live API data: last {days} days ending today ({today})",
+    }
+
 # Symbol → data file, tick_size, full contract ID for backtesting
 SYMBOL_CONFIG = {
     "MNQ": {
@@ -139,14 +161,20 @@ DEFAULT_MIN_RISK_RR   = 2.0
 
 # ── Build command ─────────────────────────────────────────────────────────────
 
+def _get_scenario(scenario_key: str, args) -> dict:
+    """Return the scenario dict for a key, supporting live_Nd keys."""
+    if scenario_key in LIVE_SCENARIOS:
+        return _live_scenario(scenario_key)
+    return SCENARIOS[scenario_key]
+
+
 def build_command(scenario_key: str, args) -> list[str]:
-    sc = SCENARIOS[scenario_key]
+    sc = _get_scenario(scenario_key, args)
     sym_cfg = SYMBOL_CONFIG[args.symbol]
 
     cmd = [
         sys.executable, "algoTrader.py",
         "--backtest",
-        "--backtest_data",        sym_cfg["data"],
         "--contract",             sym_cfg["contract"],
         "--tick_size",            str(sym_cfg["tick_size"]),
         "--start-date",           sc["start_date"],
@@ -163,6 +191,12 @@ def build_command(scenario_key: str, args) -> list[str]:
         "--min_risk_rr",          str(args.min_risk_rr),
         "--quiet",
     ]
+
+    if getattr(args, 'live_data', False):
+        cmd += ["--live-data", "--username", args.username, "--apikey", args.apikey]
+    else:
+        cmd += ["--backtest_data", sym_cfg["data"]]
+
     if not args.no_breakeven:
         cmd.append("--breakeven_on_2r")
     if args.no_target:
@@ -175,7 +209,7 @@ def build_command(scenario_key: str, args) -> list[str]:
 # ── Run one scenario ──────────────────────────────────────────────────────────
 
 def run_scenario(scenario_key: str, args, log_dir: str) -> dict:
-    sc = SCENARIOS[scenario_key]
+    sc = _get_scenario(scenario_key, args)
     log_path = os.path.join(log_dir, f"{scenario_key}.txt")
     cmd = build_command(scenario_key, args)
 
@@ -244,7 +278,7 @@ def print_results(results: list[dict], args) -> None:
 
 def attach_dates(results: list[dict], args) -> list[dict]:
     for r in results:
-        sc = SCENARIOS[r["key"]]
+        sc = _get_scenario(r["key"], args)
         r["start_date"] = sc["start_date"]
         r["end_date"] = sc["end_date"]
     return results
@@ -293,25 +327,47 @@ def main():
                         help="Disable breakeven-on-2R (default: on)")
     parser.add_argument("--no-target", action="store_true", default=False,
                         help="Disable session profit target cap — run full regime window")
+    parser.add_argument("--live-data", action="store_true", default=False,
+                        help="Fetch bars from the live API instead of CSV (enables live_Nd scenarios)")
+    parser.add_argument("--username", type=str, default=os.environ.get("TOPSTEP_USERNAME"),
+                        help="TopstepX username (or set TOPSTEP_USERNAME env var)")
+    parser.add_argument("--apikey", type=str, default=os.environ.get("TOPSTEP_APIKEY"),
+                        help="TopstepX API key (or set TOPSTEP_APIKEY env var)")
     args = parser.parse_args()
 
     # Auto-select the correct model when --model was not explicitly provided
     if args.model == DEFAULT_MODEL_V7 and args.strategy in STRATEGY_DEFAULT_MODEL:
         args.model = STRATEGY_DEFAULT_MODEL[args.strategy]
 
+    all_scenario_keys = list(SCENARIOS.keys()) + list(LIVE_SCENARIOS.keys())
+
     if args.list:
-        print("\nAvailable scenarios:")
+        print("\nAvailable scenarios (CSV-based):")
         for key, sc in SCENARIOS.items():
             print(f"  {key:<18}  {sc['start_date']} → {sc['end_date']}  {sc['label']}")
             print(f"  {'':18}  {sc['note']}")
+        print("\nLive scenarios (--live-data required):")
+        for key, ls in LIVE_SCENARIOS.items():
+            sc = _live_scenario(key)
+            print(f"  {key:<18}  {sc['start_date']} → {sc['end_date']}  {ls['label']}")
         print()
         return
 
-    keys_to_run = [args.scenario] if args.scenario else list(SCENARIOS.keys())
+    if args.live_data and not args.scenario:
+        keys_to_run = list(LIVE_SCENARIOS.keys())
+    elif args.scenario:
+        keys_to_run = [args.scenario]
+    else:
+        keys_to_run = list(SCENARIOS.keys())
+
     for k in keys_to_run:
-        if k not in SCENARIOS:
+        if k not in all_scenario_keys:
             print(f"Unknown scenario '{k}'. Use --list to see options.")
             sys.exit(1)
+
+    if args.live_data and (not args.username or not args.apikey):
+        print("--live-data requires --username and --apikey (or TOPSTEP_USERNAME/TOPSTEP_APIKEY env vars).")
+        sys.exit(1)
 
     # Create log dir
     run_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -338,7 +394,7 @@ def main():
         results.sort(key=lambda r: keys_to_run.index(r["key"]))
     else:
         for k in keys_to_run:
-            sc = SCENARIOS[k]
+            sc = _get_scenario(k, args)
             print(f"  → {sc['label']} ({sc['start_date']} → {sc['end_date']}) ...", flush=True)
             r = run_scenario(k, args, log_dir)
             marker = "✓" if r["returncode"] == 0 else "✗"

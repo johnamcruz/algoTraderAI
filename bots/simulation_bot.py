@@ -52,6 +52,7 @@ class SimulationBot(TradingBot):
         min_stop_pts=1.0,
         min_stop_atr_mult=0.5,
         breakeven_on_2r=False,
+        df=None,
     ):
         """
         Initialize the simulation bot.
@@ -92,6 +93,7 @@ class SimulationBot(TradingBot):
 
         # Simulation-specific attributes
         self.csv_path = csv_path
+        self._preloaded_df = df  # pre-fetched DataFrame (live-data mode); takes priority over csv_path
         self.tick_size = tick_size
         self.session_profit_target = profit_target  # dollar P&L target (not trade take-profit price)
         self.initial_max_loss = max_loss_limit       # never changes
@@ -646,10 +648,12 @@ class SimulationBot(TradingBot):
 
     async def run(self):
         """Run the simulation."""
-        print(f"🚀 Starting simulation from {self.csv_path}...")
-        
-        # Load CSV data
-        df = self._load_csv_data()
+        if self._preloaded_df is not None:
+            print(f"🚀 Starting simulation from live API data...")
+            df = self._preloaded_df.copy()
+        else:
+            print(f"🚀 Starting simulation from {self.csv_path}...")
+            df = self._load_csv_data()
 
         original_len = len(df)
         if self.start_date is not None or self.end_date is not None:
