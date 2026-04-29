@@ -5,6 +5,9 @@ Base Trading Bot Class - Simplified for live trading
 
 import math
 import logging
+import os
+import tempfile
+import time
 import pandas as pd
 from collections import deque
 from datetime import datetime, timezone
@@ -270,17 +273,46 @@ class TradingBot(ABC):
             )
             
             if should_enter:
-                # Guard against concurrent signals (within-process and cross-process race)
+                # Fast in-memory guard (same process)
                 if self.in_position:
                     logging.info(f"{direction} signal ignored: Already in position (in-memory guard)")
                     return
-                has_position = await self._has_existing_position()
-                if has_position:
-                    print("⚠️ SIGNAL IGNORED - Already in position")
-                    logging.info(f"{direction} signal ignored: Already in position")
+
+                # Cross-process mutex: atomic mkdir per account prevents two bot
+                # processes from both passing the position check simultaneously.
+                lock_dir = os.path.join(tempfile.gettempdir(), f"algo_order_{self.account}.lockdir")
+                lock_acquired = False
+                try:
+                    os.mkdir(lock_dir)
+                    lock_acquired = True
+                except FileExistsError:
+                    # Check if lock is stale (held >30s means the other process crashed)
+                    try:
+                        age = time.time() - os.stat(lock_dir).st_mtime
+                        if age > 30:
+                            os.rmdir(lock_dir)
+                            os.mkdir(lock_dir)
+                            lock_acquired = True
+                            logging.warning(f"⚠️ Stale order lock removed (age={age:.0f}s) — re-acquired")
+                    except Exception:
+                        pass
+
+                if not lock_acquired:
+                    logging.info(f"{direction} signal ignored: Order lock held by another process for account {self.account}")
                     return
-                # Claim the position slot immediately so no concurrent call can also pass
-                self.in_position = True
+
+                try:
+                    has_position = await self._has_existing_position()
+                    if has_position:
+                        logging.info(f"{direction} signal ignored: Already in position (broker check)")
+                        return
+                    # Claim the position slot immediately so no concurrent call can also pass
+                    self.in_position = True
+                finally:
+                    try:
+                        os.rmdir(lock_dir)
+                    except Exception:
+                        pass
 
                 close_price = latest_bar['close']
                 tick_size = self._get_tick_size()

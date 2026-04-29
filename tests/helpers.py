@@ -53,6 +53,8 @@ class MockStrategy:
 class ConcreteBot(TradingBot):
     """Concrete TradingBot for unit testing (MNQ specs, $0.50/tick, 0.25 tick size)."""
 
+    account = "TEST_ACCOUNT"
+
     def _get_tick_size(self):
         return 0.25
 
