@@ -284,10 +284,12 @@ class TradingBot(ABC):
                 # so there's no race condition to guard against in backtest mode.
                 if self._is_simulation:
                     lock_dir = None
+                    cooldown_file = None
                 else:
                     # Prevents two live processes from both seeing no open position and both filling.
                     # Stale TTL (30s) ensures a crashed process can't lock out trading forever.
                     lock_dir = os.path.join(tempfile.gettempdir(), f"algo_order_{self.account}.lockdir")
+                    cooldown_file = os.path.join(tempfile.gettempdir(), f"algo_order_placed_{self.account}.txt")
                     lock_acquired = False
                     try:
                         os.mkdir(lock_dir)
@@ -308,6 +310,21 @@ class TradingBot(ABC):
                         return
 
                 try:
+                    # Cross-process double-entry guard: catches broker-lag window where two
+                    # processes both see "no position" within milliseconds of each other.
+                    if cooldown_file:
+                        try:
+                            if os.path.exists(cooldown_file):
+                                elapsed = time.time() - float(open(cooldown_file).read().strip())
+                                if elapsed < 10:
+                                    logging.info(
+                                        f"{direction} signal ignored: order placed {elapsed:.1f}s ago "
+                                        f"by another process (double-entry guard)"
+                                    )
+                                    return
+                        except Exception:
+                            pass
+
                     has_position = await self._has_existing_position()
                     if has_position:
                         logging.info(f"{direction} signal ignored: Already in position (broker check)")
@@ -406,6 +423,12 @@ class TradingBot(ABC):
                             print(f"  Stop: {stop_loss:.2f} | Target: {profit_target:.2f}")
                             print("="*40)
                             logging.info(f"LONG SIGNAL @ {close_price:.2f} Stop: {stop_loss:.2f} Target: {profit_target:.2f}")
+                            if cooldown_file:
+                                try:
+                                    with open(cooldown_file, 'w') as _f:
+                                        _f.write(str(time.time()))
+                                except Exception:
+                                    pass
                         else:
                             self.in_position = False
                             logging.warning(f"⚠️ LONG order rejected by broker @ {close_price:.2f} — signal not placed")
@@ -444,6 +467,12 @@ class TradingBot(ABC):
                             print(f"  Stop: {stop_loss:.2f} | Target: {profit_target:.2f}")
                             print("="*40)
                             logging.info(f"SHORT SIGNAL @ {close_price:.2f} Stop: {stop_loss:.2f} Target: {profit_target:.2f}")
+                            if cooldown_file:
+                                try:
+                                    with open(cooldown_file, 'w') as _f:
+                                        _f.write(str(time.time()))
+                                except Exception:
+                                    pass
                         else:
                             self.in_position = False
                             logging.warning(f"⚠️ SHORT order rejected by broker @ {close_price:.2f} — signal not placed")

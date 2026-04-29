@@ -548,6 +548,7 @@ class TestCrossProcessOrderLock:
         """If the lockdir already exists, the signal is skipped — no order placed."""
         import os, tempfile
         bot = _make_bot(stop_pts=10.0, target_pts=20.0)
+        bot._is_simulation = False
         _fill_bars(bot)
         bot._place_order = AsyncMock(return_value="order-123")
 
@@ -564,6 +565,7 @@ class TestCrossProcessOrderLock:
         """Lock must be gone after a successful order so the next signal can trade."""
         import os, tempfile
         bot = _make_bot(stop_pts=10.0, target_pts=20.0)
+        bot._is_simulation = False
         _fill_bars(bot)
         bot._place_order = AsyncMock(return_value="order-123")
 
@@ -576,6 +578,7 @@ class TestCrossProcessOrderLock:
         """Lock must be gone even when the broker rejects the order."""
         import os, tempfile
         bot = _make_bot(stop_pts=10.0, target_pts=20.0)
+        bot._is_simulation = False
         _fill_bars(bot)
         bot._place_order = AsyncMock(return_value=None)  # broker rejection
 
@@ -588,25 +591,33 @@ class TestCrossProcessOrderLock:
         """A lock older than 30s is treated as stale and removed so trading can resume."""
         import os, tempfile, time
         bot = _make_bot(stop_pts=10.0, target_pts=20.0)
+        bot._is_simulation = False
         _fill_bars(bot)
         bot._place_order = AsyncMock(return_value="order-456")
 
         lock_dir = os.path.join(tempfile.gettempdir(), f"algo_order_{bot.account}.lockdir")
+        cooldown_file = os.path.join(tempfile.gettempdir(), f"algo_order_placed_{bot.account}.txt")
         os.makedirs(lock_dir, exist_ok=True)
         # Back-date the directory's mtime by 31 seconds
         stale_mtime = time.time() - 31
         os.utime(lock_dir, (stale_mtime, stale_mtime))
+        # Remove any stale cooldown file so the cooldown check doesn't block
+        if os.path.exists(cooldown_file):
+            os.remove(cooldown_file)
         try:
             run(bot._run_ai_prediction())
             bot._place_order.assert_called_once()
         finally:
             if os.path.exists(lock_dir):
                 os.rmdir(lock_dir)
+            if os.path.exists(cooldown_file):
+                os.remove(cooldown_file)
 
     def test_fresh_lock_is_not_cleared(self):
         """A lock held for <30s is NOT treated as stale — second process is blocked."""
         import os, tempfile
         bot = _make_bot(stop_pts=10.0, target_pts=20.0)
+        bot._is_simulation = False
         _fill_bars(bot)
         bot._place_order = AsyncMock(return_value="order-789")
 
@@ -638,12 +649,9 @@ class TestSimulationBotMutexBypass:
         assert SimulationBot._is_simulation is True
 
     def test_live_bot_is_simulation_flag_is_false(self):
-        """Non-simulation bots must have _is_simulation = False (default on base class)."""
+        """TradingBot base class must have _is_simulation = False — live bots inherit this."""
         from bots.trading_bot_base import TradingBot
         assert TradingBot._is_simulation is False
-        # ConcreteBot inherits the default
-        bot = _make_bot()
-        assert bot._is_simulation is False
 
     def test_simulation_bot_does_not_create_lockdir(self):
         """Running _run_ai_prediction() on a simulation bot must not touch the filesystem mutex.
@@ -723,3 +731,95 @@ class TestSimulationBotMutexBypass:
         bot = _make_bot(contract="MNQ")
         assert hasattr(bot, 'account'), "base class must always set self.account"
         assert bot.account  # non-empty
+
+
+class TestDoubleEntryCooldown:
+    """
+    Regression tests for the cross-process double-entry cooldown guard.
+
+    Root cause: two live bot processes both saw "no position" from the broker within
+    milliseconds of each other (broker state lag), and both placed orders before either's
+    order was reflected. The cooldown file written after every successful order prevents
+    a second process from placing within a 10-second window.
+    """
+
+    ACCOUNT = "COOLDOWN_TEST_9x7"  # unique enough to avoid collisions with other tests
+
+    def _cooldown_path(self):
+        import os, tempfile
+        return os.path.join(tempfile.gettempdir(), f"algo_order_placed_{self.ACCOUNT}.txt")
+
+    def _lock_path(self):
+        import os, tempfile
+        return os.path.join(tempfile.gettempdir(), f"algo_order_{self.ACCOUNT}.lockdir")
+
+    def _make_live_bot(self):
+        bot = _make_bot(stop_pts=10.0, target_pts=20.0)
+        bot._is_simulation = False
+        bot.account = self.ACCOUNT
+        _fill_bars(bot)
+        return bot
+
+    def _cleanup(self):
+        import os
+        for p in [self._cooldown_path(), self._lock_path()]:
+            try:
+                if os.path.isfile(p):
+                    os.remove(p)
+                elif os.path.isdir(p):
+                    os.rmdir(p)
+            except Exception:
+                pass
+
+    def test_cooldown_blocks_second_order_within_window(self):
+        """A cooldown file written < 10s ago must block a new order."""
+        import time
+        self._cleanup()
+        with open(self._cooldown_path(), 'w') as f:
+            f.write(str(time.time() - 2))  # 2 seconds ago
+        bot = self._make_live_bot()
+        try:
+            run(bot._run_ai_prediction())
+            bot._place_order.assert_not_called()
+        finally:
+            self._cleanup()
+
+    def test_cooldown_file_written_after_successful_order(self):
+        """A successful order must write the cooldown timestamp file."""
+        import time, os
+        self._cleanup()
+        bot = self._make_live_bot()
+        bot._place_order = AsyncMock(return_value="order-ok")
+        try:
+            run(bot._run_ai_prediction())
+            assert os.path.exists(self._cooldown_path()), "cooldown file must be written"
+            ts = float(open(self._cooldown_path()).read().strip())
+            assert abs(time.time() - ts) < 5
+        finally:
+            self._cleanup()
+
+    def test_cooldown_allows_order_after_window_expires(self):
+        """A cooldown file written > 10s ago must NOT block a new order."""
+        import time
+        self._cleanup()
+        with open(self._cooldown_path(), 'w') as f:
+            f.write(str(time.time() - 15))  # 15s ago — expired
+        bot = self._make_live_bot()
+        bot._place_order = AsyncMock(return_value="order-ok")
+        try:
+            run(bot._run_ai_prediction())
+            bot._place_order.assert_called_once()
+        finally:
+            self._cleanup()
+
+    def test_simulation_bot_skips_cooldown_check(self):
+        """ConcreteBot with _is_simulation=True must not read or write the cooldown file."""
+        import os
+        self._cleanup()
+        bot = _make_bot(stop_pts=10.0, target_pts=20.0)  # _is_simulation=True by default
+        bot.account = self.ACCOUNT
+        _fill_bars(bot)
+        bot._place_order = AsyncMock(return_value="order-ok")
+        run(bot._run_ai_prediction())
+        assert not os.path.exists(self._cooldown_path()), \
+            "simulation bot must not write cooldown file"
