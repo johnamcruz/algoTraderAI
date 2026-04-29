@@ -8,6 +8,7 @@ Covers the gates that fire between signal generation and order placement:
   - Stop too tight (< 4 ticks) blocks entry
   - Zero contract size blocks entry
   - No stop/target available blocks entry
+  - SimulationBot skips cross-process mutex (no 'account' AttributeError in backtest)
 """
 
 import asyncio
@@ -616,3 +617,109 @@ class TestCrossProcessOrderLock:
             bot._place_order.assert_not_called()  # blocked by fresh lock
         finally:
             os.rmdir(lock_dir)
+
+
+class TestSimulationBotMutexBypass:
+    """SimulationBot must skip the cross-process mutex.
+
+    Root cause of the regression: the mutex used self.account, which SimulationBot
+    never set, causing AttributeError on every bar where a signal fired and making
+    all backtest trades disappear (502 predict errors, 0 trades).
+
+    Three invariants that must hold forever:
+      1. SimulationBot._is_simulation is True (class-level flag)
+      2. No lockdir is created or checked during a simulated signal
+      3. The base class always sets self.account so live bots can't hit the same crash
+    """
+
+    def test_simulation_bot_is_simulation_flag(self):
+        """SimulationBot must declare _is_simulation = True at the class level."""
+        from bots.simulation_bot import SimulationBot
+        assert SimulationBot._is_simulation is True
+
+    def test_live_bot_is_simulation_flag_is_false(self):
+        """Non-simulation bots must have _is_simulation = False (default on base class)."""
+        from bots.trading_bot_base import TradingBot
+        assert TradingBot._is_simulation is False
+        # ConcreteBot inherits the default
+        bot = _make_bot()
+        assert bot._is_simulation is False
+
+    def test_simulation_bot_does_not_create_lockdir(self):
+        """Running _run_ai_prediction() on a simulation bot must not touch the filesystem mutex.
+
+        If the mutex is bypassed correctly, no lockdir is created and no AttributeError
+        is raised — even if the bot has no explicit account attribute.
+        """
+        import os, tempfile
+
+        class SimBot(ConcreteBot):
+            _is_simulation = True
+
+        strategy = MockStrategy()
+        strategy.get_stop_target_pts = MagicMock(return_value=(10.0, 20.0))
+        bot = SimBot(
+            contract="MES",
+            size=1,
+            timeframe_minutes=5,
+            strategy=strategy,
+            entry_conf=0.70,
+            adx_thresh=0,
+            stop_pts=10.0,
+            target_pts=20.0,
+            risk_amount=50.0,
+        )
+        bot._has_existing_position = AsyncMock(return_value=False)
+        bot._place_order = AsyncMock(return_value="order-sim")
+        _fill_bars(bot)
+
+        # Verify no lockdir exists before or after
+        lock_dir = os.path.join(tempfile.gettempdir(), f"algo_order_{bot.account}.lockdir")
+        assert not os.path.exists(lock_dir), "lockdir should not exist before run"
+
+        run(bot._run_ai_prediction())
+
+        assert not os.path.exists(lock_dir), "lockdir must not be created in simulation mode"
+        bot._place_order.assert_called_once()  # trade still executes
+
+    def test_simulation_bot_places_order_without_crashing(self):
+        """Regression: simulation bot must not raise AttributeError on self.account.
+
+        Before the fix, every signal in backtest mode crashed here and was silently
+        counted as a 'predict_error', producing 0 trades even when signals fired.
+        """
+        class SimBot(ConcreteBot):
+            _is_simulation = True
+            # Deliberately do NOT set account — base class must provide the default
+
+        strategy = MockStrategy()
+        strategy.get_stop_target_pts = MagicMock(return_value=(10.0, 20.0))
+        bot = SimBot(
+            contract="MES",
+            size=1,
+            timeframe_minutes=5,
+            strategy=strategy,
+            entry_conf=0.70,
+            adx_thresh=0,
+            stop_pts=10.0,
+            target_pts=20.0,
+            risk_amount=50.0,
+        )
+        bot._has_existing_position = AsyncMock(return_value=False)
+        bot._place_order = AsyncMock(return_value="order-sim")
+        _fill_bars(bot)
+
+        # Must not raise — before the fix this raised AttributeError: 'SimBot' has no 'account'
+        run(bot._run_ai_prediction())
+
+        assert bot.skip_stats['predict_error'] == 0, (
+            "predict_error count must be 0 — AttributeError in mutex code was silently "
+            "caught and counted as a predict error, hiding all backtest trades"
+        )
+        bot._place_order.assert_called_once()
+
+    def test_base_class_always_sets_account(self):
+        """TradingBot.__init__ must set self.account so live bots never hit AttributeError."""
+        bot = _make_bot(contract="MNQ")
+        assert hasattr(bot, 'account'), "base class must always set self.account"
+        assert bot.account  # non-empty

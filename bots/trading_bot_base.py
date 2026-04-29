@@ -17,7 +17,8 @@ from strategies.strategy_base import BaseStrategy
 
 class TradingBot(ABC):
     """Abstract base class for trading bots"""
-    
+    _is_simulation: bool = False  # SimulationBot sets True to skip cross-process mutex
+
     def __init__(
         self,
         contract,
@@ -38,6 +39,7 @@ class TradingBot(ABC):
     ):
         """Initialize the trading bot base."""
         self.contract = contract
+        self.account = getattr(self, 'account', contract)  # subclasses may override
         self.size = size
         self.risk_amount = risk_amount
         self.high_conf_multiplier = high_conf_multiplier
@@ -278,28 +280,32 @@ class TradingBot(ABC):
                     logging.info(f"{direction} signal ignored: Already in position (in-memory guard)")
                     return
 
-                # Cross-process mutex: held from position check through order placement.
-                # Prevents two processes from both seeing no open position and both filling.
-                # Stale TTL (30s) ensures a crashed process can't lock out trading forever.
-                lock_dir = os.path.join(tempfile.gettempdir(), f"algo_order_{self.account}.lockdir")
-                lock_acquired = False
-                try:
-                    os.mkdir(lock_dir)
-                    lock_acquired = True
-                except FileExistsError:
+                # Cross-process mutex: live bots only. SimulationBot is single-process,
+                # so there's no race condition to guard against in backtest mode.
+                if self._is_simulation:
+                    lock_dir = None
+                else:
+                    # Prevents two live processes from both seeing no open position and both filling.
+                    # Stale TTL (30s) ensures a crashed process can't lock out trading forever.
+                    lock_dir = os.path.join(tempfile.gettempdir(), f"algo_order_{self.account}.lockdir")
+                    lock_acquired = False
                     try:
-                        age = time.time() - os.stat(lock_dir).st_mtime
-                        if age > 30:
-                            os.rmdir(lock_dir)
-                            os.mkdir(lock_dir)
-                            lock_acquired = True
-                            logging.warning(f"⚠️ Stale order lock removed (age={age:.0f}s) — re-acquired")
-                    except Exception:
-                        pass
+                        os.mkdir(lock_dir)
+                        lock_acquired = True
+                    except FileExistsError:
+                        try:
+                            age = time.time() - os.stat(lock_dir).st_mtime
+                            if age > 30:
+                                os.rmdir(lock_dir)
+                                os.mkdir(lock_dir)
+                                lock_acquired = True
+                                logging.warning(f"⚠️ Stale order lock removed (age={age:.0f}s) — re-acquired")
+                        except Exception:
+                            pass
 
-                if not lock_acquired:
-                    logging.info(f"{direction} signal ignored: Order lock held by another process for account {self.account}")
-                    return
+                    if not lock_acquired:
+                        logging.info(f"{direction} signal ignored: Order lock held by another process for account {self.account}")
+                        return
 
                 try:
                     has_position = await self._has_existing_position()
@@ -443,12 +449,11 @@ class TradingBot(ABC):
                             logging.warning(f"⚠️ SHORT order rejected by broker @ {close_price:.2f} — signal not placed")
 
                 finally:
-                    # Always release the lock — order confirmed, rejected, or exception.
-                    # Lock is held for ~3-5s (position check + order placement).
-                    try:
-                        os.rmdir(lock_dir)
-                    except Exception:
-                        pass
+                    if lock_dir is not None:
+                        try:
+                            os.rmdir(lock_dir)
+                        except Exception:
+                            pass
                     
         except Exception as e:
             self.in_position = False

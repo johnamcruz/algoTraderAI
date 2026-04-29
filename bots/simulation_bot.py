@@ -27,7 +27,8 @@ CONTRACTS = {
 
 class SimulationBot(TradingBot):
     """Simulation bot for backtesting strategies"""
-    
+    _is_simulation = True
+
     def __init__(
         self,
         csv_path,
