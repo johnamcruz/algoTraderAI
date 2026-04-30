@@ -34,6 +34,7 @@ class BaseStrategy(ABC):
         self.contract_symbol = contract_symbol
         self.model = None
         self._bar_count: int = 0
+        self._feature_cols: Optional[List[str]] = None
 
     def set_contract_symbol(self, symbol):
         """Method to set the contract symbol after initialization."""
@@ -129,6 +130,27 @@ class BaseStrategy(ABC):
         for warmup_i in range(n - 1):
             self._on_new_bar(df.iloc[:warmup_i + 1], warmup_i)
             self._bar_count += 1
+
+    def _load_feature_cols_from_metadata(self) -> None:
+        """
+        Pin feature columns from the model's sidecar metadata JSON.
+
+        Called at the end of each strategy's load_model(). Reads
+        `<model_path>_metadata.json` and stores feature_cols so that
+        get_feature_columns() returns the exact list the ONNX was trained on,
+        regardless of which version of futures_foundation is installed.
+        """
+        import os, json
+        meta_path = self.model_path.replace('.onnx', '_metadata.json')
+        if os.path.exists(meta_path):
+            with open(meta_path) as f:
+                meta = json.load(f)
+            if 'feature_cols' in meta:
+                self._feature_cols = meta['feature_cols']
+                import logging
+                logging.getLogger(__name__).info(
+                    f"     Features: {len(self._feature_cols)} (pinned from metadata)"
+                )
 
     def on_trade_exit(self, reason: str):
         """Called by the bot when a trade exits. Override to react to exit events."""

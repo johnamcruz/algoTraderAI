@@ -155,7 +155,7 @@ class VWAPReversionStrategyV1(BaseStrategy):
         return 200
 
     def get_feature_columns(self) -> List[str]:
-        return get_model_feature_columns()
+        return self._feature_cols if self._feature_cols is not None else get_model_feature_columns()
 
     def is_trading_allowed(self, timestamp: pd.Timestamp) -> bool:
         return True
@@ -349,6 +349,7 @@ class VWAPReversionStrategyV1(BaseStrategy):
         logging.info(f"  ✅ ONNX loaded: {os.path.basename(self.model_path)}")
         logging.info(f"     Inputs:  {inputs}")
         logging.info(f"     Outputs: {outputs}")
+        self._load_feature_cols_from_metadata()
 
     # ── Inference ─────────────────────────────────────────────────────────────
 
