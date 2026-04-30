@@ -9,6 +9,7 @@ Covers:
   - Entry gate and RR gate (same contract as v7)
   - get_stop_target_pts (same as v7)
   - _feature_cols starts None, get_feature_columns uses it when set
+  - Pot loop behavior matches training (while loop, popleft/clear/break semantics)
 """
 
 import sys
@@ -310,3 +311,119 @@ class TestStopTarget:
         strategy._latest_risk_rr = 1.5
         stop, target = strategy.get_stop_target_pts(pd.DataFrame(), 'LONG', 97.0)
         assert stop is None and target is None
+
+
+# ── 7. Pot loop behavior (matches training while-loop semantics) ───────────────
+
+def _make_detector_df(n, opens, highs, lows, closes):
+    """Build a minimal OHLC DataFrame for _update_cisd_detector calls."""
+    idx = pd.date_range('2026-01-01 09:00', periods=n, freq='5min', tz='America/New_York')
+    return pd.DataFrame({'open': opens, 'high': highs, 'low': lows, 'close': closes}, index=idx)
+
+
+class TestPotLoopBehavior:
+    """
+    Verifies that _update_cisd_detector matches training's while-loop semantics:
+      - 'else: break' — pot is PRESERVED when close does not trigger (not skipped)
+      - 'popleft'     — pot is REMOVED when ratio/displacement check fails
+      - 'clear+break' — ALL pots are cleared when valid displacement found
+    """
+
+    def _fresh(self):
+        s = CISDOTEStrategyV10.__new__(CISDOTEStrategyV10)
+        s.model_path            = ''
+        s.contract_symbol       = 'MNQ'
+        s.model                 = None
+        s._bar_count            = 0
+        s._feature_cols         = None
+        s._instrument           = 'NQ'
+        s._min_risk_rr          = 0.0
+        s._active_zones         = deque(maxlen=20)
+        s._pivot_highs          = deque(maxlen=200)
+        s._pivot_lows           = deque(maxlen=200)
+        s._last_wicked_high     = -999
+        s._last_wicked_low      = -999
+        s._bear_pots            = deque(maxlen=20)
+        s._bull_pots            = deque(maxlen=20)
+        s._latest_cisd_features = None
+        s._latest_zone_bullish  = 0.0
+        s._latest_risk_rr       = 2.0
+        s._latest_signal_meta   = {}
+        s.skip_stats            = {'conf_gate': 0, 'rr_gate': 0, 'hold': 0}
+        return s
+
+    def test_bear_pot_preserved_when_close_above_pot_price(self):
+        """else: break — close >= pot_price keeps pot for next bar (matches training)."""
+        s = self._fresh()
+        pot_price = 100.0
+        # Inject a bear pot with price 100; set close ABOVE it so no trigger
+        s._bear_pots.append((pot_price, 5))
+        n = 10
+        # close > pot_price → should NOT consume the pot
+        c = np.full(n, 101.0)
+        o = np.full(n, 100.5)
+        h = np.full(n, 102.0)
+        l = np.full(n, 99.0)
+        df = _make_detector_df(n, o, h, l, c)
+        s._update_cisd_detector(df, abs_bar=9)
+        # Pot must still be present
+        assert len(s._bear_pots) == 1
+        assert s._bear_pots[0][0] == pot_price
+
+    def test_bull_pot_preserved_when_close_below_pot_price(self):
+        """else: break — close <= pot_price keeps bull pot for next bar."""
+        s = self._fresh()
+        pot_price = 100.0
+        s._bull_pots.append((pot_price, 5))
+        n = 10
+        # close < pot_price → no trigger
+        c = np.full(n, 99.0)
+        o = np.full(n, 99.5)
+        h = np.full(n, 101.0)
+        l = np.full(n, 98.0)
+        df = _make_detector_df(n, o, h, l, c)
+        s._update_cisd_detector(df, abs_bar=9)
+        assert len(s._bull_pots) == 1
+        assert s._bull_pots[0][0] == pot_price
+
+    def test_bear_pot_removed_when_displacement_fails(self):
+        """popleft — pot is consumed when close < pot_price but candle body/close-str too weak."""
+        s = self._fresh()
+        pot_price = 100.0
+        s._bear_pots.append((pot_price, 0))
+        n = 10
+        # close < pot_price to trigger the check, but make candle a doji (body=0 → br=0 → fails)
+        c = np.full(n, 99.0)
+        o = np.full(n, 99.0)   # same as close → body=0, fails displacement
+        h = np.full(n, 101.0)
+        l = np.full(n, 97.0)
+        df = _make_detector_df(n, o, h, l, c)
+        s._update_cisd_detector(df, abs_bar=9)
+        # Pot should be consumed (popleft'd)
+        assert len(s._bear_pots) == 0
+
+    def test_all_bear_pots_cleared_on_valid_displacement(self):
+        """clear — ALL pots are wiped when a valid displacement is found (matches training)."""
+        s = self._fresh()
+        # Add two bear pots; the oldest will trigger
+        s._bear_pots.append((110.0, 0))
+        s._bear_pots.append((105.0, 1))
+        n = 20
+        # Craft a bar where close < 110 (oldest pot), and displacement is valid:
+        # strong bearish close (close near low, body >= 50% of range)
+        opens  = np.full(n, 100.0)
+        closes = np.full(n, 100.0)
+        highs  = np.full(n, 101.0)
+        lows   = np.full(n, 99.0)
+        # Make the current (last) bar a strong bearish displacement:
+        # open=108, close=100 → body=8, range=10, br=0.8≥0.5; close-str=(108-100)/10=0.8≥0.6
+        opens[-1]  = 108.0
+        closes[-1] = 100.0
+        highs[-1]  = 109.0
+        lows[-1]   = 99.0
+        # Need top_level: at least one bearish candle between pot_bar and current bar
+        opens[1]   = 115.0; closes[1] = 112.0  # bearish → top_level = 115
+        df = _make_detector_df(n, opens, highs, lows, closes)
+        s._update_cisd_detector(df, abs_bar=19)
+        # Both pots must be gone regardless of how many were present
+        assert len(s._bear_pots) == 0

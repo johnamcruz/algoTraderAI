@@ -482,8 +482,10 @@ class CISDOTEStrategyV10(BaseStrategy):
         cisd_dir  = None
 
         # Bearish CISD: allowed in premium OR with liquidity sweep
-        new_bear = deque(maxlen=20)
-        for pot_price, pot_abs in self._bear_pots:
+        # Loop matches training exactly: popleft on invalid, clear+break on valid displacement,
+        # plain break when close >= pot_price (stop checking — do not skip to newer pots).
+        while self._bear_pots:
+            pot_price, pot_abs = self._bear_pots[0]
             pot_rel = to_rel(pot_abs)
             if c_arr[bar] < pot_price:
                 highest_c = c_arr[pot_rel:bar+1].max()
@@ -515,16 +517,22 @@ class CISDOTEStrategyV10(BaseStrategy):
                                         'entered_zone': False,
                                     }
                                     cisd_dir = 'BEAR'
-                            break
+                            self._bear_pots.clear(); break
+                        else:
+                            self._bear_pots.popleft(); continue
+                    else:
+                        self._bear_pots.popleft(); continue
+                else:
+                    self._bear_pots.popleft(); continue
             else:
-                new_bear.append((pot_price, pot_abs))
-        self._bear_pots = new_bear
+                break  # close >= pot_price — stop, keep remaining pots
 
         # Bullish CISD: allowed only in discount (no sweep override — matches v10 training)
-        new_bull = deque(maxlen=20)
-        for pot_price, pot_abs in self._bull_pots:
+        # Same while-loop pattern as bears, only runs if no bear signal found this bar.
+        while self._bull_pots and cisd_dir is None:
+            pot_price, pot_abs = self._bull_pots[0]
             pot_rel = to_rel(pot_abs)
-            if c_arr[bar] > pot_price and cisd_dir is None:
+            if c_arr[bar] > pot_price:
                 lowest_c     = c_arr[pot_rel:bar+1].min()
                 bottom_level = 0.0
                 idx = pot_rel + 1
@@ -554,10 +562,15 @@ class CISDOTEStrategyV10(BaseStrategy):
                                         'entered_zone': False,
                                     }
                                     cisd_dir = 'BULL'
-                            break
+                            self._bull_pots.clear(); break
+                        else:
+                            self._bull_pots.popleft(); continue
+                    else:
+                        self._bull_pots.popleft(); continue
+                else:
+                    self._bull_pots.popleft(); continue
             else:
-                new_bull.append((pot_price, pot_abs))
-        self._bull_pots = new_bull
+                break  # close <= pot_price — stop, keep remaining pots
 
         if cisd_zone is not None:
             self._active_zones.appendleft(cisd_zone)
