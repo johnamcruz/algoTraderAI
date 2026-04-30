@@ -2,6 +2,8 @@
 
 import sys
 import os
+import json
+import tempfile
 import pandas as pd
 import numpy as np
 import pytest
@@ -113,3 +115,55 @@ class TestRunWarmup:
         # This test just verifies it doesn't crash; the CISD strategy guards with:
         #   if self._bar_count == 0 and n > 1: self._run_warmup(df)
         assert s._bar_count > 0  # at least ran both times without error
+
+
+# ── _load_feature_cols_from_metadata ──────────────────────────────────────────
+
+class TestLoadFeatureColsFromMetadata:
+    """BaseStrategy._load_feature_cols_from_metadata pins feature_cols from sidecar JSON."""
+
+    def _fresh(self):
+        return StatefulStrategy()
+
+    def test_pins_cols_from_metadata(self):
+        cols = [f'feature_{i}' for i in range(68)]
+        with tempfile.NamedTemporaryFile(suffix='.onnx', delete=False) as f:
+            onnx_path = f.name
+        meta_path = onnx_path.replace('.onnx', '_metadata.json')
+        try:
+            with open(meta_path, 'w') as f:
+                json.dump({'feature_cols': cols}, f)
+            s = self._fresh()
+            s.model_path = onnx_path
+            s._load_feature_cols_from_metadata()
+            assert s._feature_cols == cols
+        finally:
+            os.unlink(onnx_path)
+            if os.path.exists(meta_path):
+                os.unlink(meta_path)
+
+    def test_missing_metadata_file_leaves_cols_none(self):
+        s = self._fresh()
+        s.model_path = '/nonexistent/path/model.onnx'
+        s._load_feature_cols_from_metadata()
+        assert s._feature_cols is None
+
+    def test_metadata_without_feature_cols_key_leaves_cols_none(self):
+        with tempfile.NamedTemporaryFile(suffix='.onnx', delete=False) as f:
+            onnx_path = f.name
+        meta_path = onnx_path.replace('.onnx', '_metadata.json')
+        try:
+            with open(meta_path, 'w') as f:
+                json.dump({'version': 'v10', 'seq_len': 96}, f)
+            s = self._fresh()
+            s.model_path = onnx_path
+            s._load_feature_cols_from_metadata()
+            assert s._feature_cols is None
+        finally:
+            os.unlink(onnx_path)
+            if os.path.exists(meta_path):
+                os.unlink(meta_path)
+
+    def test_feature_cols_starts_none(self):
+        s = self._fresh()
+        assert s._feature_cols is None
