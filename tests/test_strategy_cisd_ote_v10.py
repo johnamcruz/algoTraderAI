@@ -103,7 +103,7 @@ class TestImport:
     def test_warmup_length(self):
         import logging; logging.disable(logging.CRITICAL)
         s = CISDOTEStrategyV10(model_path='', contract_symbol='MNQ')
-        assert s.get_warmup_length() == 200
+        assert s.get_warmup_length() == 400
 
 
 # ── 2. Feature column pinning ─────────────────────────────────────────────────

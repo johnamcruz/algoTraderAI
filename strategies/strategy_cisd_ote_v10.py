@@ -130,7 +130,7 @@ class CISDOTEStrategyV10(BaseStrategy):
         return 96
 
     def get_warmup_length(self) -> int:
-        return 200
+        return 400
 
     def get_feature_columns(self) -> List[str]:
         return self._feature_cols if self._feature_cols is not None else get_model_feature_columns()
