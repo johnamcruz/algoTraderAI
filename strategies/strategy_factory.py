@@ -11,10 +11,6 @@ def _load_v7():
     from strategies.strategy_cisd_ote_v7 import CISDOTEStrategyV7
     return CISDOTEStrategyV7
 
-def _load_v10():
-    from strategies.strategy_cisd_ote_v10 import CISDOTEStrategyV10
-    return CISDOTEStrategyV10
-
 def _load_st_trend_v1():
     from strategies.strategy_st_trend_v1 import STTrendStrategyV1
     return STTrendStrategyV1
@@ -31,7 +27,6 @@ class StrategyFactory:
     # Registry of available strategies
     STRATEGIES = {
         'cisd-ote7':   _load_v7,            # lazy: futures_foundation only required when selected
-        'cisd-ote10':  _load_v10,           # lazy: CISD+OTE v10, backbone v6, 68 features
         'supertrend':  _load_st_trend_v1,   # lazy: SuperTrend FFM hybrid v1
         'vwap':        _load_vwap_v1,        # lazy: VWAP Reversion FFM hybrid v1
     }
